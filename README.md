@@ -26,14 +26,15 @@ no subscription. The acoustic model runs locally via ONNX Runtime.
   heard (with a confidence score).
 - **Follow-along reader.** Browse all 114 surahs and verses with the Uthmani
   text; pick a verse and practice it.
-- **Fully offline.** The 85 MB model is bundled into the APK. No runtime
-  downloads, no telemetry, no servers.
+- **Offline after first launch.** The 85 MB acoustic model is fetched once from
+  the public Tilawa release and cached on device; afterwards recognition needs
+  no network. The Quran text/token tables are bundled.
 - **Privacy-first.** No account, no network calls for recognition, local storage
-  only.
+  only (the one-time model download is the only network use).
 
-*Roadmap (not yet implemented):* hidden/peek verse mode, reciter playback with
-word timings, goals/streaks, FSRS spaced repetition, JSON backup/restore,
-F-Droid distribution. See [Roadmap](#roadmap).
+*Roadmap (not yet implemented):* reciter playback with word timings,
+goals/streaks, FSRS spaced repetition, JSON backup/restore, F-Droid
+distribution. See [Roadmap](#roadmap).
 
 ---
 

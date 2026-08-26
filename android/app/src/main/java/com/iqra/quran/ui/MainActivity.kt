@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,6 +29,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -166,8 +170,11 @@ fun PracticeScreen(model: PracticeViewModel, surah: Int, ayah: Int, onBack: () -
     val status by model.status.collectAsStateWithLifecycle()
     val result by model.result.collectAsStateWithLifecycle()
     val data by model.data.collectAsStateWithLifecycle()
+    val preparing by model.preparing.collectAsStateWithLifecycle()
+    val modelProgress by model.modelProgress.collectAsStateWithLifecycle()
     val verse: Verse? = remember(surah, ayah, data) { data?.getVerse(surah, ayah) }
     val context = LocalContext.current
+    var hidden by remember { mutableStateOf(false) }
 
     val recordLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -189,12 +196,42 @@ fun PracticeScreen(model: PracticeViewModel, surah: Int, ayah: Int, onBack: () -
             modifier = Modifier.fillMaxSize().padding(pad).padding(16.dp).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                verse?.textUthmani ?: "",
-                fontSize = 28.sp,
-                textAlign = TextAlign.Center,
-                lineHeight = 44.sp,
-            )
+            OutlinedButton(onClick = { hidden = !hidden }) {
+                Text(if (hidden) "Show verse" else "Hide verse")
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            if (hidden) {
+                Text(
+                    "●●●  recite from memory",
+                    fontSize = 22.sp,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                Text(
+                    verse?.textUthmani ?: "",
+                    fontSize = 28.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 44.sp,
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            if (preparing) {
+                if (modelProgress >= 0) {
+                    LinearProgressIndicator(progress = { modelProgress / 100f }, modifier = Modifier.fillMaxWidth())
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                Text(
+                    "Preparing model… ${if (modelProgress >= 0) "$modelProgress%" else ""}",
+                    color = Color.Gray,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
 
             OutlinedButton(
                 onClick = {
@@ -213,15 +250,33 @@ fun PracticeScreen(model: PracticeViewModel, surah: Int, ayah: Int, onBack: () -
                     }
                 },
                 modifier = Modifier.padding(vertical = 12.dp),
+                enabled = !preparing,
             ) {
                 Text(if (recording) "■ Stop & check" else "● Recite")
             }
 
             Text(status, color = Color.Gray, modifier = Modifier.padding(bottom = 8.dp))
 
+            result?.words?.let { ws ->
+                if (ws.isNotEmpty()) {
+                    val correct = ws.count { it.second == WordStatus.CORRECT }
+                    val wrong = ws.count { it.second == WordStatus.WRONG }
+                    val skipped = ws.count { it.second == WordStatus.SKIPPED }
+                    val total = ws.size
+                    val acc = if (total > 0) (correct * 100 / total) else 0
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "✓ $correct   ✗ $wrong   ⊘ $skipped    Accuracy $acc%",
+                        fontSize = 16.sp,
+                        color = Color.DarkGray,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+
             val words = result?.words
             if (!words.isNullOrEmpty()) {
-                androidx.compose.foundation.layout.FlowRow(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                 ) {

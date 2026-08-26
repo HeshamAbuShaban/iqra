@@ -3,17 +3,17 @@ package com.iqra.quran.ml
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
-import android.content.Context
 import android.util.Log
+import java.io.File
 import java.nio.FloatBuffer
 import java.nio.IntBuffer
 
 /**
- * On-device acoustic model wrapper around the bundled Tilawa ONNX graph
+ * On-device acoustic model wrapper around the Tilawa ONNX graph
  * (fastconformer CTC, mel preprocessing baked in). Feeds mono 16 kHz float32
  * PCM and returns flattened [T, vocab] log-probabilities.
  */
-class TilawaEngine(context: Context, private val vocabSize: Int) {
+class TilawaEngine(modelFile: File, private val vocabSize: Int) {
     private val env = OrtEnvironment.getEnvironment()
     private val session: OrtSession
     private val signalName: String
@@ -21,8 +21,7 @@ class TilawaEngine(context: Context, private val vocabSize: Int) {
     private val outputName: String
 
     init {
-        val bytes = context.assets.open("model.onnx").use { it.readBytes() }
-        session = env.createSession(bytes, OrtSession.SessionOptions())
+        session = env.createSession(modelFile.absolutePath, OrtSession.SessionOptions())
         val names = session.inputNames.toList()
         signalName = names.firstOrNull { it.contains("audio") } ?: names[0]
         lengthName = names.firstOrNull { it.contains("length") } ?: names.getOrElse(1) { "length" }

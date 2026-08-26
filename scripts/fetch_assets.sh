@@ -21,7 +21,14 @@ fetch() { # fetch <url> <out-name>
   curl -fL -o "$ASSET_DIR/$2" "$1"
 }
 
-fetch "$BASE/fastconformer_full_mixed.onnx" model.onnx
+# The 85 MB acoustic model is NOT bundled in CI builds — the app downloads it
+# once on first launch (see ModelManager). Set SKIP_MODEL=1 to skip it; run the
+# script without that var to bundle it for a fully offline local build.
+if [ -z "${SKIP_MODEL:-}" ]; then
+  fetch "$BASE/fastconformer_full_mixed.onnx" model.onnx
+else
+  echo "skip   model.onnx (SKIP_MODEL set)"
+fi
 fetch "$BASE/vocab.json"                     vocab.json
 fetch "$BASE/quran.json"                     quran.json
 fetch "$BASE/quran_ctc_tokens.json"          quran_ctc_tokens.json

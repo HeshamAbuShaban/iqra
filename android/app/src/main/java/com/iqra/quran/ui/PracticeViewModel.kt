@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.iqra.quran.audio.AudioRecorder
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.WordStatus
+import com.iqra.quran.ml.ModelManager
 import com.iqra.quran.ml.TextCtcDecoder
 import com.iqra.quran.ml.TilawaEngine
 import com.iqra.quran.ml.VerseMatcher
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 data class PracticeResult(
     val match: VerseMatcher.VerseMatch?,
@@ -34,6 +36,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _status = MutableStateFlow("")
     val status: StateFlow<String> = _status
 
+    private val _preparing = MutableStateFlow(false)
+    val preparing: StateFlow<Boolean> = _preparing
+
+    private val _modelProgress = MutableStateFlow(-1)
+    val modelProgress: StateFlow<Int> = _modelProgress
+
     private val _result = MutableStateFlow<PracticeResult?>(null)
     val result: StateFlow<PracticeResult?> = _result
 
@@ -45,27 +53,54 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch(Dispatchers.IO) {
             val d = QuranData.load(getApplication())
-            val eng = TilawaEngine(getApplication(), d.vocabSize)
             withContext(Dispatchers.Main) {
                 _data.value = d
                 decoder = TextCtcDecoder(d.vocab, d.blankId)
-                engine = eng
                 matcher = VerseMatcher(d)
                 _loading.value = false
             }
         }
     }
 
+    private suspend fun ensureEngine(): Boolean {
+        if (engine != null) return true
+        return try {
+            withContext(Dispatchers.Main) { _preparing.value = true }
+            val modelFile: File = ModelManager.ensureModel(getApplication()) { p ->
+                _modelProgress.value = p
+            }
+            val d = _data.value ?: return false
+            engine = TilawaEngine(modelFile, d.vocabSize)
+            withContext(Dispatchers.Main) { _preparing.value = false }
+            true
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                _preparing.value = false
+                _status.value = "Model error: ${e.message}"
+            }
+            false
+        }
+    }
+
     fun startRecording() {
-        if (_recording.value) return
+        if (_recording.value || _preparing.value) return
         _result.value = null
-        _status.value = "Listening…"
-        recorder.start()
-        _recording.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            if (engine == null && !ensureEngine()) return@launch
+            withContext(Dispatchers.Main) {
+                _status.value = "Listening…"
+                try {
+                    recorder.start()
+                    _recording.value = true
+                } catch (e: Exception) {
+                    _status.value = "Mic error: ${e.message}"
+                }
+            }
+        }
     }
 
     fun clearStatus(msg: String) {
-        if (!_recording.value) _status.value = msg
+        if (!_recording.value && !_preparing.value) _status.value = msg
     }
 
     fun stopAndProcess(surah: Int? = null, ayah: Int? = null) {
