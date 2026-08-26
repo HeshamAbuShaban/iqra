@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
@@ -166,6 +167,7 @@ fun PracticeScreen(model: PracticeViewModel, surah: Int, ayah: Int, onBack: () -
     val result by model.result.collectAsStateWithLifecycle()
     val data by model.data.collectAsStateWithLifecycle()
     val verse: Verse? = remember(surah, ayah, data) { data?.getVerse(surah, ayah) }
+    val context = LocalContext.current
 
     val recordLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -200,7 +202,7 @@ fun PracticeScreen(model: PracticeViewModel, surah: Int, ayah: Int, onBack: () -
                         model.stopAndProcess(surah, ayah)
                     } else {
                         val perm = ContextCompat.checkSelfPermission(
-                            androidx.compose.ui.platform.LocalContext.current,
+                            context,
                             Manifest.permission.RECORD_AUDIO,
                         )
                         if (perm == android.content.pm.PackageManager.PERMISSION_GRANTED) {
