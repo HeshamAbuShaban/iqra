@@ -1,0 +1,32 @@
+# Build / IDE
+*.iml
+.gradle/
+build/
+*/build/
+local.properties
+.gradle*
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Bundled model + token tables (fetched by scripts/fetch_assets.sh, ~100 MB)
+/android/app/src/main/assets/
+
+# Reverse-engineering working artifacts (kept local only)
+/re/
+/tools/
+/apk/
+/work/
+
+# Node prototype (rejected web PWA + local proofs); see reference/ for the kept proof
+/engine/
+
+# Node prototype (optional reference only)
+/engine/node_modules/
+/engine/*.onnx
+/engine/*.raw
+
+# OS / misc
+.DS_Store
+Thumbs.db
+*.log

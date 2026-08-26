@@ -1,0 +1,43 @@
+Iqra
+====
+
+A free, offline, no-signup Quran memorization app for Android. It mirrors the
+functionality of commercial "mistake detection" apps (live word-level feedback
+while you recite) using a fully on-device, open-source speech engine — so it
+works with no internet, no account, and no cost.
+
+This software is provided under the MIT License. See LICENSE.
+
+
+ATTRIBUTION
+-----------
+
+Recognition engine and model:
+
+  Tilawa (formerly offline-tarteel)
+  https://github.com/yazinsai/tilawa
+  MIT License, Copyright (c) yazinsai.
+
+  The bundled acoustic model (fastconformer_full_mixed.onnx) and the Quran
+  CTC token tables (vocab.json, quran.json, quran_ctc_tokens.json) are
+  downloaded from the Tilawa v0.2.0 release and are covered by the MIT License.
+
+Concept:
+
+  The feature set was derived by reverse-engineering the public Tarteel app
+  (com.mmmoussa.iqra) solely to understand its behavior and data shapes. This
+  project does NOT contain any Tarteel code, the Tarteel cloud model, any
+  proprietary Tarteel databases, or the "Tarteel" name or branding. "Iqra" is a
+  generic Quranic term and carries no trademark. The reverse-engineering report
+  is kept for transparency in docs/REVERSE_ENGINEERING.md.
+
+This project is not affiliated with, endorsed by, or sponsored by Tarteel or
+any reciter.
+
+
+THIRD-PARTY COMPONENTS
+----------------------
+
+  - ONNX Runtime (onnxruntime-android) — MIT, Microsoft.
+  - AndroidX / Jetpack Compose — Apache-2.0, Google.
+  - Kotlin — Apache-2.0, JetBrains.
