@@ -6,9 +6,11 @@
 # Source: https://github.com/yazinsai/tilawa/releases/tag/v0.2.0  (MIT)
 set -euo pipefail
 
-ASSET_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../android/app/src/main/assets" && pwd)"
-BASE="https://github.com/yazinsai/tilawa/releases/download/v0.2.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ASSET_DIR="$SCRIPT_DIR/../android/app/src/main/assets"
 mkdir -p "$ASSET_DIR"
+
+BASE="https://github.com/yazinsai/tilawa/releases/download/v0.2.0"
 
 fetch() { # fetch <url> <out-name>
   if [ -f "$ASSET_DIR/$2" ]; then
