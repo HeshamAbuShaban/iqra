@@ -6,7 +6,7 @@ import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.util.Log
 import java.nio.FloatBuffer
-import java.nio.LongBuffer
+import java.nio.IntBuffer
 
 /**
  * On-device acoustic model wrapper around the bundled Tilawa ONNX graph
@@ -21,8 +21,8 @@ class TilawaEngine(context: Context, private val vocabSize: Int) {
     private val outputName: String
 
     init {
-        val modelStream = context.assets.open("model.onnx")
-        session = modelStream.use { env.createSession(it, OrtSession.SessionOptions()) }
+        val bytes = context.assets.open("model.onnx").use { it.readBytes() }
+        session = env.createSession(bytes, OrtSession.SessionOptions())
         val names = session.inputNames.toList()
         signalName = names.firstOrNull { it.contains("audio") } ?: names[0]
         lengthName = names.firstOrNull { it.contains("length") } ?: names.getOrElse(1) { "length" }
@@ -34,36 +34,36 @@ class TilawaEngine(context: Context, private val vocabSize: Int) {
 
     fun run(audio: FloatArray): LogProbs {
         val n = audio.size
-        val signalBuf = FloatBuffer.wrap(audio)
-        val signalTensor = OnnxTensor.createTensor(env, signalBuf, longArrayOf(1, n.toLong()))
-        val lengthTensors = listOf(
-            { OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf(n.toLong())), longArrayOf(1)) },
-            { OnnxTensor.createTensor(env, java.nio.IntBuffer.wrap(intArrayOf(n)), longArrayOf(1)) },
+        val signalTensor = OnnxTensor.createTensor(
+            env,
+            FloatBuffer.wrap(audio),
+            longArrayOf(1, n.toLong()),
         )
-
-        signalTensor.use { s ->
-            var lastErr: Throwable? = null
-            for (makeLength in lengthTensors) {
-                val l = makeLength()
+        val lengthTensor = OnnxTensor.createTensor(
+            env,
+            IntBuffer.wrap(intArrayOf(n)),
+            longArrayOf(1),
+        )
+        try {
+            val feeds = mapOf(signalName to signalTensor, lengthName to lengthTensor)
+            val result = session.run(feeds)
+            try {
+                val value = result[outputName].get() as OnnxTensor
                 try {
-                    l.use {
-                        val feeds = mapOf(signalName to s, lengthName to l)
-                        session.run(feeds).use { result ->
-                            val out = result.get(outputName)
-                            out.use {
-                                val fbuf = it.floatBuffer
-                                val arr = FloatArray(fbuf.remaining())
-                                fbuf.get(arr)
-                                val t = arr.size / vocabSize
-                                return LogProbs(arr, t, vocabSize)
-                            }
-                        }
-                    }
-                } catch (e: Throwable) {
-                    lastErr = e
+                    val fbuf = value.floatBuffer
+                    val arr = FloatArray(fbuf.remaining())
+                    fbuf.get(arr)
+                    val t = arr.size / vocabSize
+                    return LogProbs(arr, t, vocabSize)
+                } finally {
+                    value.close()
                 }
+            } finally {
+                result.close()
             }
-            throw lastErr ?: IllegalStateException("TilawaEngine.run failed")
+        } finally {
+            signalTensor.close()
+            lengthTensor.close()
         }
     }
 
