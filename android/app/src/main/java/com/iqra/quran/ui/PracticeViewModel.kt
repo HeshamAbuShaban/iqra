@@ -109,6 +109,25 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         return versePage.entries.filter { it.value <= page }.maxByOrNull { it.value }?.key ?: lockedAyah
     }
 
+    /** Jump to an arbitrary Mushaf page and resync the tracker to its first verse. */
+    fun jumpToPage(page: Int) {
+        val pages = _mushaf.value ?: return
+        if (page < 1 || page > pages.size) return
+        if (_recording.value) stopRecite()
+        val pg = pages[page - 1]
+        val firstWord = pg.lines
+            .filter { it.type == "text" }
+            .flatMap { it.words ?: emptyList() }
+            .firstOrNull() ?: return
+        loadSurah(firstWord.surah)
+        lockedAyah = firstWord.verse
+        _activeVerse.value = null
+        currentWords = verseWords[lockedAyah] ?: emptyList()
+        _currentKey.value = null
+        _statusMap.value = emptyMap()
+        setCurrentPage(page)
+    }
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             val d = QuranData.load(getApplication())

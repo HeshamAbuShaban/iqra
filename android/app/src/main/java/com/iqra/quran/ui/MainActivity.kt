@@ -20,7 +20,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -320,6 +322,8 @@ fun ReaderScreen(
     val recognized by vm.recognizedText.collectAsStateWithLifecycle()
     val playIndex by vm.playIndex.collectAsStateWithLifecycle()
     val playHead by vm.playHead.collectAsStateWithLifecycle()
+    var showGoto by remember { mutableStateOf(false) }
+    var gotoText by remember { mutableStateOf("") }
 
     val surahInfo = remember(data, surah) {
         data?.surahList()?.firstOrNull { it.number == surah }
@@ -373,6 +377,14 @@ fun ReaderScreen(
                         )
                     }
                     Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = { showGoto = true }) {
+                        Icon(
+                            Icons.Filled.Menu,
+                            "Go to page",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = {
                             if (recording) vm.stopRecite()
@@ -406,6 +418,32 @@ fun ReaderScreen(
                         )
                     }
                 }
+            }
+            if (showGoto) {
+                AlertDialog(
+                    onDismissRequest = { showGoto = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val p = gotoText.toIntOrNull()
+                            if (p != null && p in 1..mushaf.size) {
+                                vm.jumpToPage(p)
+                                gotoText = ""
+                                showGoto = false
+                            }
+                        }) { Text("Go") }
+                    },
+                    dismissButton = { TextButton(onClick = { showGoto = false }) { Text("Cancel") } },
+                    title = { Text("Go to page") },
+                    text = {
+                        OutlinedTextField(
+                            value = gotoText,
+                            onValueChange = { gotoText = it.filter { c -> c.isDigit() }.take(3) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            placeholder = { Text("1 – ${mushaf.size}") },
+                        )
+                    },
+                )
             }
         }
     }
