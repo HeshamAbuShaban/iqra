@@ -130,6 +130,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.Main) {
                 _displayWords.value = initWords
             }
+            var micOk = true
             withContext(Dispatchers.Main) {
                 _status.value = "Listening…"
                 try {
@@ -137,9 +138,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     _recording.value = true
                 } catch (e: Exception) {
                     _status.value = "Mic error: ${e.message}"
-                    return@launch
+                    micOk = false
                 }
             }
+            if (!micOk) return@launch
             // Live, progressive recognition while recording.
             while (_recording.value) {
                 delay(450)
