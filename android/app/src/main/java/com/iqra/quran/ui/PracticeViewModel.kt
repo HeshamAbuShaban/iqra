@@ -59,6 +59,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _currentPage = MutableStateFlow<Int?>(null)
     val currentPage: StateFlow<Int?> = _currentPage
 
+    private val _activeVerse = MutableStateFlow<Int?>(null)
+    val activeVerse: StateFlow<Int?> = _activeVerse
+
+    private val _recognized = MutableStateFlow("")
+    val recognizedText: StateFlow<String> = _recognized
+
     private val prefs = app.getSharedPreferences("iqra", Context.MODE_PRIVATE)
     private val _lastRead = MutableStateFlow(loadLast())
     val lastRead: StateFlow<Pair<Int, Int>?> = _lastRead
@@ -78,10 +84,29 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var engine: TilawaEngine? = null
     private var decoder: TextCtcDecoder? = null
     private var refWords: List<MushafWord> = emptyList()
+    private var ayahs: List<AyahRef> = emptyList()
     private var activeSurah: Int = 1
     private var pageNumber: Int = 1
-    private var refPos: Int = 0
+    private var activeAyahIdx: Int = 0
+    private var ayahWordPos: Int = 0
     private val accumulated = LinkedHashMap<String, WordStatus>()
+
+    /** One ayah of a surah: its verse number, starting page, and its words. */
+    private data class AyahRef(val verse: Int, val page: Int, val words: List<MushafWord>)
+
+    private fun buildAyahs(words: List<MushafWord>): List<AyahRef> {
+        val out = mutableListOf<AyahRef>()
+        var i = 0
+        while (i < words.size) {
+            val v = words[i].verse
+            val page = words[i].page
+            var j = i
+            while (j < words.size && words[j].verse == v) j++
+            out.add(AyahRef(v, page, words.subList(i, j)))
+            i = j
+        }
+        return out
+    }
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
@@ -103,6 +128,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (page == pageNumber) return
         pageNumber = page
         _currentPage.value = page
+        if (ayahs.isNotEmpty()) {
+            var idx = ayahs.indexOfFirst { it.page >= page }
+            if (idx < 0) idx = ayahs.lastIndex
+            else if (ayahs[idx].page > page && idx > 0) idx--
+            activeAyahIdx = idx
+            ayahWordPos = 0
+            _activeVerse.value = ayahs[activeAyahIdx].verse
+        }
         if (_recording.value) recorder.reset()
     }
 
@@ -128,21 +161,28 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun startRecite(surah: Int) {
+    fun startRecite(surah: Int, page: Int) {
         if (_recording.value || _preparing.value) return
         val pages = _mushaf.value ?: return
         val ref = Mushaf.wordsForSurah(pages, surah)
         if (ref.isEmpty()) return
         activeSurah = surah
         refWords = ref
-        pageNumber = Mushaf.firstPageOfSurah(pages, surah)
-        // Anchor the tracker at the first word of the page the user is viewing,
-        // so recognition starts exactly where they are (no global search).
-        refPos = ref.indexOfFirst { it.page == pageNumber }.let { if (it < 0) 0 else it }
+        ayahs = buildAyahs(ref)
+        pageNumber = page
+        // Anchor at the FIRST ayah on the page the user is viewing, so
+        // recitation starts at a clean ayah boundary (strict ayah-by-ayah).
+        var idx = ayahs.indexOfFirst { it.page >= pageNumber }
+        if (idx < 0) idx = ayahs.lastIndex
+        else if (ayahs[idx].page > pageNumber && idx > 0) idx--
+        activeAyahIdx = idx
+        ayahWordPos = 0
         accumulated.clear()
         _statusMap.value = emptyMap()
         _currentKey.value = null
+        _recognized.value = ""
         _currentPage.value = pageNumber
+        _activeVerse.value = ayahs[activeAyahIdx].verse
         viewModelScope.launch(Dispatchers.IO) {
             if (engine == null && !ensureEngine()) return@launch
             val eng = engine ?: return@launch
@@ -170,62 +210,55 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     val pred = decoded.text.split(" ").filter { it.isNotBlank() }
                     if (pred.isEmpty()) continue
 
-                    // LOCAL, FORWARD-ONLY alignment: only consider a small window
-                    // around the expected position. This prevents the decoder
-                    // from "jumping" the match to a random word/surah.
-                    val start = maxOf(0, refPos - WINDOW_BACK)
-                    val end = minOf(refWords.size, refPos + WINDOW_FRONT)
-                    if (start >= end) continue
-                    val window = refWords.subList(start, end)
-                    val refNorm = window.map { ArabicNormalizer.normalize(it.text) }
+                    // STRICT AYAH-SCOPED alignment: we only ever match the
+                    // decoder output against the CURRENT ayah's remaining words
+                    // (plus a 1-word look-ahead into the next ayah to detect the
+                    // transition). This makes it impossible for recognition to
+                    // "jump" to a different ayah/page, and keeps the model
+                    // focused on one ayah at a time (better accuracy).
+                    val cur = ayahs.getOrNull(activeAyahIdx) ?: break
+                    val slice = if (ayahWordPos < cur.words.size)
+                        cur.words.subList(ayahWordPos, cur.words.size) else emptyList()
+                    if (slice.isEmpty()) {
+                        advanceAyah()
+                        continue
+                    }
+                    val look = if (activeAyahIdx + 1 < ayahs.size)
+                        ayahs[activeAyahIdx + 1].words.take(1) else emptyList()
+                    val refAll = slice + look
+                    val refNorm = refAll.map { ArabicNormalizer.normalize(it.text) }
                     val statuses = WordAligner.alignWords(refNorm, pred)
 
-                    var first = -1
-                    var last = -1
-                    for (i in statuses.indices) {
-                        if (statuses[i] == WordStatus.SKIPPED) continue
-                        if (first < 0) first = i
-                        last = i
-                        val w = window[i]
+                    var lastMatched = -1
+                    val recognized = StringBuilder()
+                    for (i in slice.indices) {
+                        val st = statuses[i]
+                        if (st == WordStatus.SKIPPED) continue
+                        val w = slice[i]
                         val k = keyOf(w)
                         val prev = accumulated[k]
-                        if (prev == null || (prev == WordStatus.WRONG && statuses[i] == WordStatus.CORRECT)) {
-                            accumulated[k] = statuses[i]
+                        if (prev == null || (prev == WordStatus.WRONG && st == WordStatus.CORRECT)) {
+                            accumulated[k] = st
                         }
+                        lastMatched = i
+                        recognized.append(w.text).append(" ")
                     }
-                    if (first < 0) continue // nothing recognized this tick
+                    val lookMatched = look.isNotEmpty() && statuses[slice.size] != WordStatus.SKIPPED
 
-                    // Advance the tracker strictly forward to the end of the
-                    // matched span — recitation order is monotonic.
-                    refPos = start + last + 1
+                    // Advance strictly within the current ayah.
+                    if (lastMatched >= 0) ayahWordPos = lastMatched + 1
+                    val ayahComplete = ayahWordPos >= cur.words.size || lookMatched
+                    if (ayahComplete) advanceAyah()
 
-                    val curWord = window[last]
-                    val curKey = keyOf(curWord)
-                    val curPage = curWord.page
-
-                    // Surah completion -> hand off to the NEXT surah only
-                    // (e.g. 113 -> 114). This is the only allowed cross-surah
-                    // move, so we can never "end up in another surah".
-                    var handedOff = false
-                    if (refPos >= refWords.size - SURAH_END_MARGIN && activeSurah < 114) {
-                        val next = Mushaf.wordsForSurah(pages, activeSurah + 1)
-                        if (next.isNotEmpty()) {
-                            activeSurah += 1
-                            refWords = next
-                            pageNumber = Mushaf.firstPageOfSurah(pages, activeSurah)
-                            refPos = 0
-                            recorder.reset()
-                            _currentPage.value = pageNumber
-                            handedOff = true
-                        } else {
-                            refPos = refWords.size
-                        }
-                    }
-
+                    val newCur = ayahs.getOrNull(activeAyahIdx)
+                    val curKey = newCur?.let { keyOf(it.words[minOf(ayahWordPos, it.words.lastIndex)]) }
+                    val recognizedStr = recognized.toString().trim()
                     withContext(Dispatchers.Main) {
                         _statusMap.value = LinkedHashMap(accumulated)
                         _currentKey.value = curKey
-                        if (!handedOff) _currentPage.value = curPage
+                        _currentPage.value = pageNumber
+                        _activeVerse.value = newCur?.verse
+                        if (recognizedStr.isNotEmpty()) _recognized.value = recognizedStr
                     }
                 } catch (_: Exception) {
                 }
@@ -233,11 +266,45 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Move to the next ayah (or next surah at the boundary). Updates private
+     *  trackers + pageNumber only; StateFlows are pushed by the caller. */
+    private fun advanceAyah() {
+        if (activeAyahIdx + 1 < ayahs.size) {
+            activeAyahIdx++
+            ayahWordPos = 0
+            pageNumber = ayahs[activeAyahIdx].page
+            return
+        }
+        // End of current surah.
+        if (activeSurah < 114) {
+            val pages = _mushaf.value ?: return
+            val next = Mushaf.wordsForSurah(pages, activeSurah + 1)
+            if (next.isNotEmpty()) {
+                activeSurah++
+                refWords = next
+                ayahs = buildAyahs(next)
+                activeAyahIdx = 0
+                ayahWordPos = 0
+                pageNumber = ayahs[0].page
+                recorder.reset()
+                return
+            }
+        }
+        // Truly finished.
+        _recording.value = false
+        recorder.stop()
+        _status.value = "Done — review your recitation below"
+        _activeVerse.value = null
+        _recognized.value = ""
+    }
+
     fun stopRecite() {
         if (!_recording.value) return
         _recording.value = false
         recorder.stop()
         _status.value = "Done — review your recitation below"
+        _activeVerse.value = null
+        _recognized.value = ""
     }
 
     // ---- Reference recitation audio (stream-on-tap, nothing bundled) ----
@@ -288,8 +355,5 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val CAP = 40 * 16000
-        private const val WINDOW_BACK = 3
-        private const val WINDOW_FRONT = 90
-        private const val SURAH_END_MARGIN = 2
     }
 }

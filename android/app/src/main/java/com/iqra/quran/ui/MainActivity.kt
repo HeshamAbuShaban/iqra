@@ -92,6 +92,7 @@ private val quranFont = FontFamily(Font(R.font.amiri))
 private val accentColor = Color(0xFF2BB6A0)
 private val wrongColor = Color(0xFFE0625A)
 private val goldColor = Color(0xFFD9B36B)
+private val reciteBlue = Color(0xFF4A9EFF)
 
 private val Pill = RoundedCornerShape(50)
 private val CardRadius = RoundedCornerShape(16.dp)
@@ -315,6 +316,8 @@ fun ReaderScreen(
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val modelProgress by vm.modelProgress.collectAsStateWithLifecycle()
+    val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
+    val recognized by vm.recognizedText.collectAsStateWithLifecycle()
 
     val surahInfo = remember(data, surah) {
         data?.surahList()?.firstOrNull { it.number == surah }
@@ -337,7 +340,7 @@ fun ReaderScreen(
     CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { idx ->
-                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active)
+                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse)
             }
             // Immersive reader header
             ReaderHeader(
@@ -371,7 +374,7 @@ fun ReaderScreen(
                     Button(
                         onClick = {
                             if (recording) vm.stopRecite()
-                            else onRequestMic { vm.startRecite(surah) }
+                            else onRequestMic { vm.startRecite(surah, currentPage ?: (startIdx + 1)) }
                         },
                         shape = Pill,
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
@@ -388,6 +391,17 @@ fun ReaderScreen(
                             Spacer(Modifier.width(6.dp))
                             Text(if (recording) "Stop" else "Recite")
                         }
+                    }
+                    if (recognized.isNotEmpty()) {
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            recognized,
+                            fontSize = 13.sp,
+                            fontFamily = quranFont,
+                            color = accentColor,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             }
@@ -461,6 +475,7 @@ fun MushafPageView(
     hide: Boolean,
     currentKey: String?,
     active: Boolean,
+    activeVerse: Int?,
 ) {
     Column(
         Modifier.fillMaxSize()
@@ -471,7 +486,7 @@ fun MushafPageView(
             when (line.type) {
                 "surah-header" -> SurahHeader(line.text ?: "")
                 "basmala" -> Basmala()
-                "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active)
+                "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse)
             }
         }
     }
@@ -484,6 +499,7 @@ fun LineText(
     hide: Boolean,
     currentKey: String?,
     active: Boolean,
+    activeVerse: Int?,
 ) {
     if (words.isEmpty()) return
     val roundelVerses = words.filter { it.isVerseEnd }.map { it.verse }
@@ -497,29 +513,41 @@ fun LineText(
         val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
         val st = statusMap[key] ?: WordStatus.SKIPPED
         val isCur = key == currentKey
-        // Tarteel-style hide: blank the word but keep its EXACT width so the
-        // verse roundels (ayah numbers) stay fixed in place. Achieved by
-        // drawing the real word text in the background color (invisible yet
-        // space-preserving) instead of a fixed kashida.
-        val isHidden = active && hide && st == WordStatus.SKIPPED
-        val color = when {
-            isCur -> accentColor
-            st == WordStatus.WRONG -> wrongColor
-            isHidden -> MaterialTheme.colorScheme.background
-            else -> MaterialTheme.colorScheme.onSurface
-        }
-        // quran_android-style overlay highlight: filled rect behind the active
-        // word (current = accent, wrong = red), spanning the word bounds.
-        val bg = when {
-            isCur -> accentColor.copy(alpha = 0.28f)
-            st == WordStatus.WRONG -> wrongColor.copy(alpha = 0.22f)
-            else -> Color.Transparent
+        val inActiveAyah = activeVerse != null && w.verse == activeVerse
+
+        // HIDE MODE: only the ACTIVE ayah is revealed, drawn in blue. Everything
+        // else is blanked (real text drawn in background color -> width kept, so
+        // the verse roundels stay fixed). As recitation moves on, the previous
+        // ayah reverts to blank and the next ayah becomes blue — strict
+        // ayah-by-ayah, never a free word-jump across the page.
+        val (color, bg) = if (hide) {
+            when {
+                inActiveAyah && st == WordStatus.WRONG -> reciteBlue to wrongColor.copy(alpha = 0.22f)
+                inActiveAyah -> reciteBlue to Color.Transparent
+                else -> MaterialTheme.colorScheme.background to Color.Transparent
+            }
+        } else {
+            // NORMAL MODE: light highlight over the WHOLE active ayah (we are
+            // here), plus a stronger follow-highlight on the current word
+            // (quran_android style: current = accent, wrong = red).
+            val background = when {
+                st == WordStatus.WRONG -> wrongColor.copy(alpha = 0.22f)
+                inActiveAyah && isCur -> accentColor.copy(alpha = 0.32f)
+                inActiveAyah -> accentColor.copy(alpha = 0.14f)
+                else -> Color.Transparent
+            }
+            val fg = when {
+                st == WordStatus.WRONG -> wrongColor
+                isCur -> accentColor
+                else -> MaterialTheme.colorScheme.onSurface
+            }
+            fg to background
         }
         builder.pushStyle(
             SpanStyle(
                 color = color,
                 background = bg,
-                fontWeight = if (isCur) FontWeight.SemiBold else FontWeight.Normal,
+                fontWeight = if (isCur && !hide) FontWeight.SemiBold else FontWeight.Normal,
             ),
         )
         builder.append(w.text)
