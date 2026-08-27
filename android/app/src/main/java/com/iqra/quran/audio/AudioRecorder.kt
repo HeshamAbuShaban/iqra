@@ -59,6 +59,9 @@ class AudioRecorder(private val sampleRate: Int = 16000) {
 
     fun isRecording(): Boolean = running
 
+    /** Clears the captured buffer without stopping the mic (re-anchor recognition). */
+    fun reset() = synchronized(samples) { samples.clear() }
+
     /** Snapshot of currently captured samples (for live/streaming recognition). */
     fun currentSamples(): FloatArray = synchronized(samples) { samples.toFloatArray() }
 }

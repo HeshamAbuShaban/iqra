@@ -36,10 +36,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.data.MushafPage
+import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.WordStatus
 
 class MainActivity : ComponentActivity() {
@@ -56,7 +62,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = lightMushafScheme()) {
+            MaterialTheme(colorScheme = darkMushafScheme()) {
                 App(
                     vm,
                     onRequestMic = { block ->
@@ -77,17 +83,18 @@ class MainActivity : ComponentActivity() {
 }
 
 private val quranFont = FontFamily(Font(R.font.amiri))
-private val accentColor = Color(0xFF0E7C66)
-private val wrongColor = Color(0xFFB00020)
-private val goldColor = Color(0xFF8A6D3B)
+private val accentColor = Color(0xFF2BB6A0)
+private val wrongColor = Color(0xFFE0625A)
+private val goldColor = Color(0xFFD9B36B)
 
-private fun lightMushafScheme() = lightColorScheme(
-    primary = goldColor,
-    secondary = Color(0xFFB89968),
-    background = Color(0xFFF7EFDC),
-    surface = Color(0xFFFBF5E6),
-    onBackground = Color(0xFF3B2F1E),
-    onSurface = Color(0xFF3B2F1E),
+private fun darkMushafScheme() = darkColorScheme(
+    primary = accentColor,
+    secondary = goldColor,
+    background = Color(0xFF15151A),
+    surface = Color(0xFF1F1F26),
+    onBackground = Color(0xFFF2E8D5),
+    onSurface = Color(0xFFF2E8D5),
+    onPrimary = Color(0xFF06231F),
 )
 
 @Composable
@@ -194,13 +201,17 @@ fun ReaderScreen(
     val modelProgress by vm.modelProgress.collectAsStateWithLifecycle()
 
     val active = recording || statusMap.isNotEmpty()
-    val initial = remember(surah) { Mushaf_firstPage(mushaf, surah) }
-    val pagerState = rememberPagerState(initialPage = initial, pageCount = { mushaf.size })
+    val startIdx = remember(surah) { Mushaf_firstPage(mushaf, surah) - 1 }
+    val pagerState = rememberPagerState(initialPage = startIdx, pageCount = { mushaf.size })
 
     LaunchedEffect(currentPage) {
-        if (currentPage != null && currentPage != pagerState.currentPage) {
-            pagerState.scrollToPage(currentPage!!)
+        val target = (currentPage ?: (startIdx + 1)) - 1
+        if (target != pagerState.currentPage) {
+            pagerState.scrollToPage(target)
         }
+    }
+    LaunchedEffect(pagerState.currentPage) {
+        vm.setCurrentPage(pagerState.currentPage + 1)
     }
 
     CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
@@ -263,48 +274,68 @@ fun MushafPageView(
     Column(
         Modifier.fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 10.dp),
     ) {
         for (line in page.lines) {
             when (line.type) {
                 "surah-header" -> SurahHeader(line.text ?: "")
                 "basmala" -> Basmala()
-                "text" -> {
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        for (w in line.words ?: emptyList()) {
-                            val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
-                            val st = statusMap[key] ?: WordStatus.SKIPPED
-                            WordView(w.text, st, hide, key == currentKey, active)
-                            if (w.isVerseEnd) VerseRoundel(w.verse)
-                        }
-                    }
-                }
+                "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active)
             }
         }
     }
 }
 
 @Composable
-fun WordView(text: String, st: WordStatus, hide: Boolean, isCurrent: Boolean, active: Boolean) {
-    val blank = active && hide && st == WordStatus.SKIPPED
-    val shown = if (blank) "ـــ" else text
-    val color = when {
-        isCurrent -> accentColor
-        st == WordStatus.WRONG -> wrongColor
-        else -> MaterialTheme.colorScheme.onSurface
+fun LineText(
+    words: List<MushafWord>,
+    statusMap: Map<String, WordStatus>,
+    hide: Boolean,
+    currentKey: String?,
+    active: Boolean,
+) {
+    if (words.isEmpty()) return
+    val roundelVerses = words.filter { it.isVerseEnd }.map { it.verse }
+    val inlineContent = roundelVerses.associate { v ->
+        "rdl_$v" to InlineTextContent(
+            Placeholder(20.sp, 20.sp, PlaceholderVerticalAlign.Center),
+        ) { VerseRoundel(v) }
     }
-    val bg = if (isCurrent) accentColor.copy(alpha = 0.15f) else Color.Transparent
+    val builder = AnnotatedString.Builder()
+    words.forEachIndexed { i, w ->
+        val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
+        val st = statusMap[key] ?: WordStatus.SKIPPED
+        val isCur = key == currentKey
+        val hidden = active && hide && st == WordStatus.SKIPPED
+        val color = when {
+            isCur -> accentColor
+            st == WordStatus.WRONG -> wrongColor
+            hidden -> Color.Transparent
+            else -> MaterialTheme.colorScheme.onSurface
+        }
+        builder.pushStyle(
+            SpanStyle(
+                color = color,
+                background = if (isCur) accentColor.copy(alpha = 0.18f) else Color.Transparent,
+                fontWeight = if (isCur) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+        )
+        builder.append(if (hidden) "ـــ" else w.text)
+        builder.pop()
+        if (w.isVerseEnd) {
+            builder.append(" ")
+            builder.appendInlineContent("rdl_${w.verse}", " ")
+        }
+        if (i < words.lastIndex) builder.append(" ")
+    }
     Text(
-        shown,
+        builder.toAnnotatedString(),
         fontFamily = quranFont,
-        fontSize = 26.sp,
-        color = color,
-        modifier = Modifier
-            .background(bg)
-            .padding(horizontal = 1.dp),
+        fontSize = 23.sp,
+        lineHeight = 38.sp,
+        textAlign = TextAlign.Right,
+        modifier = Modifier.fillMaxWidth(),
+        inlineContent = inlineContent,
     )
 }
 

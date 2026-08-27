@@ -12,6 +12,7 @@ import com.iqra.quran.data.WordStatus
 import com.iqra.quran.ml.ModelManager
 import com.iqra.quran.ml.TextCtcDecoder
 import com.iqra.quran.ml.TilawaEngine
+import com.iqra.quran.ml.ArabicNormalizer
 import com.iqra.quran.ml.WordAligner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -59,6 +60,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var engine: TilawaEngine? = null
     private var decoder: TextCtcDecoder? = null
     private var refWords: List<MushafWord>? = null
+    private var pageNumber: Int = 1
     private val accumulated = LinkedHashMap<String, WordStatus>()
 
     init {
@@ -75,6 +77,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleHide() { _hideVerse.value = !_hideVerse.value }
+
+    /** Let the reader tell us which page the user is viewing (manual swipe). */
+    fun setCurrentPage(page: Int) {
+        pageNumber = page
+        _currentPage.value = page
+        if (_recording.value) recorder.reset()
+    }
 
     private fun keyOf(w: MushafWord) = "${w.surah}:${w.verse}:${w.wordInVerse}"
 
@@ -104,15 +113,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val ref = Mushaf.wordsForSurah(pages, surah)
         if (ref.isEmpty()) return
         refWords = ref
+        pageNumber = Mushaf.firstPageOfSurah(pages, surah)
         accumulated.clear()
         _statusMap.value = emptyMap()
         _currentKey.value = null
-        _currentPage.value = null
+        _currentPage.value = pageNumber
         viewModelScope.launch(Dispatchers.IO) {
             if (engine == null && !ensureEngine()) return@launch
             val eng = engine ?: return@launch
             val dec = decoder ?: return@launch
-            val reference = ref.map { it.text }
             var micOk = true
             withContext(Dispatchers.Main) {
                 _status.value = "Listening…"
@@ -134,26 +143,40 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     val lp = eng.run(used)
                     val decoded = dec.decode(lp.data, lp.timeSteps, lp.vocabSize)
                     val pred = decoded.text.split(" ").filter { it.isNotBlank() }
-                    val statuses = WordAligner.alignWords(reference, pred)
-                    var changed = false
-                    var lastMatched = -1
+                    if (pred.isEmpty()) continue
+                    // Window the reference to the CURRENT page (+ next page for
+                    // boundary continuity). Reference words are normalized the
+                    // same way as the CTC output (no harakat) so they can match.
+                    val cur = refWords!!.filter { it.page == pageNumber }
+                    val nxt = refWords!!.filter { it.page == pageNumber + 1 }
+                    val refAll = cur + nxt
+                    if (refAll.isEmpty()) continue
+                    val refNorm = refAll.map { ArabicNormalizer.normalize(it.text) }
+                    val statuses = WordAligner.alignWords(refNorm, pred)
+                    var lastIdx = -1
                     for (i in statuses.indices) {
                         val st = statuses[i]
-                        if (st != WordStatus.SKIPPED) {
-                            val k = keyOf(ref[i])
-                            if (accumulated[k] != st) {
-                                accumulated[k] = st
-                                changed = true
-                            }
-                            lastMatched = i
+                        if (st == WordStatus.SKIPPED) continue
+                        lastIdx = i
+                        val w = refAll[i]
+                        val k = keyOf(w)
+                        val prev = accumulated[k]
+                        if (prev == null || prev == WordStatus.WRONG && st == WordStatus.CORRECT) {
+                            accumulated[k] = st
                         }
                     }
-                    val curKey = if (lastMatched >= 0) keyOf(ref[lastMatched]) else null
-                    val curPage = if (lastMatched >= 0) ref[lastMatched].page - 1 else null
+                    val curKey = if (lastIdx >= 0) keyOf(refAll[lastIdx]) else null
+                    val advance = lastIdx >= cur.size && nxt.isNotEmpty()
                     withContext(Dispatchers.Main) {
-                        if (changed) _statusMap.value = LinkedHashMap(accumulated)
+                        _statusMap.value = LinkedHashMap(accumulated)
                         _currentKey.value = curKey
-                        _currentPage.value = curPage
+                        if (advance) {
+                            pageNumber += 1
+                            _currentPage.value = pageNumber
+                            recorder.reset()
+                        } else {
+                            _currentPage.value = pageNumber
+                        }
                     }
                 } catch (_: Exception) {
                 }
