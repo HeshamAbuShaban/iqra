@@ -37,15 +37,17 @@ class VerseMatcher(private val data: com.iqra.quran.data.QuranData) {
 
         val FRAG_BLEND = 0.82
         val scoreRef: (String, String) -> Double = { q, ref ->
-            if (ref.isEmpty()) return@scoreRef 0.0
-            val qn = q.replace(" ", "")
-            var raw = Levenshtein.ratio(q, ref)
-            if (qn.length <= 10) raw = maxOf(raw, shortBoost(qn, ref))
-            if (qn.length >= 8) {
-                val frag = Levenshtein.fragmentScore(qn, ref.replace(" ", ""))
-                if (frag > raw) raw = raw + (frag - raw) * FRAG_BLEND
+            if (ref.isEmpty()) 0.0
+            else {
+                val qn = q.replace(" ", "")
+                var raw = Levenshtein.ratio(q, ref)
+                if (qn.length <= 10) raw = maxOf(raw, shortBoost(qn, ref))
+                if (qn.length >= 8) {
+                    val frag = Levenshtein.fragmentScore(qn, ref.replace(" ", ""))
+                    if (frag > raw) raw = raw + (frag - raw) * FRAG_BLEND
+                }
+                raw
             }
-            raw
         }
 
         val singles = candidates.map { v ->
