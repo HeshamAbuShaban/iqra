@@ -192,11 +192,15 @@ class QuranData private constructor(
                 ngram3.add(ng3)
             }
 
-            val metaRaw = JSONArray(readAsset(assets, "surah_meta.json"))
             val metaMap = mutableMapOf<Int, JSONObject>()
-            for (i in 0 until metaRaw.length()) {
-                val o = metaRaw.getJSONObject(i)
-                metaMap[o.getInt("number")] = o
+            try {
+                val metaRaw = JSONArray(readAsset(assets, "surah_meta.json"))
+                for (i in 0 until metaRaw.length()) {
+                    val o = metaRaw.getJSONObject(i)
+                    metaMap[o.getInt("number")] = o
+                }
+            } catch (e: Exception) {
+                Log.w("QuranData", "surah_meta.json missing/invalid; using defaults", e)
             }
 
             Log.i("QuranData", "loaded ${verses.size} verses, vocab=$vocabSize, ctc=${singleVerseTokens.size}")
