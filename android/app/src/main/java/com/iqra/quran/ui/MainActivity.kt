@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -310,6 +312,7 @@ fun ReaderScreen(
     val statusMap by vm.statusMap.collectAsStateWithLifecycle()
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val currentPage by vm.currentPage.collectAsStateWithLifecycle()
+    val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val modelProgress by vm.modelProgress.collectAsStateWithLifecycle()
 
@@ -341,6 +344,8 @@ fun ReaderScreen(
                 surahName = surahInfo?.name ?: "",
                 surahEn = surahInfo?.nameEn ?: "",
                 page = (currentPage ?: (startIdx + 1)),
+                playing = playingSurah == surah,
+                onPlayToggle = { vm.togglePlaySurah(surah) },
                 onBack = onBack,
             )
             // Floating recitation bar
@@ -391,7 +396,14 @@ fun ReaderScreen(
 }
 
 @Composable
-fun ReaderHeader(surahName: String, surahEn: String, page: Int, onBack: () -> Unit) {
+fun ReaderHeader(
+    surahName: String,
+    surahEn: String,
+    page: Int,
+    playing: Boolean,
+    onPlayToggle: () -> Unit,
+    onBack: () -> Unit,
+) {
     Box(
         Modifier.fillMaxWidth()
             .background(
@@ -408,6 +420,16 @@ fun ReaderHeader(surahName: String, surahEn: String, page: Int, onBack: () -> Un
         IconButton(onClick = onBack, Modifier.align(Alignment.TopStart).padding(4.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
                 tint = MaterialTheme.colorScheme.onBackground)
+        }
+        IconButton(
+            onClick = onPlayToggle,
+            Modifier.align(Alignment.TopEnd).padding(4.dp),
+        ) {
+            Icon(
+                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                "Play recitation",
+                tint = if (playing) accentColor else MaterialTheme.colorScheme.onBackground,
+            )
         }
         Column(
             Modifier.align(Alignment.TopCenter).padding(top = 6.dp),

@@ -2,6 +2,8 @@ package com.iqra.quran.ui
 
 import android.app.Application
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.iqra.quran.audio.AudioRecorder
@@ -238,7 +240,48 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _status.value = "Done — review your recitation below"
     }
 
+    // ---- Reference recitation audio (stream-on-tap, nothing bundled) ----
+    // Mirrors quran_android's gapless scheme: download.quranicaudio.com/quran/<reciter>/<NNN>.mp3
+    private var mediaPlayer: MediaPlayer? = null
+    private val _playingSurah = MutableStateFlow(-1)
+    val playingSurah: StateFlow<Int> = _playingSurah
+
+    fun togglePlaySurah(surah: Int) {
+        if (_playingSurah.value == surah) {
+            stopPlayback()
+            return
+        }
+        stopPlayback()
+        val url = "https://download.quranicaudio.com/quran/mahmood_khaleel_al-husaree/" +
+            "%03d.mp3".format(surah)
+        try {
+            mediaPlayer = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+                setDataSource(url)
+                setOnPreparedListener { mp -> mp.start(); _playingSurah.value = surah }
+                setOnCompletionListener { stopPlayback() }
+                setOnErrorListener { _, _, _ -> stopPlayback(); false }
+                prepareAsync()
+            }
+        } catch (_: Exception) {
+            stopPlayback()
+        }
+    }
+
+    fun stopPlayback() {
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
+        _playingSurah.value = -1
+    }
+
     override fun onCleared() {
+        stopPlayback()
         engine?.close()
         super.onCleared()
     }
