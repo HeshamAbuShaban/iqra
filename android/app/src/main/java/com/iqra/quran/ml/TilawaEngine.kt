@@ -7,6 +7,7 @@ import android.util.Log
 import java.io.File
 import java.nio.FloatBuffer
 import java.nio.IntBuffer
+import java.nio.LongBuffer
 
 /**
  * On-device acoustic model wrapper around the Tilawa ONNX graph
@@ -40,7 +41,7 @@ class TilawaEngine(modelFile: File, private val vocabSize: Int) {
         )
         val lengthTensor = OnnxTensor.createTensor(
             env,
-            IntBuffer.wrap(intArrayOf(n)),
+            LongBuffer.wrap(longArrayOf(n.toLong())),
             longArrayOf(1),
         )
         try {

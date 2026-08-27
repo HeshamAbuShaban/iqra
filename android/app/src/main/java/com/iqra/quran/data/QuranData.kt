@@ -47,6 +47,14 @@ class QuranData private constructor(
         }
     }
 
+    /** Arabic text for a verse reconstructed from its CTC token table. */
+    fun verseText(surah: Int, ayah: Int): String {
+        val key = surah * 1000 + ayah
+        val ids = singleVerseTokens[key]
+        return if (ids != null) decoder.tokenIdsToText(ids)
+        else getVerse(surah, ayah)?.textUthmani ?: ""
+    }
+
     /** N-gram shortlist mirroring @tilawa/core _jointCandidateVerses. */
     fun shortlist(noSpace: String, maxCandidates: Int = 950): List<Verse> {
         if (noSpace.length < 4) return verses

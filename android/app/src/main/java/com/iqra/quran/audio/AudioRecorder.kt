@@ -39,8 +39,8 @@ class AudioRecorder(private val sampleRate: Int = 16000) {
             while (running) {
                 val read = rec.read(shortBuf, 0, shortBuf.size)
                 if (read <= 0) continue
-                for (i in 0 until read) {
-                    samples.add(shortBuf[i] / 32768.0f)
+                 for (i in 0 until read) {
+                    synchronized(samples) { samples.add(shortBuf[i] / 32768.0f) }
                 }
             }
         }.also { it.start() }
@@ -58,4 +58,7 @@ class AudioRecorder(private val sampleRate: Int = 16000) {
     }
 
     fun isRecording(): Boolean = running
+
+    /** Snapshot of currently captured samples (for live/streaming recognition). */
+    fun currentSamples(): FloatArray = synchronized(samples) { samples.toFloatArray() }
 }
