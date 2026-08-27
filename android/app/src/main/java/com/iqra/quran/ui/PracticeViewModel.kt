@@ -79,7 +79,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveLastRead(surah: Int, page: Int) {
         prefs.edit().putInt("last_surah", surah).putInt("last_page", page).apply()
-        _lastRead.value = surah to page
+        _lastRead.value = surah to p
+    }
+
+    private val _bookmarks = MutableStateFlow(loadBookmarks())
+    val bookmarks: StateFlow<Set<Int>> = _bookmarks
+
+    private fun loadBookmarks(): Set<Int> {
+        val raw = prefs.getStringSet("bookmarks", emptySet()) ?: emptySet()
+        return raw.mapNotNull { it.toIntOrNull() }.toSet()
+    }
+
+    fun isBookmarked(page: Int) = _bookmarks.value.contains(page)
+
+    fun toggleBookmark(page: Int) {
+        val cur = _bookmarks.value.toMutableSet()
+        if (!cur.add(page)) cur.remove(page)
+        prefs.edit().putStringSet("bookmarks", cur.map { it.toString() }.toSet()).apply()
+        _bookmarks.value = cur
     }
 
     private val recorder = AudioRecorder(16000)

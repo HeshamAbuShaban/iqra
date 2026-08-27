@@ -14,6 +14,17 @@ data class SurahInfo(
     val name: String,
     val nameEn: String,
     val ayahCount: Int,
+    val revelationType: String = "Meccan",
+    val startPage: Int = 1,
+    val endPage: Int = 1,
+    val juz: Int = 1,
+)
+
+data class JuzInfo(
+    val number: Int,
+    val startPage: Int,
+    val surahName: String,
+    val surahNameEn: String,
 )
 
 data class WordResult(

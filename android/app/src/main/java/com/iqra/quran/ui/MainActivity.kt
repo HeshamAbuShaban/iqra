@@ -13,7 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -32,6 +33,10 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -137,10 +142,11 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         return
     }
     when (val s = screen) {
-        Screen.Picker -> PickerScreen(vm, lastRead) { screen = Screen.Reader(it) }
+        Screen.Picker -> HomeScreen(vm, lastRead) { surah, page -> screen = Screen.Reader(surah, page) }
         is Screen.Reader -> ReaderScreen(
             vm = vm,
             surah = s.surah,
+            startPage = s.page,
             onBack = { screen = Screen.Picker },
             onRequestMic = onRequestMic,
         )
@@ -149,14 +155,82 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
 
 sealed interface Screen {
     data object Picker : Screen
-    data class Reader(val surah: Int) : Screen
+    data class Reader(val surah: Int, val page: Int? = null) : Screen
+}
+
+enum class HomeTab { Surahs, Juz, Bookmarks }
+enum class SurahView { List, Grid }
+
+@Composable
+fun HomeScreen(
+    vm: PracticeViewModel,
+    lastRead: Pair<Int, Int>?,
+    onOpen: (Int, Int) -> Unit,
+) {
+    val data = vm.data.collectAsStateWithLifecycle().value ?: return
+    var tab by remember { mutableStateOf(HomeTab.Surahs) }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Box(
+            Modifier.fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(goldColor.copy(alpha = 0.14f), Color.Transparent)))
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Iqra", fontFamily = quranFont, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = goldColor)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Memorize with live recitation feedback",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+        }
+        HomeTabRow(tab) { tab = it }
+        when (tab) {
+            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen)
+            HomeTab.Juz -> JuzList(vm, data, onOpen)
+            HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen)
+        }
+    }
 }
 
 @Composable
-fun PickerScreen(vm: PracticeViewModel, lastRead: Pair<Int, Int>?, onPick: (Int) -> Unit) {
-    val data = vm.data.collectAsStateWithLifecycle().value ?: return
+fun HomeTabRow(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
+    val tabs = HomeTab.values()
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        tabs.forEach { t ->
+            val sel = t == selected
+            Box(
+                Modifier.weight(1f).padding(4.dp).clip(Pill)
+                    .background(if (sel) goldColor.copy(alpha = 0.16f) else Color.Transparent)
+                    .clickable { onSelect(t) }.padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    when (t) {
+                        HomeTab.Surahs -> "Surahs"
+                        HomeTab.Juz -> "Juz"
+                        HomeTab.Bookmarks -> "Bookmarks"
+                    },
+                    fontSize = 14.sp,
+                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (sel) goldColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SurahIndex(
+    vm: PracticeViewModel,
+    lastRead: Pair<Int, Int>?,
+    data: com.iqra.quran.data.QuranData,
+    onOpen: (Int, Int) -> Unit,
+) {
     val surahs = remember { data.surahList() }
     var query by remember { mutableStateOf("") }
+    var view by remember { mutableStateOf(SurahView.List) }
     val filtered = remember(query) {
         if (query.isBlank()) {
             surahs
@@ -168,137 +242,254 @@ fun PickerScreen(vm: PracticeViewModel, lastRead: Pair<Int, Int>?, onPick: (Int)
             }
         }
     }
+    val meccan = filtered.filter { it.revelationType == "Meccan" }
+    val madani = filtered.filter { it.revelationType == "Madani" }
     val continueInfo = remember(lastRead, surahs) {
-        lastRead?.let { (num, page) ->
-            surahs.firstOrNull { it.number == num }?.let { it to page }
-        }
+        lastRead?.let { (num, page) -> surahs.firstOrNull { it.number == num }?.let { it to page } }
     }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Box(
-            Modifier.fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(goldColor.copy(alpha = 0.12f), Color.Transparent)
-                    )
-                )
-                .padding(horizontal = 16.dp, vertical = 18.dp),
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "Iqra",
-                fontFamily = quranFont,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Bold,
-                color = goldColor,
+            TextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Search surah name or number") },
+                singleLine = true,
+                shape = Pill,
+                modifier = Modifier.weight(1f),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                ),
             )
-            Text(
-                "Memorize with live recitation feedback",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-        }
-        continueInfo?.let { (info, page) ->
-            Card(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
-                    .clickable { onPick(info.number) },
-                shape = CardRadius,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.Visibility,
-                        null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("Continue", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text(
-                            "${info.nameEn}  ·  Page $page",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                    }
-                }
+            Spacer(Modifier.width(8.dp))
+            IconButton(onClick = { view = if (view == SurahView.List) SurahView.Grid else SurahView.List }) {
+                Icon(
+                    if (view == SurahView.List) Icons.Filled.ViewModule else Icons.Filled.ViewList,
+                    "Toggle layout",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
-        TextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Search surah name or number") },
-            singleLine = true,
-            shape = Pill,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-            ),
-        )
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(bottom = 24.dp),
-        ) {
-            items(filtered, key = { it.number }) { s ->
-                SurahCard(s) { onPick(s.number) }
+        Box(Modifier.fillMaxSize().weight(1f)) {
+            if (view == SurahView.List) {
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                ) {
+                    continueInfo?.let { (info, page) ->
+                        item { ContinueCard(info, page) { onOpen(info.number, page) } }
+                    }
+                    if (meccan.isNotEmpty()) {
+                        item { SectionHeader("Meccan", meccan.size, false) }
+                        items(meccan, key = { it.number }) { SurahRow(it, onOpen) }
+                    }
+                    if (madani.isNotEmpty()) {
+                        item { SectionHeader("Madani", madani.size, true) }
+                        items(madani, key = { it.number }) { SurahRow(it, onOpen) }
+                    }
+                    if (filtered.isEmpty()) {
+                        item { EmptyHint("No surah matches \"$query\"") }
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp, top = 4.dp),
+                ) {
+                    continueInfo?.let { (info, page) ->
+                        item { ContinueCard(info, page) { onOpen(info.number, page) } }
+                    }
+                    androidx.compose.foundation.lazy.grid.items(filtered, key = { it.number }) { SurahGridCell(it, onOpen) }
+                }
             }
         }
     }
 }
 
 @Composable
-fun SurahCard(s: com.iqra.quran.data.SurahInfo, onClick: () -> Unit) {
+fun ContinueCard(info: com.iqra.quran.data.SurahInfo, page: Int, onClick: () -> Unit) {
     Card(
-        Modifier.padding(6.dp).fillMaxWidth().clickable { onClick() },
+        Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable(onClick = onClick),
         shape = CardRadius,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
-        Column(
-            Modifier.padding(16.dp).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = goldColor.copy(alpha = 0.14f),
-                modifier = Modifier.size(40.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("${s.number}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = goldColor)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                s.name,
-                fontFamily = quranFont,
-                fontSize = 25.sp,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                s.nameEn,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-            )
-            Spacer(Modifier.height(4.dp))
-            Surface(
-                shape = Pill,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-            ) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text("Continue", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
                 Text(
-                    "${s.ayahCount} verses",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                    "${info.nameEn}  ·  Page $page",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
         }
+    }
+}
+
+@Composable
+fun SectionHeader(title: String, count: Int, madani: Boolean) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Surface(shape = CircleShape, color = (if (madani) accentColor else goldColor).copy(alpha = 0.2f), modifier = Modifier.size(10.dp)) {}
+        Spacer(Modifier.width(8.dp))
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.width(8.dp))
+        Text("· $count", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+    }
+}
+
+@Composable
+fun SurahRow(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
+    val madani = s.revelationType == "Madani"
+    val accent = if (madani) accentColor else goldColor
+    Card(
+        Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onOpen(s.number, s.startPage) },
+        shape = CardRadius,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = CircleShape, color = accent.copy(alpha = 0.16f), modifier = Modifier.size(42.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("${s.number}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = accent)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(s.name, fontFamily = quranFont, fontSize = 22.sp, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(2.dp))
+                Text(s.nameEn, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${if (madani) "Madani" else "Meccan"} · ${s.ayahCount} verses · pp ${s.startPage}–${s.endPage} · Juz ${s.juz}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                )
+            }
+            Surface(shape = CircleShape, color = accent, modifier = Modifier.size(10.dp)) {}
+        }
+    }
+}
+
+@Composable
+fun SurahGridCell(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
+    val madani = s.revelationType == "Madani"
+    val accent = if (madani) accentColor else goldColor
+    Column(
+        Modifier.padding(6.dp).fillMaxWidth().clickable { onOpen(s.number, s.startPage) }
+            .clip(CardRadius).background(MaterialTheme.colorScheme.surface).padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(34.dp).background(accent.copy(alpha = 0.16f), CircleShape),
+        ) { Text("${s.number}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = accent) }
+        Spacer(Modifier.height(6.dp))
+        Text(s.name, fontFamily = quranFont, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center, maxLines = 1)
+        Text(s.nameEn, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), textAlign = TextAlign.Center, maxLines = 1)
+    }
+}
+
+@Composable
+fun JuzList(
+    vm: PracticeViewModel,
+    data: com.iqra.quran.data.QuranData,
+    onOpen: (Int, Int) -> Unit,
+) {
+    val juz = remember { data.juzList() }
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp, top = 8.dp),
+    ) {
+        items(juz, key = { it.number }) { j ->
+            val surah = data.surahAtPage(j.startPage)
+            Card(
+                Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                    .clickable { onOpen(surah?.number ?: 1, j.startPage) },
+                shape = CardRadius,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = CircleShape, color = accentColor.copy(alpha = 0.16f), modifier = Modifier.size(42.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("${j.number}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = accentColor)
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Juz ${j.number}", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            "Starts at page ${j.startPage}" + if (j.surahNameEn.isNotEmpty()) " · ${j.surahNameEn}" else "",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BookmarkList(
+    vm: PracticeViewModel,
+    data: com.iqra.quran.data.QuranData,
+    onOpen: (Int, Int) -> Unit,
+) {
+    val pages by vm.bookmarks.collectAsStateWithLifecycle()
+    val sorted = pages.sorted()
+    if (sorted.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                "No bookmarks yet.\nTap the bookmark icon while reading to save a page.",
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            )
+        }
+        return
+    }
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp, top = 8.dp),
+    ) {
+        items(sorted, key = { it }) { page ->
+            val info = data.surahAtPage(page)
+            Card(
+                Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onOpen(info?.number ?: 1, page) },
+                shape = CardRadius,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Bookmark, null, tint = goldColor)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Page $page", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            info?.let { "${it.nameEn} · Juz ${it.juz}" } ?: "",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyHint(text: String) {
+    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(text, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
     }
 }
 
@@ -306,6 +497,7 @@ fun SurahCard(s: com.iqra.quran.data.SurahInfo, onClick: () -> Unit) {
 fun ReaderScreen(
     vm: PracticeViewModel,
     surah: Int,
+    startPage: Int? = null,
     onBack: () -> Unit,
     onRequestMic: (() -> Unit) -> Unit,
 ) {
@@ -323,6 +515,7 @@ fun ReaderScreen(
     val recognized by vm.recognizedText.collectAsStateWithLifecycle()
     val playIndex by vm.playIndex.collectAsStateWithLifecycle()
     val playHead by vm.playHead.collectAsStateWithLifecycle()
+    val bookmarkPages by vm.bookmarks.collectAsStateWithLifecycle()
     var showGoto by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
 
@@ -330,9 +523,12 @@ fun ReaderScreen(
         data?.surahList()?.firstOrNull { it.number == surah }
     }
     val active = recording || statusMap.isNotEmpty()
-    val startIdx = remember(surah) { Mushaf_firstPage(mushaf, surah) - 1 }
+    val startIdx = remember(surah, startPage) { (startPage ?: Mushaf_firstPage(mushaf, surah)) - 1 }
     val pagerState = rememberPagerState(initialPage = startIdx, pageCount = { mushaf.size })
 
+    LaunchedEffect(startPage) {
+        if (startPage != null) vm.jumpToPage(startPage)
+    }
     LaunchedEffect(currentPage) {
         val target = (currentPage ?: (startIdx + 1)) - 1
         if (target != pagerState.currentPage) {
@@ -351,11 +547,12 @@ fun ReaderScreen(
             }
             // Immersive reader header
             ReaderHeader(
-                surahName = surahInfo?.name ?: "",
-                surahEn = surahInfo?.nameEn ?: "",
+                info = surahInfo,
                 page = (currentPage ?: (startIdx + 1)),
                 playing = playingSurah == surah,
+                bookmarked = bookmarkPages.contains(currentPage ?: -1),
                 onPlayToggle = { vm.togglePlaySurah(surah) },
+                onToggleBookmark = { vm.toggleBookmark(currentPage ?: (startIdx + 1)) },
                 onBack = onBack,
             )
             // Floating recitation bar
@@ -452,11 +649,12 @@ fun ReaderScreen(
 
 @Composable
 fun ReaderHeader(
-    surahName: String,
-    surahEn: String,
+    info: com.iqra.quran.data.SurahInfo?,
     page: Int,
     playing: Boolean,
+    bookmarked: Boolean,
     onPlayToggle: () -> Unit,
+    onToggleBookmark: () -> Unit,
     onBack: () -> Unit,
 ) {
     Box(
@@ -476,31 +674,46 @@ fun ReaderHeader(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
                 tint = MaterialTheme.colorScheme.onBackground)
         }
-        IconButton(
-            onClick = onPlayToggle,
-            Modifier.align(Alignment.TopEnd).padding(4.dp),
-        ) {
-            Icon(
-                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                "Play recitation",
-                tint = if (playing) accentColor else MaterialTheme.colorScheme.onBackground,
-            )
+        Row(Modifier.align(Alignment.TopEnd)) {
+            IconButton(onClick = onToggleBookmark) {
+                Icon(
+                    if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                    "Bookmark page",
+                    tint = if (bookmarked) goldColor else MaterialTheme.colorScheme.onBackground,
+                )
+            }
+            IconButton(onClick = onPlayToggle) {
+                Icon(
+                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    "Play recitation",
+                    tint = if (playing) accentColor else MaterialTheme.colorScheme.onBackground,
+                )
+            }
         }
         Column(
-            Modifier.align(Alignment.TopCenter).padding(top = 6.dp),
+            Modifier.align(Alignment.TopCenter).padding(top = 6.dp, start = 56.dp, end = 56.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                surahName,
+                info?.name ?: "",
                 fontFamily = quranFont,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = goldColor,
             )
             Text(
-                "$surahEn  ·  Page $page",
-                fontSize = 12.sp,
+                buildString {
+                    append(info?.nameEn ?: "")
+                    info?.let {
+                        append("  ·  ${it.revelationType}")
+                        append("  ·  Juz ${it.juz}")
+                        append("  ·  pp ${it.startPage}–${it.endPage}")
+                    }
+                    append("  ·  Page $page")
+                },
+                fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                textAlign = TextAlign.Center,
             )
         }
     }

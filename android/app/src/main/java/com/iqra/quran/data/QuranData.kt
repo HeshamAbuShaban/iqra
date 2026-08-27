@@ -23,6 +23,7 @@ class QuranData private constructor(
     private val refNoSpace: List<String>,
     private val ngram2: List<Set<String>>,
     private val ngram3: List<Set<String>>,
+    private val metaByNumber: Map<Int, JSONObject>,
 ) {
     private val byRef = verses.associateBy { it.surah * 1000 + it.ayah }
     private val bySurah = verses.groupBy { it.surah }
@@ -32,8 +33,35 @@ class QuranData private constructor(
     fun getVerse(surah: Int, ayah: Int): Verse? = byRef[surah * 1000 + ayah]
     fun getSurah(surah: Int): List<Verse> = bySurah[surah] ?: emptyList()
 
-    fun surahList(): List<SurahInfo> = bySurah.map { (num, vs) ->
-        SurahInfo(num, vs.first().surahName, vs.first().surahNameEn, vs.size)
+    fun surahList(): List<SurahInfo> {
+        val meta = metaByNumber
+        return bySurah.map { (num, vs) ->
+            val m = meta[num]
+            SurahInfo(
+                number = num,
+                name = vs.first().surahName,
+                nameEn = vs.first().surahNameEn,
+                ayahCount = vs.size,
+                revelationType = m?.optString("revelationType") ?: "Meccan",
+                startPage = m?.optInt("startPage", 1) ?: 1,
+                endPage = m?.optInt("endPage", 1) ?: 1,
+                juz = m?.optInt("juz", 1) ?: 1,
+            )
+        }
+    }
+
+    fun surahInfo(number: Int): SurahInfo? = surahList().firstOrNull { it.number == number }
+
+    /** The surah that contains a given Mushaf page (for Juz / bookmark jumps). */
+    fun surahAtPage(page: Int): SurahInfo? =
+        surahList().firstOrNull { page in it.startPage..it.endPage }
+
+    fun juzList(): List<JuzInfo> {
+        val surahs = surahList()
+        return JUZ_START_PAGES.mapIndexed { i, p ->
+            val s = surahs.firstOrNull { p in it.startPage..it.endPage }
+            JuzInfo(i + 1, p, s?.name ?: "", s?.nameEn ?: "")
+        }
     }
 
     fun referenceText(v: Verse): String? = reference[v.surah * 1000 + v.ayah]
@@ -86,6 +114,12 @@ class QuranData private constructor(
     }
 
     companion object {
+        val JUZ_START_PAGES = listOf(
+            1, 22, 42, 62, 82, 102, 121, 142, 162, 182,
+            201, 222, 242, 262, 282, 302, 322, 342, 362, 382,
+            402, 422, 442, 462, 482, 502, 522, 542, 562, 582,
+        )
+
         suspend fun load(context: Context): QuranData = withContext(Dispatchers.IO) {
             val assets = context.assets
 
@@ -158,10 +192,17 @@ class QuranData private constructor(
                 ngram3.add(ng3)
             }
 
+            val metaRaw = JSONArray(readAsset(assets, "surah_meta.json"))
+            val metaMap = mutableMapOf<Int, JSONObject>()
+            for (i in 0 until metaRaw.length()) {
+                val o = metaRaw.getJSONObject(i)
+                metaMap[o.getInt("number")] = o
+            }
+
             Log.i("QuranData", "loaded ${verses.size} verses, vocab=$vocabSize, ctc=${singleVerseTokens.size}")
             QuranData(
                 verses, vocab, blankId, vocabSize, singleVerseTokens,
-                reference, refNoSpace, ngram2, ngram3,
+                reference, refNoSpace, ngram2, ngram3, metaMap,
             )
         }
 
