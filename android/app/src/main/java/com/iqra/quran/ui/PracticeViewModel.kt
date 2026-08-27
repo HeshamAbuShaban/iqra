@@ -228,6 +228,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val audio = recorder.currentSamples()
                 if (audio.size < 4800) continue
                 val used = if (audio.size > CAP) audio.copyOfRange(audio.size - CAP, audio.size) else audio
+                // Skip pure silence: real recitation is full of long pauses, and
+                // decoding silence floods the matcher with garbage + drains battery.
+                if (rms(used) < SILENCE_RMS) {
+                    withContext(Dispatchers.Main) { _status.value = "Listening… (silence)" }
+                    continue
+                }
                 try {
                     val lp = eng.run(used)
                     val decoded = dec.decode(lp.data, lp.timeSteps, lp.vocabSize)
@@ -302,7 +308,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         _currentKey.value = currentKey
                         _currentPage.value = page
                         _activeVerse.value = lockedAyah
-                        _recognized.value = transcript
+                        _recognized.value = match.transcript
                     }
                 } catch (_: Exception) {
                 }
@@ -407,5 +413,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val CAP = 12 * 16000
+        // Below this RMS the 12s window is effectively silence -> skip decoding.
+        private const val SILENCE_RMS = 0.0025f
     }
+}
+
+private fun rms(samples: FloatArray): Float {
+    if (samples.isEmpty()) return 0f
+    var sum = 0.0
+    for (v in samples) sum += v * v.toDouble()
+    return Math.sqrt(sum / samples.size).toFloat()
 }
