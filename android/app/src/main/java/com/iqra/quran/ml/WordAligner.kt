@@ -85,4 +85,65 @@ object WordAligner {
         }
         return out
     }
+
+    /**
+     * Word-level alignment between recognized Arabic words and the reference
+     * (target) words of a verse/surah. Each reference entry is one display word.
+     * Returns a status per reference word, index-aligned.
+     */
+    fun alignWords(reference: List<String>, predicted: List<String>): List<WordStatus> {
+        val p = predicted
+        val m = reference.size
+        if (m == 0) return emptyList()
+        val n = p.size
+        if (n == 0) return List(m) { WordStatus.SKIPPED }
+
+        val INF = Int.MAX_VALUE / 2
+        val dp = Array(n + 1) { IntArray(m + 1) }
+        val dir = Array(n + 1) { IntArray(m + 1) } // 0=match/sub, 1=gap-in-p, 2=gap-in-t
+        for (i in 0..n) dp[i][0] = i
+        for (j in 0..m) dp[0][j] = j
+        for (i in 1..n) {
+            for (j in 1..m) {
+                val cost = if (p[i - 1] == reference[j - 1]) 0 else 1
+                val sub = dp[i - 1][j - 1] + cost
+                val del = dp[i - 1][j] + 1
+                val ins = dp[i][j - 1] + 1
+                var best = sub
+                var d = 0
+                if (del < best) { best = del; d = 1 }
+                if (ins < best) { best = ins; d = 2 }
+                dp[i][j] = best
+                dir[i][j] = d
+            }
+        }
+
+        var i = n
+        var j = m
+        val matched = BooleanArray(m)
+        val correct = BooleanArray(m)
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && dir[i][j] == 0) {
+                matched[j - 1] = true
+                correct[j - 1] = (p[i - 1] == reference[j - 1])
+                i--; j--
+            } else if (i > 0 && j > 0 && dir[i][j] == 1) {
+                i--
+            } else if (i > 0 && j > 0 && dir[i][j] == 2) {
+                j--
+            } else if (i > 0) {
+                i--
+            } else {
+                j--
+            }
+        }
+
+        return List(m) { idx ->
+            when {
+                !matched[idx] -> WordStatus.SKIPPED
+                correct[idx] -> WordStatus.CORRECT
+                else -> WordStatus.WRONG
+            }
+        }
+    }
 }
