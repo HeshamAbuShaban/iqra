@@ -33,4 +33,28 @@ fetch "$BASE/vocab.json"                     vocab.json
 fetch "$BASE/quran.json"                     quran.json
 fetch "$BASE/quran_ctc_tokens.json"          quran_ctc_tokens.json
 
+# --- Authentic Madinah page images (offline bundle) ---
+# Source: noureddin/quran-pages (the same 604-page Madinah mushaf quran_android
+# renders). WebP @776x1053, ~130KB each -> ~78MB bundled, fully offline, so the
+# reader can show the REAL pages and overlay recitation highlights on them.
+PAGES_DIR="$ASSET_DIR/pages"
+mkdir -p "$PAGES_DIR"
+IMG_BASE="https://raw.githubusercontent.com/noureddin/quran-pages/master/2/pages/776x1053-webp"
+fetch_pages() {
+  local need=0
+  for n in $(seq 1 604); do [ -f "$PAGES_DIR/$n.webp" ] || { need=1; break; }; done
+  if [ "$need" -eq 0 ]; then echo "skip   pages (all present)"; return; fi
+  echo "fetch  pages 1..604 (webp, offline)"
+  seq 1 604 | xargs -P 8 -I{} sh -c '
+    f="'"$PAGES_DIR"'/{}.webp"
+    [ -f "$f" ] && exit 0
+    for i in 1 2 3; do
+      curl -fsSL -o "$f" "'"$IMG_BASE"'/{}.webp" && exit 0
+      sleep 1
+    done
+    echo "FAILED page {}" >&2; exit 1
+  '
+}
+fetch_pages
+
 echo "Assets ready in: $ASSET_DIR"
