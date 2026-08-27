@@ -122,7 +122,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         loadSurah(firstWord.surah)
         lockedAyah = firstWord.verse
         _activeVerse.value = null
-        currentWords = verseWords[lockedAyah] ?: emptyList()
         _currentKey.value = null
         _statusMap.value = emptyMap()
         setCurrentPage(page)

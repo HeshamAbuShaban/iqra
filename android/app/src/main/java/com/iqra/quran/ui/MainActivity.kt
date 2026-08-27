@@ -379,7 +379,7 @@ fun ReaderScreen(
                     Spacer(Modifier.width(8.dp))
                     IconButton(onClick = { showGoto = true }) {
                         Icon(
-                            Icons.Filled.Menu,
+                            Icons.Filled.Search,
                             "Go to page",
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
