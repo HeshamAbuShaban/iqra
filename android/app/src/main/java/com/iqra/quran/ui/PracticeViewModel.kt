@@ -20,6 +20,7 @@ import com.iqra.quran.ml.WordAligner
 import com.iqra.quran.ml.VerseMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -289,6 +290,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _playingSurah = MutableStateFlow(-1)
     val playingSurah: StateFlow<Int> = _playingSurah
 
+    // Word-by-word follow-along: maps each word key of the playing surah to a
+    // global index, and tracks the index currently being recited by the audio.
+    private var playWords: List<MushafWord> = emptyList()
+    private val _playIndex = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val playIndex: StateFlow<Map<String, Int>> = _playIndex
+    private val _playHead = MutableStateFlow(-1)
+    val playHead: StateFlow<Int> = _playHead
+    private var playPoll: Job? = null
+
     fun togglePlaySurah(surah: Int) {
         if (_playingSurah.value == surah) {
             stopPlayback()
@@ -306,7 +316,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         .build()
                 )
                 setDataSource(url)
-                setOnPreparedListener { mp -> mp.start(); _playingSurah.value = surah }
+                setOnPreparedListener { mp ->
+                    mp.start()
+                    _playingSurah.value = surah
+                    val pages = _mushaf.value
+                    if (pages != null) {
+                        playWords = Mushaf.wordsForSurah(pages, surah)
+                        val map = mutableMapOf<String, Int>()
+                        playWords.forEachIndexed { i, w -> map[keyOf(w)] = i }
+                        _playIndex.value = map
+                        startPlayPoll(mp, playWords.size)
+                    }
+                }
                 setOnCompletionListener { stopPlayback() }
                 setOnErrorListener { _, _, _ -> stopPlayback(); false }
                 prepareAsync()
@@ -316,11 +337,31 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun startPlayPoll(mp: MediaPlayer, total: Int) {
+        playPoll?.cancel()
+        playPoll = viewModelScope.launch(Dispatchers.Main) {
+            while (mp.isPlaying && total > 0) {
+                val d = mp.duration
+                val p = mp.currentPosition
+                if (d > 0) {
+                    val idx = ((p.toFloat() / d) * total).toInt().coerceIn(0, total - 1)
+                    _playHead.value = idx
+                }
+                delay(80)
+            }
+            _playHead.value = -1
+        }
+    }
+
     fun stopPlayback() {
+        playPoll?.cancel()
+        playPoll = null
         mediaPlayer?.stop()
         mediaPlayer?.release()
         mediaPlayer = null
         _playingSurah.value = -1
+        _playIndex.value = emptyMap()
+        _playHead.value = -1
     }
 
     override fun onCleared() {

@@ -318,6 +318,8 @@ fun ReaderScreen(
     val modelProgress by vm.modelProgress.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val recognized by vm.recognizedText.collectAsStateWithLifecycle()
+    val playIndex by vm.playIndex.collectAsStateWithLifecycle()
+    val playHead by vm.playHead.collectAsStateWithLifecycle()
 
     val surahInfo = remember(data, surah) {
         data?.surahList()?.firstOrNull { it.number == surah }
@@ -340,7 +342,7 @@ fun ReaderScreen(
     CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { idx ->
-                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse)
+                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead)
             }
             // Immersive reader header
             ReaderHeader(
@@ -476,6 +478,8 @@ fun MushafPageView(
     currentKey: String?,
     active: Boolean,
     activeVerse: Int?,
+    playOrder: Map<String, Int>,
+    playHead: Int,
 ) {
     Column(
         Modifier.fillMaxSize()
@@ -486,7 +490,7 @@ fun MushafPageView(
             when (line.type) {
                 "surah-header" -> SurahHeader(line.text ?: "")
                 "basmala" -> Basmala()
-                "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse)
+                "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead)
             }
         }
     }
@@ -500,6 +504,8 @@ fun LineText(
     currentKey: String?,
     active: Boolean,
     activeVerse: Int?,
+    playOrder: Map<String, Int> = emptyMap(),
+    playHead: Int = -1,
 ) {
     if (words.isEmpty()) return
     val roundelVerses = words.filter { it.isVerseEnd }.map { it.verse }
@@ -514,31 +520,36 @@ fun LineText(
         val st = statusMap[key] ?: WordStatus.SKIPPED
         val isCur = key == currentKey
         val inActiveAyah = activeVerse != null && w.verse == activeVerse
+        val gi = playOrder[key]
+        val isPlayed = gi != null && gi <= playHead
+        val isPlayHead = gi != null && gi == playHead
 
-        // HIDE MODE: only the ACTIVE ayah is revealed, drawn in blue. Everything
-        // else is blanked (real text drawn in background color -> width kept, so
-        // the verse roundels stay fixed). As recitation moves on, the previous
-        // ayah reverts to blank and the next ayah becomes blue — strict
-        // ayah-by-ayah, never a free word-jump across the page.
+        // HIDE MODE: only the ACTIVE ayah is revealed in blue. Everything else
+        // is blanked (real text drawn in bg color -> width kept, roundels fixed).
+        // While the reference audio plays, already-sung words are revealed too.
         val (color, bg) = if (hide) {
             when {
                 inActiveAyah && st == WordStatus.WRONG -> reciteBlue to wrongColor.copy(alpha = 0.22f)
                 inActiveAyah -> reciteBlue to Color.Transparent
+                isPlayed -> reciteBlue to Color.Transparent
                 else -> MaterialTheme.colorScheme.background to Color.Transparent
             }
         } else {
             // NORMAL MODE: light highlight over the WHOLE active ayah (we are
-            // here), plus a stronger follow-highlight on the current word
-            // (quran_android style: current = accent, wrong = red).
+            // here) + stronger follow-highlight on the current word (teal = YOUR
+            // recitation). The reference-audio follow-along is GOLD (teal != gold,
+            // so the two modes never confuse).
             val background = when {
                 st == WordStatus.WRONG -> wrongColor.copy(alpha = 0.22f)
                 inActiveAyah && isCur -> accentColor.copy(alpha = 0.32f)
                 inActiveAyah -> accentColor.copy(alpha = 0.14f)
+                isPlayHead -> goldColor.copy(alpha = 0.18f)
                 else -> Color.Transparent
             }
             val fg = when {
                 st == WordStatus.WRONG -> wrongColor
                 isCur -> accentColor
+                isPlayed -> goldColor
                 else -> MaterialTheme.colorScheme.onSurface
             }
             fg to background
@@ -547,7 +558,7 @@ fun LineText(
             SpanStyle(
                 color = color,
                 background = bg,
-                fontWeight = if (isCur && !hide) FontWeight.SemiBold else FontWeight.Normal,
+                fontWeight = if ((isCur && !hide) || isPlayHead) FontWeight.SemiBold else FontWeight.Normal,
             ),
         )
         builder.append(w.text)
