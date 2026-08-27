@@ -302,8 +302,9 @@ fun WordView(text: String, st: WordStatus, hide: Boolean, isCurrent: Boolean, ac
         fontFamily = quranFont,
         fontSize = 26.sp,
         color = color,
-        background = bg,
-        modifier = Modifier.padding(horizontal = 1.dp),
+        modifier = Modifier
+            .background(bg)
+            .padding(horizontal = 1.dp),
     )
 }
 
