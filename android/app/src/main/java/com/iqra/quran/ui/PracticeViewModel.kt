@@ -1,6 +1,7 @@
 package com.iqra.quran.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.iqra.quran.audio.AudioRecorder
@@ -55,6 +56,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _currentPage = MutableStateFlow<Int?>(null)
     val currentPage: StateFlow<Int?> = _currentPage
+
+    private val prefs = app.getSharedPreferences("iqra", Context.MODE_PRIVATE)
+    private val _lastRead = MutableStateFlow(loadLast())
+    val lastRead: StateFlow<Pair<Int, Int>?> = _lastRead
+
+    private fun loadLast(): Pair<Int, Int>? {
+        val s = prefs.getInt("last_surah", -1)
+        val p = prefs.getInt("last_page", -1)
+        return if (s > 0 && p > 0) s to p else null
+    }
+
+    fun saveLastRead(surah: Int, page: Int) {
+        prefs.edit().putInt("last_surah", surah).putInt("last_page", page).apply()
+        _lastRead.value = surah to page
+    }
 
     private val recorder = AudioRecorder(16000)
     private var engine: TilawaEngine? = null

@@ -17,9 +17,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -30,6 +31,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -63,7 +66,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = darkMushafScheme()) {
+            MaterialTheme(colorScheme = darkMushafScheme(), shapes = mushafShapes()) {
                 App(
                     vm,
                     onRequestMic = { block ->
@@ -88,14 +91,29 @@ private val accentColor = Color(0xFF2BB6A0)
 private val wrongColor = Color(0xFFE0625A)
 private val goldColor = Color(0xFFD9B36B)
 
+private val Pill = RoundedCornerShape(50)
+private val CardRadius = RoundedCornerShape(16.dp)
+
 private fun darkMushafScheme() = darkColorScheme(
     primary = accentColor,
     secondary = goldColor,
     background = Color(0xFF15151A),
     surface = Color(0xFF1F1F26),
+    surfaceVariant = Color(0xFF2A2A33),
+    secondaryContainer = accentColor.copy(alpha = 0.15f),
+    onSecondaryContainer = accentColor,
+    outline = goldColor.copy(alpha = 0.25f),
     onBackground = Color(0xFFF2E8D5),
     onSurface = Color(0xFFF2E8D5),
     onPrimary = Color(0xFF06231F),
+)
+
+private fun mushafShapes() = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp),
 )
 
 @Composable
@@ -103,16 +121,17 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     val loading by vm.loading.collectAsStateWithLifecycle()
     val data by vm.data.collectAsStateWithLifecycle()
     val mushaf by vm.mushaf.collectAsStateWithLifecycle()
+    val lastRead by vm.lastRead.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf<Screen>(Screen.Picker) }
 
     if (loading || data == null || mushaf == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+            CircularProgressIndicator(color = accentColor)
         }
         return
     }
     when (val s = screen) {
-        Screen.Picker -> PickerScreen(vm) { screen = Screen.Reader(it) }
+        Screen.Picker -> PickerScreen(vm, lastRead) { screen = Screen.Reader(it) }
         is Screen.Reader -> ReaderScreen(
             vm = vm,
             surah = s.surah,
@@ -128,7 +147,7 @@ sealed interface Screen {
 }
 
 @Composable
-fun PickerScreen(vm: PracticeViewModel, onPick: (Int) -> Unit) {
+fun PickerScreen(vm: PracticeViewModel, lastRead: Pair<Int, Int>?, onPick: (Int) -> Unit) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
     val surahs = remember { data.surahList() }
     var query by remember { mutableStateOf("") }
@@ -143,43 +162,135 @@ fun PickerScreen(vm: PracticeViewModel, onPick: (Int) -> Unit) {
             }
         }
     }
+    val continueInfo = remember(lastRead, surahs) {
+        lastRead?.let { (num, page) ->
+            surahs.firstOrNull { it.number == num }?.let { it to page }
+        }
+    }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Box(
+            Modifier.fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(goldColor.copy(alpha = 0.12f), Color.Transparent)
+                    )
+                )
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+        ) {
+            Text(
+                "Iqra",
+                fontFamily = quranFont,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = goldColor,
+            )
+            Text(
+                "Memorize with live recitation feedback",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        }
+        continueInfo?.let { (info, page) ->
+            Card(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                    .clickable { onPick(info.number) },
+                shape = CardRadius,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.Visibility,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("Continue", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(
+                            "${info.nameEn}  ·  Page $page",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                }
+            }
+        }
         TextField(
             value = query,
             onValueChange = { query = it },
             placeholder = { Text("Search surah name or number") },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            shape = Pill,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+            ),
         )
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(bottom = 16.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
         ) {
             items(filtered, key = { it.number }) { s ->
-                Card(
-                    Modifier.padding(6.dp).fillMaxWidth().clickable { onPick(s.number) },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                ) {
-                    Column(
-                        Modifier.padding(14.dp).fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            s.name,
-                            fontFamily = quranFont,
-                            fontSize = 24.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center,
-                        )
-                        Text(s.nameEn, fontSize = 13.sp, textAlign = TextAlign.Center)
-                        Text(
-                            "${s.ayahCount} verses",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                    }
+                SurahCard(s) { onPick(s.number) }
+            }
+        }
+    }
+}
+
+@Composable
+fun SurahCard(s: com.iqra.quran.data.SurahInfo, onClick: () -> Unit) {
+    Card(
+        Modifier.padding(6.dp).fillMaxWidth().clickable { onClick() },
+        shape = CardRadius,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+    ) {
+        Column(
+            Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = goldColor.copy(alpha = 0.14f),
+                modifier = Modifier.size(40.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("${s.number}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = goldColor)
                 }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                s.name,
+                fontFamily = quranFont,
+                fontSize = 25.sp,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                s.nameEn,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+            Spacer(Modifier.height(4.dp))
+            Surface(
+                shape = Pill,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Text(
+                    "${s.ayahCount} verses",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                )
             }
         }
     }
@@ -193,6 +304,7 @@ fun ReaderScreen(
     onRequestMic: (() -> Unit) -> Unit,
 ) {
     val mushaf = vm.mushaf.collectAsStateWithLifecycle().value ?: return
+    val data = vm.data.collectAsStateWithLifecycle().value
     val hide by vm.hideVerse.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val statusMap by vm.statusMap.collectAsStateWithLifecycle()
@@ -201,6 +313,9 @@ fun ReaderScreen(
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val modelProgress by vm.modelProgress.collectAsStateWithLifecycle()
 
+    val surahInfo = remember(data, surah) {
+        data?.surahList()?.firstOrNull { it.number == surah }
+    }
     val active = recording || statusMap.isNotEmpty()
     val startIdx = remember(surah) { Mushaf_firstPage(mushaf, surah) - 1 }
     val pagerState = rememberPagerState(initialPage = startIdx, pageCount = { mushaf.size })
@@ -210,6 +325,7 @@ fun ReaderScreen(
         if (target != pagerState.currentPage) {
             pagerState.scrollToPage(target)
         }
+        vm.saveLastRead(surah, currentPage ?: (startIdx + 1))
     }
     LaunchedEffect(pagerState.currentPage) {
         vm.setCurrentPage(pagerState.currentPage + 1)
@@ -220,43 +336,95 @@ fun ReaderScreen(
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { idx ->
                 MushafPageView(mushaf[idx], statusMap, hide, currentKey, active)
             }
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+            // Immersive reader header
+            ReaderHeader(
+                surahName = surahInfo?.name ?: "",
+                surahEn = surahInfo?.nameEn ?: "",
+                page = (currentPage ?: (startIdx + 1)),
+                onBack = onBack,
+            )
+            // Floating recitation bar
+            Surface(
+                shape = Pill,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                shadowElevation = 8.dp,
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(bottom = 18.dp, start = 16.dp, end = 16.dp),
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
-                    tint = MaterialTheme.colorScheme.onBackground)
-            }
-            Row(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = { vm.toggleHide() }) {
-                    Icon(
-                        if (hide) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        "Hide verses",
-                    )
-                }
-                Spacer(Modifier.width(16.dp))
-                if (preparing) {
-                    LinearProgressIndicator(
-                        progress = { if (modelProgress < 0) 0f else modelProgress / 100f },
-                        modifier = Modifier.width(140.dp),
-                    )
-                } else {
+                Row(
+                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { vm.toggleHide() }) {
+                        Icon(
+                            if (hide) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            "Hide verses",
+                            tint = if (hide) accentColor else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = {
                             if (recording) vm.stopRecite()
                             else onRequestMic { vm.startRecite(surah) }
                         },
+                        shape = Pill,
+                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp),
                     ) {
-                        Icon(if (recording) Icons.Filled.Close else Icons.Filled.Mic, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (recording) "Stop" else "Recite")
+                        if (preparing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Icon(if (recording) Icons.Filled.Close else Icons.Filled.Mic, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (recording) "Stop" else "Recite")
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun ReaderHeader(surahName: String, surahEn: String, page: Int, onBack: () -> Unit) {
+    Box(
+        Modifier.fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
+                        Color.Transparent,
+                    )
+                )
+            )
+            .padding(top = 8.dp, bottom = 18.dp),
+    ) {
+        IconButton(onClick = onBack, Modifier.align(Alignment.TopStart).padding(4.dp)) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
+                tint = MaterialTheme.colorScheme.onBackground)
+        }
+        Column(
+            Modifier.align(Alignment.TopCenter).padding(top = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                surahName,
+                fontFamily = quranFont,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = goldColor,
+            )
+            Text(
+                "$surahEn  ·  Page $page",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
         }
     }
 }
@@ -275,7 +443,7 @@ fun MushafPageView(
     Column(
         Modifier.fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 56.dp),
     ) {
         for (line in page.lines) {
             when (line.type) {
