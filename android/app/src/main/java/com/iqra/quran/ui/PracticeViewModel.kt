@@ -79,7 +79,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveLastRead(surah: Int, page: Int) {
         prefs.edit().putInt("last_surah", surah).putInt("last_page", page).apply()
-        _lastRead.value = surah to p
+        _lastRead.value = surah to page
     }
 
     private val _bookmarks = MutableStateFlow(loadBookmarks())

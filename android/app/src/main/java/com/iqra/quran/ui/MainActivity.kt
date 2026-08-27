@@ -11,8 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -297,15 +295,21 @@ fun SurahIndex(
                     }
                 }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                LazyColumn(
+                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
                     contentPadding = PaddingValues(bottom = 24.dp, top = 4.dp),
                 ) {
                     continueInfo?.let { (info, page) ->
                         item { ContinueCard(info, page) { onOpen(info.number, page) } }
                     }
-                    androidx.compose.foundation.lazy.grid.items(filtered, key = { it.number }) { SurahGridCell(it, onOpen) }
+                    items(filtered.chunked(3), key = { it.first().number }) { row ->
+                        Row(Modifier.fillMaxWidth()) {
+                            row.forEach { s ->
+                                Box(Modifier.weight(1f)) { SurahGridCell(s, onOpen) }
+                            }
+                            repeat(3 - row.size) { Box(Modifier.weight(1f)) {} }
+                        }
+                    }
                 }
             }
         }
