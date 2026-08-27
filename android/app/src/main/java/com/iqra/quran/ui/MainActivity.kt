@@ -1,5 +1,6 @@
 package com.iqra.quran.ui
 
+import com.iqra.quran.R
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle

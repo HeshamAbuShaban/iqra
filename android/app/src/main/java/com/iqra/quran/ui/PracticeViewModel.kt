@@ -113,6 +113,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val eng = engine ?: return@launch
             val dec = decoder ?: return@launch
             val reference = ref.map { it.text }
+            var micOk = true
             withContext(Dispatchers.Main) {
                 _status.value = "Listening…"
                 try {
@@ -120,9 +121,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     _recording.value = true
                 } catch (e: Exception) {
                     _status.value = "Mic error: ${e.message}"
-                    return@launch
+                    micOk = false
                 }
             }
+            if (!micOk) return@launch
             while (_recording.value) {
                 delay(400)
                 val audio = recorder.currentSamples()
