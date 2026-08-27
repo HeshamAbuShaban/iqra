@@ -59,8 +59,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val recorder = AudioRecorder(16000)
     private var engine: TilawaEngine? = null
     private var decoder: TextCtcDecoder? = null
-    private var refWords: List<MushafWord>? = null
+    private var refWords: List<MushafWord> = emptyList()
+    private var activeSurah: Int = 1
     private var pageNumber: Int = 1
+    private var refPos: Int = 0
     private val accumulated = LinkedHashMap<String, WordStatus>()
 
     init {
@@ -80,6 +82,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Let the reader tell us which page the user is viewing (manual swipe). */
     fun setCurrentPage(page: Int) {
+        if (page == pageNumber) return
         pageNumber = page
         _currentPage.value = page
         if (_recording.value) recorder.reset()
@@ -112,8 +115,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val pages = _mushaf.value ?: return
         val ref = Mushaf.wordsForSurah(pages, surah)
         if (ref.isEmpty()) return
+        activeSurah = surah
         refWords = ref
         pageNumber = Mushaf.firstPageOfSurah(pages, surah)
+        // Anchor the tracker at the first word of the page the user is viewing,
+        // so recognition starts exactly where they are (no global search).
+        refPos = ref.indexOfFirst { it.page == pageNumber }.let { if (it < 0) 0 else it }
         accumulated.clear()
         _statusMap.value = emptyMap()
         _currentKey.value = null
@@ -144,39 +151,63 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     val decoded = dec.decode(lp.data, lp.timeSteps, lp.vocabSize)
                     val pred = decoded.text.split(" ").filter { it.isNotBlank() }
                     if (pred.isEmpty()) continue
-                    // Window the reference to the CURRENT page (+ next page for
-                    // boundary continuity). Reference words are normalized the
-                    // same way as the CTC output (no harakat) so they can match.
-                    val cur = refWords!!.filter { it.page == pageNumber }
-                    val nxt = refWords!!.filter { it.page == pageNumber + 1 }
-                    val refAll = cur + nxt
-                    if (refAll.isEmpty()) continue
-                    val refNorm = refAll.map { ArabicNormalizer.normalize(it.text) }
+
+                    // LOCAL, FORWARD-ONLY alignment: only consider a small window
+                    // around the expected position. This prevents the decoder
+                    // from "jumping" the match to a random word/surah.
+                    val start = maxOf(0, refPos - WINDOW_BACK)
+                    val end = minOf(refWords.size, refPos + WINDOW_FRONT)
+                    if (start >= end) continue
+                    val window = refWords.subList(start, end)
+                    val refNorm = window.map { ArabicNormalizer.normalize(it.text) }
                     val statuses = WordAligner.alignWords(refNorm, pred)
-                    var lastIdx = -1
+
+                    var first = -1
+                    var last = -1
                     for (i in statuses.indices) {
-                        val st = statuses[i]
-                        if (st == WordStatus.SKIPPED) continue
-                        lastIdx = i
-                        val w = refAll[i]
+                        if (statuses[i] == WordStatus.SKIPPED) continue
+                        if (first < 0) first = i
+                        last = i
+                        val w = window[i]
                         val k = keyOf(w)
                         val prev = accumulated[k]
-                        if (prev == null || prev == WordStatus.WRONG && st == WordStatus.CORRECT) {
-                            accumulated[k] = st
+                        if (prev == null || (prev == WordStatus.WRONG && statuses[i] == WordStatus.CORRECT)) {
+                            accumulated[k] = statuses[i]
                         }
                     }
-                    val curKey = if (lastIdx >= 0) keyOf(refAll[lastIdx]) else null
-                    val advance = lastIdx >= cur.size && nxt.isNotEmpty()
+                    if (first < 0) continue // nothing recognized this tick
+
+                    // Advance the tracker strictly forward to the end of the
+                    // matched span — recitation order is monotonic.
+                    refPos = start + last + 1
+
+                    val curWord = window[last]
+                    val curKey = keyOf(curWord)
+                    val curPage = curWord.page
+
+                    // Surah completion -> hand off to the NEXT surah only
+                    // (e.g. 113 -> 114). This is the only allowed cross-surah
+                    // move, so we can never "end up in another surah".
+                    var handedOff = false
+                    if (refPos >= refWords.size - SURAH_END_MARGIN && activeSurah < 114) {
+                        val next = Mushaf.wordsForSurah(pages, activeSurah + 1)
+                        if (next.isNotEmpty()) {
+                            activeSurah += 1
+                            refWords = next
+                            pageNumber = Mushaf.firstPageOfSurah(pages, activeSurah)
+                            refPos = 0
+                            recorder.reset()
+                            _currentPage.value = pageNumber
+                            handedOff = true
+                        } else {
+                            refPos = refWords.size
+                        }
+                    }
+
                     withContext(Dispatchers.Main) {
                         _statusMap.value = LinkedHashMap(accumulated)
                         _currentKey.value = curKey
-                        if (advance) {
-                            pageNumber += 1
-                            _currentPage.value = pageNumber
-                            recorder.reset()
-                        } else {
-                            _currentPage.value = pageNumber
-                        }
+                        if (!handedOff) _currentPage.value = curPage
                     }
                 } catch (_: Exception) {
                 }
@@ -198,5 +229,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val CAP = 40 * 16000
+        private const val WINDOW_BACK = 3
+        private const val WINDOW_FRONT = 90
+        private const val SURAH_END_MARGIN = 2
     }
 }

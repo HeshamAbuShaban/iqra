@@ -30,3 +30,7 @@ captures/
 .DS_Store
 Thumbs.db
 *.log
+
+# Vendored reference (not committed)
+/reference/tarteel-ml/
+/reference/quran_android/

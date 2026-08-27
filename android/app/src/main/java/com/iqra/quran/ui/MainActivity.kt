@@ -334,7 +334,7 @@ fun LineText(
         fontFamily = quranFont,
         fontSize = 23.sp,
         lineHeight = 38.sp,
-        textAlign = TextAlign.Right,
+        textAlign = TextAlign.Justify,
         modifier = Modifier.fillMaxWidth(),
         inlineContent = inlineContent,
     )
