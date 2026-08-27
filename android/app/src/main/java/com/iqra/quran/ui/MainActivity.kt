@@ -307,21 +307,32 @@ fun LineText(
         val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
         val st = statusMap[key] ?: WordStatus.SKIPPED
         val isCur = key == currentKey
-        val hidden = active && hide && st == WordStatus.SKIPPED
+        // Tarteel-style hide: blank the word but keep its EXACT width so the
+        // verse roundels (ayah numbers) stay fixed in place. Achieved by
+        // drawing the real word text in the background color (invisible yet
+        // space-preserving) instead of a fixed kashida.
+        val isHidden = active && hide && st == WordStatus.SKIPPED
         val color = when {
             isCur -> accentColor
             st == WordStatus.WRONG -> wrongColor
-            hidden -> Color.Transparent
+            isHidden -> MaterialTheme.colorScheme.background
             else -> MaterialTheme.colorScheme.onSurface
+        }
+        // quran_android-style overlay highlight: filled rect behind the active
+        // word (current = accent, wrong = red), spanning the word bounds.
+        val bg = when {
+            isCur -> accentColor.copy(alpha = 0.28f)
+            st == WordStatus.WRONG -> wrongColor.copy(alpha = 0.22f)
+            else -> Color.Transparent
         }
         builder.pushStyle(
             SpanStyle(
                 color = color,
-                background = if (isCur) accentColor.copy(alpha = 0.18f) else Color.Transparent,
+                background = bg,
                 fontWeight = if (isCur) FontWeight.SemiBold else FontWeight.Normal,
             ),
         )
-        builder.append(if (hidden) "ـــ" else w.text)
+        builder.append(w.text)
         builder.pop()
         if (w.isVerseEnd) {
             builder.append(" ")
