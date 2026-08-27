@@ -18,7 +18,7 @@ class VerseMatcher(private val data: com.iqra.quran.data.QuranData) {
         val transcript: String,
     )
 
-    fun bestMatch(transcript: String): VerseMatch? {
+    fun bestMatch(transcript: String, scope: Set<Int>? = null): VerseMatch? {
         val text = transcript.trim()
         if (text.isEmpty() || data.verses.isEmpty()) return null
 
@@ -41,7 +41,10 @@ class VerseMatcher(private val data: com.iqra.quran.data.QuranData) {
             Candidate(v.surah, v.ayah, v.ayah, raw)
         }
 
-        val topSurahs = singles.sortedByDescending { it.score }
+        val scoped = if (scope != null) singles.filter { scope.contains(it.surah) } else singles
+        if (scoped.isEmpty()) return null
+
+        val topSurahs = scoped.sortedByDescending { it.score }
             .take(32)
             .map { it.surah }
             .distinct()
@@ -64,7 +67,7 @@ class VerseMatcher(private val data: com.iqra.quran.data.QuranData) {
             }
         }
 
-        val best = (singles + spans).maxByOrNull { it.score } ?: return null
+        val best = (scoped + spans).maxByOrNull { it.score } ?: return null
         if (best.score < 0.3) return null
         return VerseMatch(best.surah, best.ayah, best.ayahEnd, best.score, text)
     }
