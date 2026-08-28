@@ -46,8 +46,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.ImageBitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -755,7 +756,7 @@ fun MushafPageView(
     }
     val bmp = remember(page.page) {
         try {
-            ctx.assets.open("pages/${page.page}.webp").use { ImageBitmapFactory.decodeStream(it) }
+            ctx.assets.open("pages/${page.page}.webp").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
         } catch (e: Exception) {
             null
         }
