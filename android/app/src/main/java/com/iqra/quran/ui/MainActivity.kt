@@ -10,6 +10,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,8 +42,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageBitmapFactory
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.WordStatus
+import com.iqra.quran.data.GlyphCoords
 
 class MainActivity : ComponentActivity() {
     private val vm by lazy {
@@ -99,6 +109,7 @@ private val accentColor = Color(0xFF2BB6A0)
 private val wrongColor = Color(0xFFE0625A)
 private val goldColor = Color(0xFFD9B36B)
 private val reciteBlue = Color(0xFF4A9EFF)
+private val PAGE_MASK = Color(0xFFF3ECD9) // parchment, used to hide words on light page images
 
 private val Pill = RoundedCornerShape(50)
 private val CardRadius = RoundedCornerShape(16.dp)
@@ -737,18 +748,116 @@ fun MushafPageView(
     playOrder: Map<String, Int>,
     playHead: Int,
 ) {
-    Column(
-        Modifier.fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 56.dp),
-    ) {
-        for (line in page.lines) {
-            when (line.type) {
-                "surah-header" -> SurahHeader(line.text ?: "")
-                "basmala" -> Basmala()
-                "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead)
+    val ctx = LocalContext.current
+    val glyphs = remember(page.page) {
+        GlyphCoords.ensure(ctx)
+        GlyphCoords.lineBoxes(page.page)
+    }
+    val bmp = remember(page.page) {
+        try {
+            ctx.assets.open("pages/${page.page}.webp").use { ImageBitmapFactory.decodeStream(it) }
+        } catch (e: Exception) {
+            null
+        }
+    }
+    if (bmp == null) {
+        // Fallback to synthetic text if the page image asset is missing.
+        Column(
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 56.dp),
+        ) {
+            for (line in page.lines) {
+                when (line.type) {
+                    "surah-header" -> SurahHeader(line.text ?: "")
+                    "basmala" -> Basmala()
+                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead)
+                }
             }
         }
+        return
+    }
+
+    val allWords = remember(page.page) { page.lines.flatMap { it.words ?: emptyList() } }
+    val activeKey = allWords.firstOrNull { it.verse == activeVerse }?.let { "${it.surah}:${it.verse}" }
+        ?: currentKey?.let { it.substringBeforeLast(":").substringBeforeLast(":") }?.let { "${it.split(":")[0]}:${it.split(":")[1]}" }
+    val currentAyahKey = currentKey?.let { val p = it.split(":"); "${p[0]}:${p[1]}" }
+    val playedAyahKeys = remember(playOrder, playHead) {
+        playOrder.filterValues { it <= playHead }.keys.map { val p = it.split(":"); "${p[0]}:${p[1]}" }.toSet()
+    }
+
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        BoxWithConstraints(Modifier.align(Alignment.Center).fillMaxWidth()) {
+            val imgH = maxWidth * 1053f / 776f
+            Box(Modifier.width(maxWidth).height(imgH)) {
+                Image(
+                    bitmap = bmp,
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Canvas(Modifier.fillMaxSize()) {
+                    val sx = size.width / 776f
+                    val sy = size.height / 1053f
+                    // 1) Ayah/line-level highlights (accurate boxes from the DB).
+                    for ((ayahKey, boxes) in glyphs) {
+                        val isActive = ayahKey == activeKey
+                        val isCurrent = ayahKey == currentAyahKey
+                        val isPlayed = ayahKey in playedAyahKeys
+                        val (fill, alpha) = when {
+                            hide && (isActive || isPlayed) -> reciteBlue to 0.18f
+                            hide -> PAGE_MASK to 1f
+                            isCurrent -> accentColor to 0.40f
+                            isPlayed -> goldColor to 0.28f
+                            isActive -> accentColor to 0.14f
+                            else -> Color.Transparent to 0f
+                        }
+                        if (alpha > 0f) {
+                            for ((_, r) in boxes) {
+                                drawRect(fill, Offset(r.left * sx, r.top * sy), Size(r.width() * sx, r.height() * sy), alpha = alpha)
+                            }
+                        }
+                    }
+                    // 2) Word-level subdivision for the CURRENT (teal) and play-head
+                    //    (gold) words, so live progress lands on the exact word.
+                    if (!hide) {
+                        currentKey?.let { drawWordSegment(it, allWords, glyphs, sx, sy, accentColor, 0.55f) }
+                    }
+                    playOrder.entries.firstOrNull { it.value == playHead }?.key
+                        ?.let { drawWordSegment(it, allWords, glyphs, sx, sy, goldColor, 0.5f) }
+                }
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawWordSegment(
+    key: String,
+    allWords: List<MushafWord>,
+    glyphs: Map<String, List<Pair<Int, android.graphics.RectF>>>,
+    sx: Float,
+    sy: Float,
+    color: Color,
+    alpha: Float,
+) {
+    val word = allWords.firstOrNull { "${it.surah}:${it.verse}:${it.wordInVerse}" == key } ?: return
+    val ayahKey = "${word.surah}:${word.verse}"
+    val boxes = glyphs[ayahKey] ?: return
+    val lineBox = boxes.firstOrNull { it.first == word.line }?.second ?: boxes.first().second
+    val lineWords = allWords.filter { it.line == word.line }
+    if (lineWords.isEmpty()) return
+    val weights = lineWords.map { w -> (w.text.count { ch -> ch.isLetter() }.toFloat()).coerceAtLeast(0.5f) }
+    val total = weights.sum()
+    val width = lineBox.width()
+    var xRight = lineBox.right
+    for (i in lineWords.indices) {
+        val segW = width * weights[i] / total
+        val xLeft = xRight - segW
+        if (lineWords[i] == word) {
+            drawRect(color, Offset(xLeft * sx, lineBox.top * sy), Size(segW * sx, lineBox.height() * sy), alpha = alpha)
+            return
+        }
+        xRight = xLeft
     }
 }
 

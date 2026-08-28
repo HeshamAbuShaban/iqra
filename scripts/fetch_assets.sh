@@ -57,4 +57,10 @@ fetch_pages() {
 }
 fetch_pages
 
+# --- Glyph coordinate DB (ayah/line bounding boxes, 776x1053 page space) ---
+# Lets the reader draw recitation highlights on the REAL page images.
+# Source: quran_android's madani ayahinfo data (android.quran.com/data), the
+# same mushaf our bundled pages/ images depict. Ayah/line-level (accurate).
+fetch "https://raw.githubusercontent.com/murtraja/quran-android-images-helper/master/static/databases/ayahinfo_1053.db" ayahinfo.db
+
 echo "Assets ready in: $ASSET_DIR"
