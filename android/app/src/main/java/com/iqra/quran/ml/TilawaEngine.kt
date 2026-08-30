@@ -22,7 +22,9 @@ class TilawaEngine(modelFile: File, private val vocabSize: Int) {
     private val outputName: String
 
     init {
-        session = env.createSession(modelFile.absolutePath, OrtSession.SessionOptions())
+        val opts = OrtSession.SessionOptions()
+        opts.setIntraOpNumThreads(Runtime.getRuntime().availableProcessors())
+        session = env.createSession(modelFile.absolutePath, opts)
         val names = session.inputNames.toList()
         signalName = names.firstOrNull { it.contains("audio") } ?: names[0]
         lengthName = names.firstOrNull { it.contains("length") } ?: names.getOrElse(1) { "length" }

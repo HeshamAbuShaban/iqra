@@ -108,6 +108,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var verseWords: Map<Int, List<MushafWord>> = emptyMap()
     private var versePage: Map<Int, Int> = emptyMap()
     private var verseMatcher: VerseMatcher? = null
+    private var pendingNextAyah: Int? = null
+    private var pendingNextFrames: Int = 0
 
     /** Build per-ayah word + page maps for a surah. The page always follows the
      *  locked verse (derived from it), so it can never jump to a wrong page. */
@@ -200,8 +202,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (verseWords.isEmpty()) return
         lockedAyah = ayahOnPage(page)
         pageNumber = page
-        verseMatcher = VerseMatcher(d)
-        _statusMap.value = emptyMap()
+            verseMatcher = VerseMatcher(d)
+            pendingNextAyah = null
+            pendingNextFrames = 0
+            _statusMap.value = emptyMap()
         _currentKey.value = null
         _recognized.value = ""
         _currentPage.value = page
@@ -224,7 +228,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (!micOk) return@launch
             while (_recording.value) {
-                delay(400)
+                delay(250)
                 val audio = recorder.currentSamples()
                 if (audio.size < 4800) continue
                 val used = if (audio.size > CAP) audio.copyOfRange(audio.size - CAP, audio.size) else audio
@@ -256,17 +260,43 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     //    when confident -> strict ayah-by-ayah, no cascading jumps.
                     if (match.surah == activeSurah) {
                         val step = match.ayah - lockedAyah
-                        when {
-                            step in 1..3 -> if (match.score >= 0.45) lockedAyah = minOf(match.ayah, lockedAyah + 1)
-                            step > 3 -> if (match.score >= 0.85) lockedAyah = match.ayah
+                        // 2-frame hysteresis on the next-ayah advance so shorter
+                        // audio windows don't cause jitter; a strong single-frame
+                        // match (>=0.60) still advances immediately.
+                        val candidate: Int? =
+                            if (step in 1..3 && match.score >= 0.40) minOf(match.ayah, lockedAyah + 1) else null
+                        if (candidate != null) {
+                            val strong = candidate == lockedAyah + 1 && match.score >= 0.60
+                            if (strong) {
+                                lockedAyah = candidate
+                                pendingNextAyah = null; pendingNextFrames = 0
+                            } else if (pendingNextAyah == candidate) {
+                                pendingNextFrames++
+                                if (pendingNextFrames >= 2) {
+                                    lockedAyah = candidate
+                                    pendingNextAyah = null; pendingNextFrames = 0
+                                }
+                            } else {
+                                pendingNextAyah = candidate
+                                pendingNextFrames = 1
+                            }
+                        } else {
+                            pendingNextAyah = null; pendingNextFrames = 0
+                        }
+                        if (step > 3 && match.score >= 0.85) {
+                            lockedAyah = match.ayah
+                            pendingNextAyah = null; pendingNextFrames = 0
                         }
                     } else if (match.surah == activeSurah + 1 && activeSurah < 114) {
+                        pendingNextAyah = null; pendingNextFrames = 0
                         val lastAyah = verseWords.keys.maxOrNull() ?: lockedAyah
                         if (lockedAyah >= lastAyah && match.score >= 0.6) {
                             loadSurah(activeSurah + 1)
                             lockedAyah = 1
                             recorder.reset()
                         }
+                    } else {
+                        pendingNextAyah = null; pendingNextFrames = 0
                     }
 
                     // 3) Word-level alignment for the locked verse (token-based).
@@ -412,8 +442,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
-        private const val CAP = 12 * 16000
-        // Below this RMS the 12s window is effectively silence -> skip decoding.
+        private const val CAP = 3 * 16000
+        // Below this RMS the rolling window is effectively silence -> skip decoding.
         private const val SILENCE_RMS = 0.0025f
     }
 }

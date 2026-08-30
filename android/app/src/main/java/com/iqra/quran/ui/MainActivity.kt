@@ -64,6 +64,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -739,6 +740,55 @@ fun ReaderHeader(
 fun Mushaf_firstPage(pages: List<MushafPage>, surah: Int): Int =
     com.iqra.quran.data.Mushaf.firstPageOfSurah(pages, surah)
 
+private data class WordDraw(val rect: RectF, val style: WordStyle)
+
+private data class WordStyle(
+    val fg: Color,
+    val bg: Color,
+    val tint: Color,
+    val tintAlpha: Float,
+    val bold: Boolean,
+    val strike: Boolean,
+)
+
+private fun resolveWordStyle(
+    st: WordStatus,
+    isCurrent: Boolean,
+    isPlayed: Boolean,
+    isPlayHead: Boolean,
+    inActiveAyah: Boolean,
+    hide: Boolean,
+    onSurface: Color,
+    background: Color,
+): WordStyle {
+    if (hide) {
+        return when {
+            isPlayHead -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
+            isPlayed -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.55f, false, false)
+            inActiveAyah && isCurrent -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
+            inActiveAyah && st == WordStatus.WRONG -> WordStyle(wrongColor, Color.Transparent, wrongColor, 0.6f, true, false)
+            inActiveAyah && st == WordStatus.CORRECT -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.45f, false, false)
+            else -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false)
+        }
+    }
+    return when {
+        isPlayHead -> WordStyle(goldColor, goldColor.copy(alpha = 0.25f), goldColor, 0.7f, true, false)
+        isPlayed -> WordStyle(goldColor, goldColor.copy(alpha = 0.20f), goldColor, 0.30f, false, false)
+        st == WordStatus.WRONG -> WordStyle(wrongColor, wrongColor.copy(alpha = 0.25f), wrongColor, 0.40f, true, false)
+        isCurrent -> WordStyle(accentColor, accentColor.copy(alpha = 0.40f), accentColor, 0.55f, true, false)
+        inActiveAyah && st == WordStatus.SKIPPED -> WordStyle(
+            onSurface.copy(alpha = 0.55f),
+            wrongColor.copy(alpha = 0.12f),
+            wrongColor,
+            0.15f,
+            false,
+            true,
+        )
+        inActiveAyah -> WordStyle(onSurface, accentColor.copy(alpha = 0.10f), accentColor, 0.10f, false, false)
+        else -> WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
+    }
+}
+
 @Composable
 fun MushafPageView(
     page: MushafPage,
@@ -779,11 +829,39 @@ fun MushafPageView(
     }
 
     val allWords = remember(page.page) { page.lines.flatMap { it.words ?: emptyList() } }
-    val activeKey = allWords.firstOrNull { it.verse == activeVerse }?.let { "${it.surah}:${it.verse}" }
-    val currentAyahKey = currentKey?.let { val p = it.split(":"); "${p[0]}:${p[1]}" }
-    val playedAyahKeys = remember(playOrder, playHead) {
-        playOrder.filterValues { it <= playHead }.keys
-            .map { val p = it.split(":"); "${p[0]}:${p[1]}" }.toSet()
+    val cs = MaterialTheme.colorScheme
+    val draws = remember(
+        page.page, statusMap, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups,
+    ) {
+        buildList {
+            for ((groupKey, rects) in lineGroups) {
+                val pp = groupKey.split(":")
+                val s = pp[0].toInt(); val a = pp[1].toInt(); val l = pp[2].toInt()
+                val lineWords = allWords.filter { it.line == l && it.surah == s && it.verse == a }
+                val n = lineWords.size; val m = rects.size
+                for (i in 0 until n) {
+                    val rect: RectF? = when {
+                        m == n -> rects[i]
+                        m == n + 1 -> rects[i]
+                        i < m -> rects[i]
+                        else -> null
+                    } ?: continue
+                    val w = lineWords[i]
+                    val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
+                    val st = statusMap[key] ?: WordStatus.SKIPPED
+                    val isCur = key == currentKey
+                    val gi = playOrder[key]
+                    val isPlayed = gi != null && gi <= playHead
+                    val isPlayHead = gi != null && gi == playHead
+                    val inActive = activeVerse != null && w.verse == activeVerse
+                    val style = resolveWordStyle(
+                        st, isCur, isPlayed, isPlayHead, inActive, hide,
+                        cs.onSurface, cs.background,
+                    )
+                    add(WordDraw(rect, style))
+                }
+            }
+        }
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -799,28 +877,15 @@ fun MushafPageView(
                 Canvas(Modifier.fillMaxSize()) {
                     val sx = size.width / 1024f
                     val sy = size.height / 1656f
-                    if (hide) {
-                        drawRect(PAGE_MASK)
-                    }
-                    for ((groupKey, rects) in lineGroups) {
-                        val p = groupKey.split(":")
-                        val ayahKey = "${p[0]}:${p[1]}"
-                        val isCurrent = ayahKey == currentAyahKey
-                        val isActive = ayahKey == activeKey
-                        val isPlayed = ayahKey in playedAyahKeys
-                        val (fill, alpha) = when {
-                            hide && (isActive || isPlayed) -> reciteBlue to 0.55f
-                            hide -> Color.Transparent to 0f
-                            isCurrent -> accentColor to 0.40f
-                            isPlayed -> goldColor to 0.28f
-                            isActive -> accentColor to 0.14f
-                            else -> Color.Transparent to 0f
-                        }
-                        if (alpha > 0f) {
-                            for (r in rects) {
-                                drawRect(fill, Offset(r.left * sx, r.top * sy), Size(r.width() * sx, r.height() * sy), alpha = alpha)
-                            }
-                        }
+                    if (hide) drawRect(PAGE_MASK)
+                    for (d in draws) {
+                        if (d.style.tintAlpha <= 0f) continue
+                        drawRect(
+                            d.style.tint,
+                            Offset(d.rect.left * sx, d.rect.top * sy),
+                            Size(d.rect.width() * sx, d.rect.height() * sy),
+                            alpha = d.style.tintAlpha,
+                        )
                     }
                     if (!hide) {
                         playOrder.entries.firstOrNull { it.value == playHead }?.key
@@ -881,42 +946,17 @@ fun LineText(
         val gi = playOrder[key]
         val isPlayed = gi != null && gi <= playHead
         val isPlayHead = gi != null && gi == playHead
-
-        // HIDE MODE: only the ACTIVE ayah is revealed in blue. Everything else
-        // is blanked (real text drawn in bg color -> width kept, roundels fixed).
-        // While the reference audio plays, already-sung words are revealed too.
-        val (color, bg) = if (hide) {
-            when {
-                inActiveAyah && st == WordStatus.WRONG -> reciteBlue to wrongColor.copy(alpha = 0.22f)
-                inActiveAyah -> reciteBlue to Color.Transparent
-                isPlayed -> reciteBlue to Color.Transparent
-                else -> MaterialTheme.colorScheme.background to Color.Transparent
-            }
-        } else {
-            // NORMAL MODE: light highlight over the WHOLE active ayah (we are
-            // here) + stronger follow-highlight on the current word (teal = YOUR
-            // recitation). The reference-audio follow-along is GOLD (teal != gold,
-            // so the two modes never confuse).
-            val background = when {
-                st == WordStatus.WRONG -> wrongColor.copy(alpha = 0.22f)
-                inActiveAyah && isCur -> accentColor.copy(alpha = 0.32f)
-                inActiveAyah -> accentColor.copy(alpha = 0.14f)
-                isPlayHead -> goldColor.copy(alpha = 0.18f)
-                else -> Color.Transparent
-            }
-            val fg = when {
-                st == WordStatus.WRONG -> wrongColor
-                isCur -> accentColor
-                isPlayed -> goldColor
-                else -> MaterialTheme.colorScheme.onSurface
-            }
-            fg to background
-        }
+        val cs = MaterialTheme.colorScheme
+        val style = resolveWordStyle(
+            st, isCur, isPlayed, isPlayHead, inActiveAyah, hide,
+            cs.onSurface, cs.background,
+        )
         builder.pushStyle(
             SpanStyle(
-                color = color,
-                background = bg,
-                fontWeight = if ((isCur && !hide) || isPlayHead) FontWeight.SemiBold else FontWeight.Normal,
+                color = style.fg,
+                background = style.bg,
+                fontWeight = if (style.bold) FontWeight.SemiBold else FontWeight.Normal,
+                textDecoration = if (style.strike) TextDecoration.LineThrough else null,
             ),
         )
         builder.append(w.text)
