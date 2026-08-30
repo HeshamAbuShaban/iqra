@@ -1002,13 +1002,14 @@ fun MushafPageView(
         }
     }
     Box(
-        Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 72.dp),
-        contentAlignment = Alignment.Center,
+        Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter,
     ) {
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = Color.Black.copy(alpha = 0.55f),
             contentColor = Color.White,
+            modifier = Modifier.padding(bottom = 72.dp),
         ) {
             Text(
                 "Page ${page.page} · Juz ${page.page.let { p -> com.iqra.quran.data.QuranData.JUZ_START_PAGES.indexOfFirst { it > p }.let { if (it == -1) 30 else it } }}",
