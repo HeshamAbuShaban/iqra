@@ -840,7 +840,7 @@ fun MushafPageView(
                 val lineWords = allWords.filter { it.line == l && it.surah == s && it.verse == a }
                 val n = lineWords.size; val m = rects.size
                 for (i in 0 until n) {
-                    val rect: RectF? = when {
+                    val rect: RectF = when {
                         m == n -> rects[i]
                         m == n + 1 -> rects[i]
                         i < m -> rects[i]
