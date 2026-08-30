@@ -996,8 +996,26 @@ fun MushafPageView(
                         playOrder.entries.firstOrNull { it.value == playHead }?.key
                             ?.let { drawPlayHeadWord(it, allWords, lineGroups, sx, sy) }
                     }
+                    drawRect(Color.Black.copy(alpha = 0.06f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f))
                 }
             }
+        }
+    }
+    Box(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 72.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color.Black.copy(alpha = 0.55f),
+            contentColor = Color.White,
+        ) {
+            Text(
+                "Page ${page.page} · Juz ${page.page.let { p -> com.iqra.quran.data.QuranData.JUZ_START_PAGES.indexOfFirst { it > p }.let { if (it == -1) 30 else it } }}",
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.9f),
+            )
         }
     }
 }

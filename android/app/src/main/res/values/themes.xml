@@ -3,5 +3,9 @@
     <style name="Theme.Iqra" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/splash_bg</item>
+    </style>
+    <style name="Theme.Iqra.Splash" parent="Theme.Iqra">
+        <item name="android:windowBackground">@drawable/splash_bg</item>
     </style>
 </resources>
