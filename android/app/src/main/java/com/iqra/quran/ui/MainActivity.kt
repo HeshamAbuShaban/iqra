@@ -3,6 +3,7 @@ package com.iqra.quran.ui
 import com.iqra.quran.R
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.RectF
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -750,23 +751,21 @@ fun MushafPageView(
     playHead: Int,
 ) {
     val ctx = LocalContext.current
-    val glyphs = remember(page.page) {
+    val lineGroups = remember(page.page) {
         GlyphCoords.ensure(ctx)
-        GlyphCoords.lineBoxes(page.page)
+        GlyphCoords.lineGroups(page.page)
     }
     val bmp = remember(page.page) {
         try {
-            ctx.assets.open("pages/${page.page}.webp").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+            val name = "pages/%03d.png".format(page.page)
+            ctx.assets.open(name).use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
         } catch (e: Exception) {
             null
         }
     }
     if (bmp == null) {
-        // Fallback to synthetic text if the page image asset is missing.
         Column(
-            Modifier.fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 56.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 56.dp),
         ) {
             for (line in page.lines) {
                 when (line.type) {
@@ -781,15 +780,15 @@ fun MushafPageView(
 
     val allWords = remember(page.page) { page.lines.flatMap { it.words ?: emptyList() } }
     val activeKey = allWords.firstOrNull { it.verse == activeVerse }?.let { "${it.surah}:${it.verse}" }
-        ?: currentKey?.let { it.substringBeforeLast(":").substringBeforeLast(":") }?.let { "${it.split(":")[0]}:${it.split(":")[1]}" }
     val currentAyahKey = currentKey?.let { val p = it.split(":"); "${p[0]}:${p[1]}" }
     val playedAyahKeys = remember(playOrder, playHead) {
-        playOrder.filterValues { it <= playHead }.keys.map { val p = it.split(":"); "${p[0]}:${p[1]}" }.toSet()
+        playOrder.filterValues { it <= playHead }.keys
+            .map { val p = it.split(":"); "${p[0]}:${p[1]}" }.toSet()
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         BoxWithConstraints(Modifier.align(Alignment.Center).fillMaxWidth()) {
-            val imgH = maxWidth * 1053f / 776f
+            val imgH = maxWidth * 1656f / 1024f
             Box(Modifier.width(maxWidth).height(imgH)) {
                 Image(
                     bitmap = bmp,
@@ -798,68 +797,61 @@ fun MushafPageView(
                     modifier = Modifier.fillMaxSize(),
                 )
                 Canvas(Modifier.fillMaxSize()) {
-                    val sx = size.width / 776f
-                    val sy = size.height / 1053f
-                    // 1) Ayah/line-level highlights (accurate boxes from the DB).
-                    for ((ayahKey, boxes) in glyphs) {
-                        val isActive = ayahKey == activeKey
+                    val sx = size.width / 1024f
+                    val sy = size.height / 1656f
+                    if (hide) {
+                        drawRect(PAGE_MASK)
+                    }
+                    for ((groupKey, rects) in lineGroups) {
+                        val p = groupKey.split(":")
+                        val ayahKey = "${p[0]}:${p[1]}"
                         val isCurrent = ayahKey == currentAyahKey
+                        val isActive = ayahKey == activeKey
                         val isPlayed = ayahKey in playedAyahKeys
                         val (fill, alpha) = when {
-                            hide && (isActive || isPlayed) -> reciteBlue to 0.18f
-                            hide -> PAGE_MASK to 1f
+                            hide && (isActive || isPlayed) -> reciteBlue to 0.55f
+                            hide -> Color.Transparent to 0f
                             isCurrent -> accentColor to 0.40f
                             isPlayed -> goldColor to 0.28f
                             isActive -> accentColor to 0.14f
                             else -> Color.Transparent to 0f
                         }
                         if (alpha > 0f) {
-                            for ((_, r) in boxes) {
+                            for (r in rects) {
                                 drawRect(fill, Offset(r.left * sx, r.top * sy), Size(r.width() * sx, r.height() * sy), alpha = alpha)
                             }
                         }
                     }
-                    // 2) Word-level subdivision for the CURRENT (teal) and play-head
-                    //    (gold) words, so live progress lands on the exact word.
                     if (!hide) {
-                        currentKey?.let { drawWordSegment(it, allWords, glyphs, sx, sy, accentColor, 0.55f) }
+                        playOrder.entries.firstOrNull { it.value == playHead }?.key
+                            ?.let { drawPlayHeadWord(it, allWords, lineGroups, sx, sy) }
                     }
-                    playOrder.entries.firstOrNull { it.value == playHead }?.key
-                        ?.let { drawWordSegment(it, allWords, glyphs, sx, sy, goldColor, 0.5f) }
                 }
             }
         }
     }
 }
 
-private fun DrawScope.drawWordSegment(
+private fun DrawScope.drawPlayHeadWord(
     key: String,
     allWords: List<MushafWord>,
-    glyphs: Map<String, List<Pair<Int, android.graphics.RectF>>>,
+    lineGroups: Map<String, List<RectF>>,
     sx: Float,
     sy: Float,
-    color: Color,
-    alpha: Float,
 ) {
-    val word = allWords.firstOrNull { "${it.surah}:${it.verse}:${it.wordInVerse}" == key } ?: return
-    val ayahKey = "${word.surah}:${word.verse}"
-    val boxes = glyphs[ayahKey] ?: return
-    val lineBox = boxes.firstOrNull { it.first == word.line }?.second ?: boxes.first().second
-    val lineWords = allWords.filter { it.line == word.line }
-    if (lineWords.isEmpty()) return
-    val weights = lineWords.map { w -> (w.text.count { ch -> ch.isLetter() }.toFloat()).coerceAtLeast(0.5f) }
-    val total = weights.sum()
-    val width = lineBox.width()
-    var xRight = lineBox.right
-    for (i in lineWords.indices) {
-        val segW = width * weights[i] / total
-        val xLeft = xRight - segW
-        if (lineWords[i] == word) {
-            drawRect(color, Offset(xLeft * sx, lineBox.top * sy), Size(segW * sx, lineBox.height() * sy), alpha = alpha)
-            return
-        }
-        xRight = xLeft
-    }
+    val w = allWords.firstOrNull { "${it.surah}:${it.verse}:${it.wordInVerse}" == key } ?: return
+    val lineKey = "${w.surah}:${w.verse}:${w.line}"
+    val rects = lineGroups[lineKey] ?: return
+    val lineWords = allWords.filter { it.line == w.line && it.surah == w.surah && it.verse == w.verse }
+    val idx = lineWords.indexOf(w)
+    if (idx < 0) return
+    val r = if (idx < rects.size) rects[idx] else rects.last()
+    drawRect(
+        goldColor,
+        Offset(r.left * sx, r.top * sy),
+        Size(r.width() * sx, r.height() * sy),
+        alpha = 0.55f,
+    )
 }
 
 @Composable
