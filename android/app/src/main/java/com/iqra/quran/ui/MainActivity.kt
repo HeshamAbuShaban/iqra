@@ -65,6 +65,12 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.shadow
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -113,6 +119,27 @@ private val wrongColor = Color(0xFFE0625A)
 private val goldColor = Color(0xFFD9B36B)
 private val reciteBlue = Color(0xFF4A9EFF)
 private val PAGE_MASK = Color(0xFFF3ECD9) // parchment, used to hide words on light page images
+private val ParchmentScaffold = Color(0xFFE6DDC4) // warm dim parchment that frames the page
+
+private object Chrome {
+    val Bar = Color(0xFF1F1F26).copy(alpha = 0.96f)
+    val HeaderTop = Color(0xFF1F1F26)
+    val HeaderMid = Color(0xCC1F1F26)
+    val OnChrome = Color(0xFFF2E8D5)
+    val OnChromeMuted = Color(0xB3F2E8D5)
+}
+
+private fun lightReaderScheme() = lightColorScheme(
+    primary = accentColor,
+    secondary = goldColor,
+    background = ParchmentScaffold,
+    surface = ParchmentScaffold,
+    surfaceVariant = Color(0xFFEFE6CF),
+    onBackground = Color(0xFF1B1B1F),
+    onSurface = Color(0xFF1B1B1F),
+    onPrimary = Color(0xFF06231F),
+    outline = Color(0x22000000),
+)
 
 private val Pill = RoundedCornerShape(50)
 private val CardRadius = RoundedCornerShape(16.dp)
@@ -140,6 +167,54 @@ private fun mushafShapes() = Shapes(
 )
 
 @Composable
+private fun PulseDot(color: Color = wrongColor) {
+    val t = rememberInfiniteTransition(label = "pulse")
+    val a by t.animateFloat(
+        0.35f, 1f,
+        infiniteRepeatable(tween(750), RepeatMode.Reverse),
+        label = "a",
+    )
+    Box(Modifier.size(10.dp).background(color.copy(alpha = a), CircleShape))
+}
+
+@Composable
+fun SplashScreen() {
+    val t = rememberInfiniteTransition(label = "splash")
+    val a by t.animateFloat(
+        0.3f, 1f,
+        infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "splash-a",
+    )
+    Box(
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "Iqra",
+                color = goldColor,
+                fontFamily = quranFont,
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "ٱقْرَأْ",
+                color = goldColor.copy(alpha = a),
+                fontFamily = quranFont,
+                fontSize = 26.sp,
+            )
+            Spacer(Modifier.height(20.dp))
+            LinearProgressIndicator(
+                modifier = Modifier.width(120.dp),
+                color = accentColor,
+                trackColor = accentColor.copy(alpha = 0.2f),
+            )
+        }
+    }
+}
+
+@Composable
 fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     val loading by vm.loading.collectAsStateWithLifecycle()
     val data by vm.data.collectAsStateWithLifecycle()
@@ -148,9 +223,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     var screen by remember { mutableStateOf<Screen>(Screen.Picker) }
 
     if (loading || data == null || mushaf == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = accentColor)
-        }
+        SplashScreen()
         return
     }
     when (val s = screen) {
@@ -343,7 +416,7 @@ fun ContinueCard(info: com.iqra.quran.data.SurahInfo, page: Int, onClick: () -> 
             Column {
                 Text("Continue", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
                 Text(
-                    "${info.nameEn}  ·  Page $page",
+                    "${info.nameEn}  ·  Page $page  ·  ${info.ayahCount} verses",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -466,11 +539,31 @@ fun BookmarkList(
     val pages by vm.bookmarks.collectAsStateWithLifecycle()
     val sorted = pages.sorted()
     if (sorted.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                Icons.Filled.BookmarkBorder,
+                null,
+                tint = goldColor.copy(alpha = 0.7f),
+                modifier = Modifier.size(56.dp),
+            )
+            Spacer(Modifier.height(12.dp))
             Text(
-                "No bookmarks yet.\nTap the bookmark icon while reading to save a page.",
+                "No bookmarks yet",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Tap the bookmark icon while reading to save a page.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier.padding(horizontal = 32.dp),
             )
         }
         return
@@ -559,6 +652,7 @@ fun ReaderScreen(
     }
 
     CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
+        MaterialTheme(colorScheme = lightReaderScheme()) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { idx ->
                 MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead)
@@ -576,31 +670,42 @@ fun ReaderScreen(
             // Floating recitation bar
             Surface(
                 shape = Pill,
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                shadowElevation = 8.dp,
+                color = Chrome.Bar,
+                shadowElevation = 10.dp,
                 modifier = Modifier.align(Alignment.BottomCenter)
-                    .padding(bottom = 18.dp, start = 16.dp, end = 16.dp),
+                    .navigationBarsPadding()
+                    .padding(bottom = 14.dp, start = 12.dp, end = 12.dp),
             ) {
                 Row(
-                    Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { vm.toggleHide() }) {
                         Icon(
                             if (hide) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                             "Hide verses",
-                            tint = if (hide) accentColor else MaterialTheme.colorScheme.onSurface,
+                            tint = if (hide) accentColor else Chrome.OnChrome,
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(4.dp))
                     IconButton(onClick = { showGoto = true }) {
                         Icon(
                             Icons.Filled.Search,
                             "Go to page",
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            tint = Chrome.OnChrome,
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
+                    if (recording && recognized.isEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        PulseDot()
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Listening…",
+                            fontSize = 12.sp,
+                            color = Chrome.OnChromeMuted,
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
                     Button(
                         onClick = {
                             if (recording) vm.stopRecite()
@@ -608,7 +713,7 @@ fun ReaderScreen(
                         },
                         shape = Pill,
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
                     ) {
                         if (preparing) {
                             CircularProgressIndicator(
@@ -623,7 +728,7 @@ fun ReaderScreen(
                         }
                     }
                     if (recognized.isNotEmpty()) {
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(10.dp))
                         Text(
                             recognized,
                             fontSize = 13.sp,
@@ -662,6 +767,7 @@ fun ReaderScreen(
                 )
             }
         }
+        }
     }
 }
 
@@ -679,32 +785,28 @@ fun ReaderHeader(
         Modifier.fillMaxWidth()
             .background(
                 Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.background.copy(alpha = 0.85f),
-                        Color.Transparent,
-                    )
+                    listOf(Chrome.HeaderTop, Chrome.HeaderMid, Color.Transparent)
                 )
             )
-            .padding(top = 8.dp, bottom = 18.dp),
+            .statusBarsPadding()
+            .padding(top = 6.dp, bottom = 18.dp),
     ) {
         IconButton(onClick = onBack, Modifier.align(Alignment.TopStart).padding(4.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back",
-                tint = MaterialTheme.colorScheme.onBackground)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Chrome.OnChrome)
         }
         Row(Modifier.align(Alignment.TopEnd)) {
             IconButton(onClick = onToggleBookmark) {
                 Icon(
                     if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                     "Bookmark page",
-                    tint = if (bookmarked) goldColor else MaterialTheme.colorScheme.onBackground,
+                    tint = if (bookmarked) goldColor else Chrome.OnChrome,
                 )
             }
             IconButton(onClick = onPlayToggle) {
                 Icon(
                     if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     "Play recitation",
-                    tint = if (playing) accentColor else MaterialTheme.colorScheme.onBackground,
+                    tint = if (playing) accentColor else Chrome.OnChrome,
                 )
             }
         }
@@ -730,7 +832,7 @@ fun ReaderHeader(
                     append("  ·  Page $page")
                 },
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                color = Chrome.OnChromeMuted,
                 textAlign = TextAlign.Center,
             )
         }
@@ -867,7 +969,10 @@ fun MushafPageView(
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         BoxWithConstraints(Modifier.align(Alignment.Center).fillMaxWidth()) {
             val imgH = maxWidth * 1656f / 1024f
-            Box(Modifier.width(maxWidth).height(imgH)) {
+                Box(
+                    Modifier.width(maxWidth).height(imgH)
+                        .shadow(elevation = 6.dp, shape = RoundedCornerShape(6.dp), clip = false),
+                ) {
                 Image(
                     bitmap = bmp,
                     contentDescription = null,

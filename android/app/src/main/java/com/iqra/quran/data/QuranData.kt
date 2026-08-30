@@ -120,7 +120,10 @@ class QuranData private constructor(
             402, 422, 442, 462, 482, 502, 522, 542, 562, 582,
         )
 
+        private var cache: QuranData? = null
+
         suspend fun load(context: Context): QuranData = withContext(Dispatchers.IO) {
+            cache?.let { return@withContext it }
             val assets = context.assets
 
             val vocabRaw = JSONObject(readAsset(assets, "vocab.json"))
@@ -207,7 +210,7 @@ class QuranData private constructor(
             QuranData(
                 verses, vocab, blankId, vocabSize, singleVerseTokens,
                 reference, refNoSpace, ngram2, ngram3, metaMap,
-            )
+            ).also { cache = it }
         }
 
         private fun readAsset(assets: android.content.res.AssetManager, name: String): String {

@@ -11,6 +11,7 @@ import com.iqra.quran.data.Mushaf
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.QuranData
+import com.iqra.quran.data.GlyphCoords
 import com.iqra.quran.data.WordStatus
 import com.iqra.quran.ml.ModelManager
 import com.iqra.quran.ml.TextCtcDecoder
@@ -150,6 +151,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val d = QuranData.load(getApplication())
             val m = Mushaf.load(getApplication())
+            GlyphCoords.ensure(getApplication())
             withContext(Dispatchers.Main) {
                 _data.value = d
                 _mushaf.value = m
