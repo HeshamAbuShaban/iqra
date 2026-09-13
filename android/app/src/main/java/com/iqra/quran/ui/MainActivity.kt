@@ -14,8 +14,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.stickyHeader
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -24,7 +28,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -38,6 +50,8 @@ import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -288,7 +302,7 @@ fun HomeTabRow(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
             Box(
                 Modifier.weight(1f).padding(4.dp).clip(Pill)
                     .background(if (sel) goldColor.copy(alpha = 0.16f) else Color.Transparent)
-                    .clickable { onSelect(t) }.padding(vertical = 10.dp),
+                    .clickable(role = Role.Tab) { onSelect(t) }.padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -327,8 +341,10 @@ fun SurahIndex(
             }
         }
     }
-    val meccan = filtered.filter { it.revelationType == "Meccan" }
-    val madani = filtered.filter { it.revelationType == "Madani" }
+    val meccan = remember(filtered) { filtered.filter { it.revelationType == "Meccan" } }
+    val madani = remember(filtered) { filtered.filter { it.revelationType == "Madani" } }
+    val gridRows = remember(filtered) { filtered.chunked(3) }
+    val focusManager = LocalFocusManager.current
     val continueInfo = remember(lastRead, surahs) {
         lastRead?.let { (num, page) -> surahs.firstOrNull { it.number == num }?.let { it to page } }
     }
@@ -344,6 +360,19 @@ fun SurahIndex(
                 singleLine = true,
                 shape = Pill,
                 modifier = Modifier.weight(1f),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(
+                                Icons.Filled.Close,
+                                "Clear search",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                        }
+                    }
+                },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -370,11 +399,19 @@ fun SurahIndex(
                         item { ContinueCard(info, page) { onOpen(info.number, page) } }
                     }
                     if (meccan.isNotEmpty()) {
-                        item { SectionHeader("Meccan", meccan.size, false) }
+                        stickyHeader {
+                            Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+                                SectionHeader("Meccan", meccan.size, false)
+                            }
+                        }
                         items(meccan, key = { it.number }) { SurahRow(it, onOpen) }
                     }
                     if (madani.isNotEmpty()) {
-                        item { SectionHeader("Madani", madani.size, true) }
+                        stickyHeader {
+                            Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+                                SectionHeader("Madani", madani.size, true)
+                            }
+                        }
                         items(madani, key = { it.number }) { SurahRow(it, onOpen) }
                     }
                     if (filtered.isEmpty()) {
@@ -389,7 +426,7 @@ fun SurahIndex(
                     continueInfo?.let { (info, page) ->
                         item { ContinueCard(info, page) { onOpen(info.number, page) } }
                     }
-                    items(filtered.chunked(3), key = { it.first().number }) { row ->
+                    items(gridRows, key = { it.first().number }) { row ->
                         Row(Modifier.fillMaxWidth()) {
                             row.forEach { s ->
                                 Box(Modifier.weight(1f)) { SurahGridCell(s, onOpen) }
@@ -496,12 +533,14 @@ fun JuzList(
     onOpen: (Int, Int) -> Unit,
 ) {
     val juz = remember { data.juzList() }
+    val surahs = remember { data.surahList() }
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 12.dp),
         contentPadding = PaddingValues(bottom = 24.dp, top = 8.dp),
     ) {
-        items(juz, key = { it.number }) { j ->
-            val surah = data.surahAtPage(j.startPage)
+        itemsIndexed(juz, key = { _, j -> j.number }) { idx, j ->
+            val surah = surahs.firstOrNull { j.startPage in it.startPage..it.endPage }
+            val endPage = juz.getOrNull(idx + 1)?.startPage?.minus(1) ?: 604
             Card(
                 Modifier.fillMaxWidth().padding(vertical = 5.dp)
                     .clickable { onOpen(surah?.number ?: 1, j.startPage) },
@@ -519,7 +558,7 @@ fun JuzList(
                     Column(Modifier.weight(1f)) {
                         Text("Juz ${j.number}", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            "Starts at page ${j.startPage}" + if (j.surahNameEn.isNotEmpty()) " · ${j.surahNameEn}" else "",
+                            "pp ${j.startPage}–$endPage" + if (j.surahNameEn.isNotEmpty()) " · ${j.surahNameEn}" else "",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
@@ -538,6 +577,7 @@ fun BookmarkList(
 ) {
     val pages by vm.bookmarks.collectAsStateWithLifecycle()
     val sorted = pages.sorted()
+    val surahs = remember { data.surahList() }
     if (sorted.isEmpty()) {
         Column(
             Modifier.fillMaxSize(),
@@ -573,7 +613,7 @@ fun BookmarkList(
         contentPadding = PaddingValues(bottom = 24.dp, top = 8.dp),
     ) {
         items(sorted, key = { it }) { page ->
-            val info = data.surahAtPage(page)
+            val info = surahs.firstOrNull { page in it.startPage..it.endPage }
             Card(
                 Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onOpen(info?.number ?: 1, page) },
                 shape = CardRadius,
@@ -589,6 +629,13 @@ fun BookmarkList(
                             info?.let { "${it.nameEn} · Juz ${it.juz}" } ?: "",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                    IconButton(onClick = { vm.toggleBookmark(page) }) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            "Remove bookmark",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                         )
                     }
                 }
@@ -629,6 +676,7 @@ fun ReaderScreen(
     val bookmarkPages by vm.bookmarks.collectAsStateWithLifecycle()
     var showGoto by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
+    var showLegend by remember { mutableStateOf(false) }
 
     val surahInfo = remember(data, surah) {
         data?.surahList()?.firstOrNull { it.number == surah }
@@ -655,7 +703,7 @@ fun ReaderScreen(
         MaterialTheme(colorScheme = lightReaderScheme()) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { idx ->
-                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead)
+                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead, onAnchorAyah = vm::anchorToVerse)
             }
             // Immersive reader header
             ReaderHeader(
@@ -680,6 +728,13 @@ fun ReaderScreen(
                     Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    IconButton(onClick = { showLegend = !showLegend }) {
+                        Icon(
+                            Icons.Filled.Info,
+                            "What the colors mean",
+                            tint = if (showLegend) accentColor else Chrome.OnChrome,
+                        )
+                    }
                     IconButton(onClick = { vm.toggleHide() }) {
                         Icon(
                             if (hide) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
@@ -721,6 +776,10 @@ fun ReaderScreen(
                                 strokeWidth = 2.dp,
                                 color = MaterialTheme.colorScheme.onPrimary,
                             )
+                            if (modelProgress in 0..99) {
+                                Spacer(Modifier.width(6.dp))
+                                Text("$modelProgress%", fontSize = 12.sp)
+                            }
                         } else {
                             Icon(if (recording) Icons.Filled.Close else Icons.Filled.Mic, null)
                             Spacer(Modifier.width(6.dp))
@@ -740,34 +799,101 @@ fun ReaderScreen(
                     }
                 }
             }
+            if (showLegend) {
+                Card(
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = 92.dp, start = 16.dp, end = 16.dp),
+                    shape = CardRadius,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "What the colors mean",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(
+                                onClick = { showLegend = false },
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(Icons.Filled.Close, "Close", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        LegendRow(accentColor, "Teal — the word you're on")
+                        LegendRow(goldColor, "Gold — reference audio has sung this")
+                        LegendRow(wrongColor, "Red — check this word")
+                        LegendRow(reciteBlue, "Blue — revealed while hidden")
+                        LegendRow(
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            "Dim + struck — skipped ahead",
+                            strike = true,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Tip: tap any ayah on the page to start practicing from it.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                        )
+                    }
+                }
+            }
             if (showGoto) {
+                val go = {
+                    val p = gotoText.toIntOrNull()
+                    if (p != null && p in 1..mushaf.size) {
+                        vm.jumpToPage(p)
+                        gotoText = ""
+                        showGoto = false
+                    }
+                }
                 AlertDialog(
                     onDismissRequest = { showGoto = false },
                     confirmButton = {
-                        TextButton(onClick = {
-                            val p = gotoText.toIntOrNull()
-                            if (p != null && p in 1..mushaf.size) {
-                                vm.jumpToPage(p)
-                                gotoText = ""
-                                showGoto = false
-                            }
-                        }) { Text("Go") }
+                        TextButton(onClick = go) { Text("Go") }
                     },
                     dismissButton = { TextButton(onClick = { showGoto = false }) { Text("Cancel") } },
                     title = { Text("Go to page") },
                     text = {
-                        OutlinedTextField(
-                            value = gotoText,
-                            onValueChange = { gotoText = it.filter { c -> c.isDigit() }.take(3) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            placeholder = { Text("1 – ${mushaf.size}") },
-                        )
+                        Column {
+                            Text(
+                                "Page ${currentPage ?: (startIdx + 1)} of ${mushaf.size}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = gotoText,
+                                onValueChange = { gotoText = it.filter { c -> c.isDigit() }.take(3) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done,
+                                ),
+                                keyboardActions = KeyboardActions(onDone = { go() }),
+                                placeholder = { Text("1 – ${mushaf.size}") },
+                            )
+                        }
                     },
                 )
             }
         }
         }
+    }
+}
+
+@Composable
+private fun LegendRow(dot: Color, text: String, strike: Boolean = false) {
+    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).background(dot, CircleShape))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text,
+            fontSize = 13.sp,
+            textDecoration = if (strike) TextDecoration.LineThrough else null,
+        )
     }
 }
 
@@ -842,6 +968,22 @@ fun ReaderHeader(
 fun Mushaf_firstPage(pages: List<MushafPage>, surah: Int): Int =
     com.iqra.quran.data.Mushaf.firstPageOfSurah(pages, surah)
 
+private object PageImageCache {
+    private const val MAX = 4
+    private val map = LinkedHashMap<Int, ImageBitmap>(MAX, 0.75f, true)
+
+    @Synchronized
+    fun get(page: Int): ImageBitmap? = map[page]
+
+    @Synchronized
+    fun put(page: Int, bmp: ImageBitmap) {
+        map[page] = bmp
+        while (map.size > MAX) {
+            map.remove(map.keys.first())
+        }
+    }
+}
+
 private data class WordDraw(val rect: RectF, val style: WordStyle)
 
 private data class WordStyle(
@@ -901,21 +1043,29 @@ fun MushafPageView(
     activeVerse: Int?,
     playOrder: Map<String, Int>,
     playHead: Int,
+    onAnchorAyah: (Int, Int) -> Unit = { _, _ -> },
 ) {
     val ctx = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val lineGroups = remember(page.page) {
         GlyphCoords.ensure(ctx)
         GlyphCoords.lineGroups(page.page)
     }
-    val bmp = remember(page.page) {
-        try {
-            val name = "pages/%03d.png".format(page.page)
-            ctx.assets.open(name).use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
-        } catch (e: Exception) {
-            null
+    var loadFailed by remember(page.page) { mutableStateOf(false) }
+    val bmp by produceState<ImageBitmap?>(initialValue = PageImageCache.get(page.page), page.page) {
+        if (value == null && !loadFailed) {
+            value = withContext(Dispatchers.IO) {
+                try {
+                    val name = "pages/%03d.png".format(page.page)
+                    ctx.assets.open(name).use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+                        ?.also { PageImageCache.put(page.page, it) }
+                } catch (e: Exception) { null }
+            }
+            if (value == null) loadFailed = true
         }
     }
     if (bmp == null) {
+        if (loadFailed) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 56.dp),
         ) {
@@ -925,6 +1075,14 @@ fun MushafPageView(
                     "basmala" -> Basmala()
                     "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead)
                 }
+            }
+        }
+        } else {
+            Box(
+                Modifier.fillMaxSize().background(PAGE_MASK),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(color = goldColor)
             }
         }
         return
@@ -967,15 +1125,38 @@ fun MushafPageView(
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        BoxWithConstraints(Modifier.align(Alignment.Center).fillMaxWidth()) {
-            val imgH = maxWidth * 1656f / 1024f
+        BoxWithConstraints(
+            Modifier.align(Alignment.Center).fillMaxSize().padding(horizontal = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val pageW = minOf(maxWidth, maxHeight * 1024f / 1656f)
+            val imgH = pageW * 1656f / 1024f
                 Box(
-                    Modifier.width(maxWidth).height(imgH)
-                        .shadow(elevation = 6.dp, shape = RoundedCornerShape(6.dp), clip = false),
+                    Modifier.width(pageW).height(imgH)
+                        .shadow(elevation = 6.dp, shape = RoundedCornerShape(6.dp), clip = false)
+                        .pointerInput(page.page, lineGroups) {
+                            detectTapGestures(onTap = { offset ->
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
+                                if (w <= 0f || h <= 0f) return@detectTapGestures
+                                val gx = offset.x / w * 1024f
+                                val gy = offset.y / h * 1656f
+                                for ((groupKey, rects) in lineGroups) {
+                                    for (r in rects) {
+                                        if (gx in r.left..r.right && gy in r.top..r.bottom) {
+                                            val pp = groupKey.split(":")
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onAnchorAyah(pp[0].toInt(), pp[1].toInt())
+                                            return@detectTapGestures
+                                        }
+                                    }
+                                }
+                            })
+                        },
                 ) {
                 Image(
                     bitmap = bmp,
-                    contentDescription = null,
+                    contentDescription = "Mushaf page ${page.page}",
                     contentScale = ContentScale.FillBounds,
                     modifier = Modifier.fillMaxSize(),
                 )

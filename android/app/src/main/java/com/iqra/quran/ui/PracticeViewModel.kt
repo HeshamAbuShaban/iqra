@@ -147,6 +147,26 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         setCurrentPage(page)
     }
 
+    /** Tap-an-ayah: move the practice anchor to a tapped verse. Keeps the
+     *  recognition tuning untouched — only reseats lock/page like a swipe. */
+    fun anchorToVerse(surah: Int, ayah: Int) {
+        if (surah !in 1..114 || ayah < 1) return
+        if (_mushaf.value == null) return
+        if (surah != activeSurah) loadSurah(surah)
+        if (verseWords[ayah].isNullOrEmpty()) return
+        pendingNextAyah = null; pendingNextFrames = 0
+        _statusMap.value = emptyMap()
+        _currentKey.value = null
+        val targetPage = versePage[ayah]
+        if (targetPage != null && targetPage != pageNumber) {
+            pageNumber = targetPage
+            _currentPage.value = targetPage
+        }
+        lockedAyah = ayah
+        _activeVerse.value = ayah
+        if (_recording.value) recorder.reset()
+    }
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             val d = QuranData.load(getApplication())
