@@ -18,7 +18,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -399,19 +398,11 @@ fun SurahIndex(
                         item { ContinueCard(info, page) { onOpen(info.number, page) } }
                     }
                     if (meccan.isNotEmpty()) {
-                        stickyHeader {
-                            Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
-                                SectionHeader("Meccan", meccan.size, false)
-                            }
-                        }
+                        item { SectionHeader("Meccan", meccan.size, false) }
                         items(meccan, key = { it.number }) { SurahRow(it, onOpen) }
                     }
                     if (madani.isNotEmpty()) {
-                        stickyHeader {
-                            Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
-                                SectionHeader("Madani", madani.size, true)
-                            }
-                        }
+                        item { SectionHeader("Madani", madani.size, true) }
                         items(madani, key = { it.number }) { SurahRow(it, onOpen) }
                     }
                     if (filtered.isEmpty()) {
@@ -1052,7 +1043,7 @@ fun MushafPageView(
         GlyphCoords.lineGroups(page.page)
     }
     var loadFailed by remember(page.page) { mutableStateOf(false) }
-    val bmp by produceState<ImageBitmap?>(initialValue = PageImageCache.get(page.page), page.page) {
+    val bmpState by produceState<ImageBitmap?>(initialValue = PageImageCache.get(page.page), page.page) {
         if (value == null && !loadFailed) {
             value = withContext(Dispatchers.IO) {
                 try {
@@ -1064,6 +1055,7 @@ fun MushafPageView(
             if (value == null) loadFailed = true
         }
     }
+    val bmp: ImageBitmap? = bmpState
     if (bmp == null) {
         if (loadFailed) {
         Column(
