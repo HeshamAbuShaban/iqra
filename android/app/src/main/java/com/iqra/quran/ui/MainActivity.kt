@@ -49,8 +49,14 @@ import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Share
+import android.content.Intent
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -89,6 +95,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
+import com.iqra.quran.data.HighlightLayer
 import com.iqra.quran.data.WordStatus
 import com.iqra.quran.data.GlyphCoords
 
@@ -642,6 +649,7 @@ fun EmptyHint(text: String) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderScreen(
     vm: PracticeViewModel,
@@ -661,6 +669,10 @@ fun ReaderScreen(
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val modelProgress by vm.modelProgress.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
+    val activeWindow by vm.activeWindow.collectAsStateWithLifecycle()
+    val selectedAyah by vm.selectedAyah.collectAsStateWithLifecycle()
+    val repeatKey by vm.repeatAyahKey.collectAsStateWithLifecycle()
+    val repeatLeft by vm.repeatLeft.collectAsStateWithLifecycle()
     val recognized by vm.recognizedText.collectAsStateWithLifecycle()
     val playIndex by vm.playIndex.collectAsStateWithLifecycle()
     val playHead by vm.playHead.collectAsStateWithLifecycle()
@@ -694,7 +706,7 @@ fun ReaderScreen(
         MaterialTheme(colorScheme = lightReaderScheme()) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { idx ->
-                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead, onAnchorAyah = vm::anchorToVerse)
+                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead, onAnchorAyah = vm::anchorToVerse, onSelectAyah = { s, a -> vm.selectAyah(s, a) }, selectedAyah = selectedAyah, activeWindow = activeWindow)
             }
             // Immersive reader header
             ReaderHeader(
@@ -822,6 +834,7 @@ fun ReaderScreen(
                             "Dim + struck — skipped ahead",
                             strike = true,
                         )
+                        LegendRow(accentColor.copy(alpha = 0.6f), "Teal glow — selected ayah (long-press)")
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Tip: tap any ayah on the page to start practicing from it.",
@@ -870,6 +883,112 @@ fun ReaderScreen(
                     },
                 )
             }
+            if (repeatKey != null) {
+                Surface(
+                    shape = Pill,
+                    color = Chrome.Bar,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp),
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Repeating $repeatKey · $repeatLeft left",
+                            fontSize = 12.sp,
+                            color = Chrome.OnChrome,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        IconButton(
+                            onClick = { vm.cancelRepeat() },
+                            modifier = Modifier.size(26.dp),
+                        ) {
+                            Icon(Icons.Filled.Close, "Cancel repeat", tint = Chrome.OnChrome, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+            if (selectedAyah != null) {
+                val selParts = selectedAyah!!.split(":")
+                val selSurah = selParts[0].toInt()
+                val selAyah = selParts[1].toInt()
+                val selPage = remember(selectedAyah) { vm.pageOfVerse(selSurah, selAyah) }
+                val selText = remember(selectedAyah) { vm.ayahText(selSurah, selAyah) }
+                val selBookmarked = selPage?.let { bookmarkPages.contains(it) } ?: false
+                var repeatCount by remember(selectedAyah) { mutableStateOf(5) }
+                val clipboard = LocalClipboardManager.current
+                val sheetCtx = LocalContext.current
+                ModalBottomSheet(
+                    onDismissRequest = { vm.clearSelection() },
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ) {
+                    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+                        Text("Ayah $selSurah:$selAyah", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            selText,
+                            fontFamily = quranFont,
+                            fontSize = 20.sp,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        SheetAction(Icons.Filled.Mic, "Practice from here") {
+                            vm.clearSelection()
+                            vm.anchorToVerse(selSurah, selAyah)
+                            onRequestMic { vm.startRecite(selSurah, selPage ?: (currentPage ?: (startIdx + 1))) }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text("Repeat", fontSize = 16.sp, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { if (repeatCount > 1) repeatCount-- }) {
+                                Text("−", fontSize = 20.sp)
+                            }
+                            Text(
+                                "$repeatCount×",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                            )
+                            IconButton(onClick = { if (repeatCount < 20) repeatCount++ }) {
+                                Text("+", fontSize = 20.sp)
+                            }
+                            Button(
+                                onClick = {
+                                    vm.clearSelection()
+                                    vm.startRepeat(selSurah, selAyah, repeatCount)
+                                },
+                                shape = Pill,
+                                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                            ) {
+                                Text("Start")
+                            }
+                        }
+                        SheetAction(Icons.Filled.PlayArrow, "Listen from here (surah audio)") {
+                            vm.clearSelection()
+                            vm.togglePlaySurah(selSurah)
+                        }
+                        SheetAction(
+                            if (selBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            if (selBookmarked) "Remove bookmark (p $selPage)" else "Bookmark page $selPage",
+                        ) {
+                            selPage?.let { vm.toggleBookmark(it) }
+                        }
+                        SheetAction(Icons.Filled.Share, "Share text") {
+                            vm.clearSelection()
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, selText)
+                            }
+                            sheetCtx.startActivity(Intent.createChooser(send, null))
+                        }
+                        SheetAction(Icons.Filled.ContentCopy, "Copy text") {
+                            vm.clearSelection()
+                            clipboard.setText(AnnotatedString(selText))
+                        }
+                    }
+                }
+            }
         }
         }
     }
@@ -885,6 +1004,18 @@ private fun LegendRow(dot: Color, text: String, strike: Boolean = false) {
             fontSize = 13.sp,
             textDecoration = if (strike) TextDecoration.LineThrough else null,
         )
+    }
+}
+
+@Composable
+private fun SheetAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = accentColor)
+        Spacer(Modifier.width(14.dp))
+        Text(label, fontSize = 16.sp)
     }
 }
 
@@ -986,41 +1117,60 @@ private data class WordStyle(
     val strike: Boolean,
 )
 
-private fun resolveWordStyle(
+private fun resolveLayer(
     st: WordStatus,
     isCurrent: Boolean,
     isPlayed: Boolean,
     isPlayHead: Boolean,
     inActiveAyah: Boolean,
+    isSelected: Boolean,
+): HighlightLayer = when {
+    st == WordStatus.WRONG && inActiveAyah -> HighlightLayer.WRONG
+    isCurrent -> HighlightLayer.RECITATION_WORD
+    isSelected -> HighlightLayer.SELECTION
+    isPlayHead -> HighlightLayer.AUDIO_WORD
+    isPlayed -> HighlightLayer.AUDIO
+    inActiveAyah -> HighlightLayer.RECITATION_AYAH
+    else -> HighlightLayer.NONE
+}
+
+private fun resolveWordStyle(
+    layer: HighlightLayer,
+    st: WordStatus,
     hide: Boolean,
     onSurface: Color,
     background: Color,
 ): WordStyle {
     if (hide) {
-        return when {
-            isPlayHead -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
-            isPlayed -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.55f, false, false)
-            inActiveAyah && isCurrent -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
-            inActiveAyah && st == WordStatus.WRONG -> WordStyle(wrongColor, Color.Transparent, wrongColor, 0.6f, true, false)
-            inActiveAyah && st == WordStatus.CORRECT -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.45f, false, false)
-            else -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false)
+        return when (layer) {
+            HighlightLayer.AUDIO_WORD -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
+            HighlightLayer.AUDIO -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.55f, false, false)
+            HighlightLayer.RECITATION_WORD -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
+            HighlightLayer.WRONG -> WordStyle(wrongColor, Color.Transparent, wrongColor, 0.6f, true, false)
+            HighlightLayer.SELECTION -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.7f, true, false)
+            HighlightLayer.RECITATION_AYAH ->
+                if (st == WordStatus.CORRECT) WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.45f, false, false)
+                else WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false)
+            HighlightLayer.NONE -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false)
         }
     }
-    return when {
-        isPlayHead -> WordStyle(goldColor, goldColor.copy(alpha = 0.25f), goldColor, 0.7f, true, false)
-        isPlayed -> WordStyle(goldColor, goldColor.copy(alpha = 0.20f), goldColor, 0.30f, false, false)
-        st == WordStatus.WRONG -> WordStyle(wrongColor, wrongColor.copy(alpha = 0.25f), wrongColor, 0.40f, true, false)
-        isCurrent -> WordStyle(accentColor, accentColor.copy(alpha = 0.40f), accentColor, 0.55f, true, false)
-        inActiveAyah && st == WordStatus.SKIPPED -> WordStyle(
-            onSurface.copy(alpha = 0.55f),
-            wrongColor.copy(alpha = 0.12f),
-            wrongColor,
-            0.15f,
-            false,
-            true,
-        )
-        inActiveAyah -> WordStyle(onSurface, accentColor.copy(alpha = 0.10f), accentColor, 0.10f, false, false)
-        else -> WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
+    return when (layer) {
+        HighlightLayer.AUDIO_WORD -> WordStyle(goldColor, goldColor.copy(alpha = 0.25f), goldColor, 0.7f, true, false)
+        HighlightLayer.AUDIO -> WordStyle(goldColor, goldColor.copy(alpha = 0.20f), goldColor, 0.30f, false, false)
+        HighlightLayer.WRONG -> WordStyle(wrongColor, wrongColor.copy(alpha = 0.25f), wrongColor, 0.40f, true, false)
+        HighlightLayer.RECITATION_WORD -> WordStyle(accentColor, accentColor.copy(alpha = 0.40f), accentColor, 0.55f, true, false)
+        HighlightLayer.SELECTION -> WordStyle(accentColor, accentColor.copy(alpha = 0.30f), accentColor, 0.30f, true, false)
+        HighlightLayer.RECITATION_AYAH ->
+            if (st == WordStatus.SKIPPED) WordStyle(
+                onSurface.copy(alpha = 0.55f),
+                wrongColor.copy(alpha = 0.12f),
+                wrongColor,
+                0.15f,
+                false,
+                true,
+            )
+            else WordStyle(onSurface, accentColor.copy(alpha = 0.10f), accentColor, 0.10f, false, false)
+        HighlightLayer.NONE -> WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
     }
 }
 
@@ -1035,6 +1185,9 @@ fun MushafPageView(
     playOrder: Map<String, Int>,
     playHead: Int,
     onAnchorAyah: (Int, Int) -> Unit = { _, _ -> },
+    onSelectAyah: (Int, Int) -> Unit = { _, _ -> },
+    selectedAyah: String? = null,
+    activeWindow: List<Int> = emptyList(),
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -1065,7 +1218,7 @@ fun MushafPageView(
                 when (line.type) {
                     "surah-header" -> SurahHeader(line.text ?: "")
                     "basmala" -> Basmala()
-                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead)
+                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead, selectedAyah, activeWindow)
                 }
             }
         }
@@ -1083,7 +1236,7 @@ fun MushafPageView(
     val allWords = remember(page.page) { page.lines.flatMap { it.words ?: emptyList() } }
     val cs = MaterialTheme.colorScheme
     val draws = remember(
-        page.page, statusMap, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups,
+        page.page, statusMap, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow,
     ) {
         buildList {
             for ((groupKey, rects) in lineGroups) {
@@ -1105,11 +1258,9 @@ fun MushafPageView(
                     val gi = playOrder[key]
                     val isPlayed = gi != null && gi <= playHead
                     val isPlayHead = gi != null && gi == playHead
-                    val inActive = activeVerse != null && w.verse == activeVerse
-                    val style = resolveWordStyle(
-                        st, isCur, isPlayed, isPlayHead, inActive, hide,
-                        cs.onSurface, cs.background,
-                    )
+                    val inActive = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
+                    val layer = resolveLayer(st, isCur, isPlayed, isPlayHead, inActive, "${w.surah}:${w.verse}" == selectedAyah)
+                    val style = resolveWordStyle(layer, st, hide, cs.onSurface, cs.background)
                     add(WordDraw(rect, style))
                 }
             }
@@ -1127,23 +1278,36 @@ fun MushafPageView(
                     Modifier.width(pageW).height(imgH)
                         .shadow(elevation = 6.dp, shape = RoundedCornerShape(6.dp), clip = false)
                         .pointerInput(page.page, lineGroups) {
-                            detectTapGestures(onTap = { offset ->
+                            fun hit(px: Float, py: Float): Pair<Int, Int>? {
                                 val w = size.width.toFloat()
                                 val h = size.height.toFloat()
-                                if (w <= 0f || h <= 0f) return@detectTapGestures
-                                val gx = offset.x / w * 1024f
-                                val gy = offset.y / h * 1656f
+                                if (w <= 0f || h <= 0f) return null
+                                val gx = px / w * 1024f
+                                val gy = py / h * 1656f
                                 for ((groupKey, rects) in lineGroups) {
                                     for (r in rects) {
                                         if (gx in r.left..r.right && gy in r.top..r.bottom) {
                                             val pp = groupKey.split(":")
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            onAnchorAyah(pp[0].toInt(), pp[1].toInt())
-                                            return@detectTapGestures
+                                            return pp[0].toInt() to pp[1].toInt()
                                         }
                                     }
                                 }
-                            })
+                                return null
+                            }
+                            detectTapGestures(
+                                onTap = { offset ->
+                                    hit(offset.x, offset.y)?.let { (s, a) ->
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onAnchorAyah(s, a)
+                                    }
+                                },
+                                onLongPress = { offset ->
+                                    hit(offset.x, offset.y)?.let { (s, a) ->
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onSelectAyah(s, a)
+                                    }
+                                },
+                            )
                         },
                 ) {
                 Image(
@@ -1226,6 +1390,8 @@ fun LineText(
     activeVerse: Int?,
     playOrder: Map<String, Int> = emptyMap(),
     playHead: Int = -1,
+    selectedAyah: String? = null,
+    activeWindow: List<Int> = emptyList(),
 ) {
     if (words.isEmpty()) return
     val roundelVerses = words.filter { it.isVerseEnd }.map { it.verse }
@@ -1239,15 +1405,13 @@ fun LineText(
         val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
         val st = statusMap[key] ?: WordStatus.SKIPPED
         val isCur = key == currentKey
-        val inActiveAyah = activeVerse != null && w.verse == activeVerse
+        val inActiveAyah = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
         val gi = playOrder[key]
         val isPlayed = gi != null && gi <= playHead
         val isPlayHead = gi != null && gi == playHead
         val cs = MaterialTheme.colorScheme
-        val style = resolveWordStyle(
-            st, isCur, isPlayed, isPlayHead, inActiveAyah, hide,
-            cs.onSurface, cs.background,
-        )
+        val layer = resolveLayer(st, isCur, isPlayed, isPlayHead, inActiveAyah, "${w.surah}:${w.verse}" == selectedAyah)
+        val style = resolveWordStyle(layer, st, hide, cs.onSurface, cs.background)
         builder.pushStyle(
             SpanStyle(
                 color = style.fg,

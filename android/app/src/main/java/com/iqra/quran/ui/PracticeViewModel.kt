@@ -19,6 +19,8 @@ import com.iqra.quran.ml.TilawaEngine
 import com.iqra.quran.ml.ArabicNormalizer
 import com.iqra.quran.ml.WordAligner
 import com.iqra.quran.ml.VerseMatcher
+import com.iqra.quran.ml.ConstrainedCtcDecoder
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
@@ -112,6 +114,56 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingNextAyah: Int? = null
     private var pendingNextFrames: Int = 0
 
+    private val _activeWindow = MutableStateFlow<List<Int>>(emptyList())
+    val activeWindow: StateFlow<List<Int>> = _activeWindow
+
+    /** Narrow 2–3 ayah active window (locked±1) that matching, statuses and
+     *  the hide overlay all consume, so attention stays on what the reciter
+     *  is actually saying instead of the whole surah. */
+    private fun computeWindow(): List<Int> {
+        if (verseWords.isEmpty()) return emptyList()
+        val keys = verseWords.keys
+        val w = listOf(lockedAyah - 1, lockedAyah, lockedAyah + 1).filter { keys.contains(it) }
+        if (w.isNotEmpty()) return w
+        val nearest = keys.minOrNull() ?: return emptyList()
+        return listOf(nearest)
+    }
+
+    private fun refreshWindow() {
+        _activeWindow.value = computeWindow()
+    }
+
+    // ---- Constrained recognition state (Phase 3) ----
+    private var constrainedDecoder: ConstrainedCtcDecoder? = null
+    private var wpmEma = 70.0
+    private var lastAdvanceAt = 0L
+    private var coveredPrefix = 0
+    private val wrongStreak = mutableMapOf<String, Int>()
+
+    /** Advance the lock, measuring reciter speed from the finished ayah so
+     *  frame patience adapts to slow/fast reciters instead of fixed counts. */
+    private fun advanceLockTo(next: Int, measureSpeed: Boolean = true) {
+        val prev = lockedAyah
+        val now = System.currentTimeMillis()
+        if (measureSpeed) {
+            val dtSec = (now - lastAdvanceAt) / 1000.0
+            val prevWords = verseWords[prev]?.size ?: 0
+            if (dtSec in 2.0..180.0 && prevWords > 0) {
+                val inst = prevWords / dtSec * 60.0
+                wpmEma = (0.7 * wpmEma + 0.3 * inst).coerceIn(25.0, 160.0)
+            }
+        }
+        lastAdvanceAt = now
+        lockedAyah = next
+        coveredPrefix = 0
+        pendingNextAyah = null; pendingNextFrames = 0
+    }
+
+    /** Frames a WRONG flag must persist before it latches, scaled by measured
+     *  words-per-minute so slow reciters' mid-word frames don't flash red. */
+    private fun wrongLatchFrames(): Int =
+        (1.2 * (60.0 / wpmEma) / 0.25).roundToInt().coerceIn(2, 8)
+
     /** Build per-ayah word + page maps for a surah. The page always follows the
      *  locked verse (derived from it), so it can never jump to a wrong page. */
     private fun loadSurah(surah: Int) {
@@ -141,10 +193,68 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .firstOrNull() ?: return
         loadSurah(firstWord.surah)
         lockedAyah = firstWord.verse
+        coveredPrefix = 0
+        wrongStreak.clear()
+        pendingAnchor = null
+        refreshWindow()
         _activeVerse.value = null
         _currentKey.value = null
         _statusMap.value = emptyMap()
         setCurrentPage(page)
+    }
+
+    // ---- Ayah selection + repeat practice (long-press sheet) ----
+    private val _selectedAyah = MutableStateFlow<String?>(null)
+    val selectedAyah: StateFlow<String?> = _selectedAyah
+
+    private val _repeatAyahKey = MutableStateFlow<String?>(null)
+    val repeatAyahKey: StateFlow<String?> = _repeatAyahKey
+    private val _repeatLeft = MutableStateFlow(0)
+    val repeatLeft: StateFlow<Int> = _repeatLeft
+    private var repeatAyah: Pair<Int, Int>? = null
+    private var repeatLeftCount = 0
+    private var pendingAnchor: Int? = null
+
+    fun selectAyah(surah: Int, ayah: Int) {
+        if (surah in 1..114 && ayah >= 1) _selectedAyah.value = "$surah:$ayah"
+    }
+
+    fun clearSelection() {
+        _selectedAyah.value = null
+    }
+
+    fun pageOfVerse(surah: Int, ayah: Int): Int? {
+        val pages = _mushaf.value ?: return null
+        return pages.firstOrNull { pg ->
+            pg.lines.any { ln ->
+                ln.type == "text" && (ln.words ?: emptyList()).any { it.surah == surah && it.verse == ayah }
+            }
+        }?.page
+    }
+
+    fun ayahText(surah: Int, ayah: Int): String {
+        val pages = _mushaf.value ?: return ""
+        val ws = pages.flatMap { pg -> pg.lines.flatMap { it.words ?: emptyList() } }
+            .filter { it.surah == surah && it.verse == ayah }
+            .sortedBy { it.wordInVerse }
+        if (ws.isEmpty()) return ""
+        return ws.joinToString(" ") { it.text } + " ($surah:$ayah)"
+    }
+
+    fun startRepeat(surah: Int, ayah: Int, count: Int) {
+        anchorToVerse(surah, ayah)
+        if (verseWords[ayah].isNullOrEmpty() || activeSurah != surah) return
+        repeatAyah = surah to ayah
+        repeatLeftCount = count.coerceIn(1, 50)
+        _repeatAyahKey.value = "$surah:$ayah"
+        _repeatLeft.value = repeatLeftCount
+    }
+
+    fun cancelRepeat() {
+        repeatAyah = null
+        repeatLeftCount = 0
+        _repeatAyahKey.value = null
+        _repeatLeft.value = 0
     }
 
     /** Tap-an-ayah: move the practice anchor to a tapped verse. Keeps the
@@ -154,7 +264,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (_mushaf.value == null) return
         if (surah != activeSurah) loadSurah(surah)
         if (verseWords[ayah].isNullOrEmpty()) return
+        cancelRepeat()
+        pendingAnchor = ayah
         pendingNextAyah = null; pendingNextFrames = 0
+        coveredPrefix = 0
+        wrongStreak.clear()
         _statusMap.value = emptyMap()
         _currentKey.value = null
         val targetPage = versePage[ayah]
@@ -164,6 +278,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
         lockedAyah = ayah
         _activeVerse.value = ayah
+        refreshWindow()
         if (_recording.value) recorder.reset()
     }
 
@@ -190,6 +305,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _currentPage.value = page
         lockedAyah = ayahOnPage(page)
         _activeVerse.value = lockedAyah
+        pendingAnchor = null
+        refreshWindow()
         if (_recording.value) recorder.reset()
     }
 
@@ -222,11 +339,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (Mushaf.wordsForSurah(pages, surah).isEmpty()) return
         loadSurah(surah)
         if (verseWords.isEmpty()) return
-        lockedAyah = ayahOnPage(page)
+        lockedAyah = pendingAnchor ?: ayahOnPage(page)
+        pendingAnchor = null
         pageNumber = page
+        refreshWindow()
             verseMatcher = VerseMatcher(d)
+            constrainedDecoder = ConstrainedCtcDecoder(d.vocab, d.blankId)
             pendingNextAyah = null
             pendingNextFrames = 0
+            wpmEma = 70.0
+            lastAdvanceAt = System.currentTimeMillis()
+            coveredPrefix = 0
+            wrongStreak.clear()
             _statusMap.value = emptyMap()
         _currentKey.value = null
         _recognized.value = ""
@@ -237,6 +361,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val eng = engine ?: return@launch
             val dec = decoder ?: return@launch
             val matcher = verseMatcher ?: return@launch
+            val ccDec = constrainedDecoder ?: return@launch
             var micOk = true
             withContext(Dispatchers.Main) {
                 _status.value = "Listening…"
@@ -267,6 +392,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     val tokenIds = decoded.tokenIds
                     if (transcript.isBlank() || tokenIds.isEmpty()) continue
 
+                    // 0) Constrained decode against the active-window lexicon.
+                    //    Allowed tokens = locked + next ayah only, reference =
+                    //    locked ayah. Tracks cumulative prefix coverage so the
+                    //    advance gate knows how much of the locked ayah was
+                    //    actually heard (across rolling windows, not one frame).
+                    val refFlat = d.getWordTokens(activeSurah, lockedAyah).flatMap { it.toList() }.toIntArray()
+                    val allowedIds = HashSet<Int>(refFlat.size * 2 + 16)
+                    for (id in refFlat) allowedIds.add(id)
+                    for (arr in d.getWordTokens(activeSurah, lockedAyah + 1)) for (id in arr) allowedIds.add(id)
+                    val constrained = ccDec.decodeConstrained(lp, allowedIds, refFlat)
+                    if (refFlat.isNotEmpty()) {
+                        coveredPrefix = maxOf(coveredPrefix, (constrained.prefixCoverage * refFlat.size).toInt())
+                    }
+                    val coverageOk = refFlat.isEmpty() || coveredPrefix >= (0.5 * refFlat.size)
+
                     // 1) Detect the current verse with the faithful @tilawa joint
                     //    matcher, scoped to this surah (+ the next, for handoff).
                     //    It picks the verse whose FULL text best matches — so it
@@ -282,21 +422,25 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     //    when confident -> strict ayah-by-ayah, no cascading jumps.
                     if (match.surah == activeSurah) {
                         val step = match.ayah - lockedAyah
-                        // 2-frame hysteresis on the next-ayah advance so shorter
-                        // audio windows don't cause jitter; a strong single-frame
-                        // match (>=0.60) still advances immediately.
+                        // Visible-page attention: the candidate must live on a
+                        // page the viewer can see (current ±1), unless it is a
+                        // high-confidence relocation. Kills whole-Quran misroutes.
+                        val matchPage = versePage[match.ayah]
+                        val inView = matchPage == null || matchPage in (pageNumber - 1..pageNumber + 1)
+                        // Hysteresis scaled by measured reciter speed: slow
+                        // reciters get more confirmation frames. A strong
+                        // single-frame match still advances immediately.
+                        val needFrames = if (wpmEma < 50) 3 else 2
                         val candidate: Int? =
-                            if (step in 1..3 && match.score >= 0.40) minOf(match.ayah, lockedAyah + 1) else null
+                            if (step in 1..3 && match.score >= 0.40 && coverageOk && inView) minOf(match.ayah, lockedAyah + 1) else null
                         if (candidate != null) {
-                            val strong = candidate == lockedAyah + 1 && match.score >= 0.60
+                            val strong = candidate == lockedAyah + 1 && match.score >= 0.60 && coverageOk
                             if (strong) {
-                                lockedAyah = candidate
-                                pendingNextAyah = null; pendingNextFrames = 0
+                                advanceLockTo(candidate)
                             } else if (pendingNextAyah == candidate) {
                                 pendingNextFrames++
-                                if (pendingNextFrames >= 2) {
-                                    lockedAyah = candidate
-                                    pendingNextAyah = null; pendingNextFrames = 0
+                                if (pendingNextFrames >= needFrames) {
+                                    advanceLockTo(candidate)
                                 }
                             } else {
                                 pendingNextAyah = candidate
@@ -306,8 +450,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                             pendingNextAyah = null; pendingNextFrames = 0
                         }
                         if (step > 3 && match.score >= 0.85) {
-                            lockedAyah = match.ayah
-                            pendingNextAyah = null; pendingNextFrames = 0
+                            advanceLockTo(match.ayah, measureSpeed = false)
                         }
                     } else if (match.surah == activeSurah + 1 && activeSurah < 114) {
                         pendingNextAyah = null; pendingNextFrames = 0
@@ -315,36 +458,95 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         if (lockedAyah >= lastAyah && match.score >= 0.6) {
                             loadSurah(activeSurah + 1)
                             lockedAyah = 1
+                            coveredPrefix = 0
+                            lastAdvanceAt = System.currentTimeMillis()
                             recorder.reset()
                         }
                     } else {
                         pendingNextAyah = null; pendingNextFrames = 0
                     }
 
-                    // 3) Word-level alignment for the locked verse (token-based).
-                    val words = verseWords[lockedAyah] ?: emptyList()
-                    val statuses = if (words.isNotEmpty()) {
-                        val targetTokens = d.getWordTokens(activeSurah, lockedAyah)
-                        val targetArabic = words.map { it.text }
-                        if (targetTokens.isNotEmpty()) {
+                    // 2b) Repeat practice: when the lock moves past the repeat
+                    //     ayah, loop back until the count is exhausted.
+                    val rep = repeatAyah
+                    if (rep != null) {
+                        if (activeSurah == rep.first && lockedAyah > rep.second && repeatLeftCount > 0) {
+                            repeatLeftCount--
+                            _repeatLeft.value = repeatLeftCount
+                            lockedAyah = rep.second
+                            coveredPrefix = 0
+                            pendingNextAyah = null; pendingNextFrames = 0
+                            wrongStreak.clear()
+                            recorder.reset()
+                            refreshWindow()
+                            if (repeatLeftCount <= 0) {
+                                repeatAyah = null
+                                _repeatAyahKey.value = null
+                            }
+                        } else if (repeatLeftCount <= 0) {
+                            repeatAyah = null
+                            _repeatAyahKey.value = null
+                        }
+                    }
+
+                    // 3) Word-level alignment across the narrow active window.
+                    //    Locked ayah: full token alignment. Previous ayah: done,
+                    //    all CORRECT so said words stay visible. Next ayah: same
+                    //    alignment, so its said words reveal progressively even
+                    //    before the lock advances.
+                    refreshWindow()
+                    val window = _activeWindow.value
+                    fun alignAyah(ayah: Int, ws: List<MushafWord>): List<WordStatus> {
+                        if (ws.isEmpty()) return emptyList()
+                        val targetTokens = d.getWordTokens(activeSurah, ayah)
+                        val targetArabic = ws.map { it.text }
+                        return if (targetTokens.isNotEmpty()) {
                             WordAligner.align(tokenIds, targetTokens, targetArabic).map { it.second }
                         } else {
                             WordAligner.alignWords(targetArabic, transcript.split(" "))
                         }
-                    } else {
-                        emptyList()
+                    }
+                    val words = verseWords[lockedAyah] ?: emptyList()
+                    val statuses = alignAyah(lockedAyah, words)
+                    val windowStatuses = LinkedHashMap<Int, List<WordStatus>>()
+                    for (a in window) {
+                        val ws = verseWords[a] ?: emptyList()
+                        windowStatuses[a] = when {
+                            ws.isEmpty() -> emptyList()
+                            a < lockedAyah -> List(ws.size) { WordStatus.CORRECT }
+                            a == lockedAyah -> statuses
+                            else -> alignAyah(a, ws)
+                        }
                     }
 
-                    // 4) Build keyed status map + current-word highlight.
+                    // 4) Build keyed status map across the window + current-word highlight.
+                    //    WRONG on the locked ayah must persist for speed-scaled
+                    //    frames before it latches, so a slow reciter's mid-word
+                    //    frames never flash red.
+                    val needWrong = wrongLatchFrames()
                     val newMap = LinkedHashMap<String, WordStatus>()
+                    for ((a, sts) in windowStatuses) {
+                        val ws = verseWords[a] ?: emptyList()
+                        for (i in ws.indices) {
+                            val key = keyOf(ws[i])
+                            var s = sts.getOrElse(i) { WordStatus.SKIPPED }
+                            if (a == lockedAyah && s == WordStatus.WRONG) {
+                                val streak = (wrongStreak[key] ?: 0) + 1
+                                wrongStreak[key] = streak
+                                if (streak < needWrong) s = WordStatus.SKIPPED
+                            } else {
+                                wrongStreak.remove(key)
+                            }
+                            newMap[key] = s
+                        }
+                    }
+                    wrongStreak.keys.removeAll { k -> !k.startsWith("$activeSurah:$lockedAyah:") }
                     var currentKey: String? = null
                     var seenMatched = false
                     for (i in words.indices) {
                         val st = statuses.getOrElse(i) { WordStatus.SKIPPED }
-                        val key = keyOf(words[i])
-                        newMap[key] = st
                         if (st != WordStatus.SKIPPED) seenMatched = true
-                        if (st == WordStatus.SKIPPED && seenMatched && currentKey == null) currentKey = key
+                        if (st == WordStatus.SKIPPED && seenMatched && currentKey == null) currentKey = keyOf(words[i])
                     }
                     if (currentKey == null) {
                         for (i in words.indices.reversed()) {
@@ -371,6 +573,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     fun stopRecite() {
         if (!_recording.value) return
         _recording.value = false
+        cancelRepeat()
         recorder.stop()
         _status.value = "Done — review your recitation below"
         _activeVerse.value = null

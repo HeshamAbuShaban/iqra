@@ -33,3 +33,19 @@ data class WordResult(
 )
 
 enum class WordStatus { CORRECT, SKIPPED, WRONG, EXTRA }
+
+/**
+ * Typed highlight layers, borrowed in adapted form from quran_android's
+ * SELECTION / AUDIO / AUDIO_WORD / BOOKMARK grammar. Lower ordinal wins
+ * when several layers claim the same word, so recitation, selection and
+ * reference-audio visuals never fight each other.
+ */
+enum class HighlightLayer {
+    WRONG,
+    RECITATION_WORD,
+    SELECTION,
+    AUDIO_WORD,
+    AUDIO,
+    RECITATION_AYAH,
+    NONE,
+}
