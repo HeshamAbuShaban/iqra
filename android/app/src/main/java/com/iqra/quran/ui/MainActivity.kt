@@ -72,6 +72,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.withTransform
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
@@ -1320,6 +1322,7 @@ fun MushafPageView(
                     // so holes show the parchment scaffold = truly invisible text,
                     // never a white cover. Ayah markers and surah headers are not
                     // word rects, so they stay printed as indicators.
+                    val dst = IntSize(size.width.toInt(), size.height.toInt())
                     if (hide) {
                         withTransform({
                             for (d in draws) {
@@ -1327,10 +1330,10 @@ fun MushafPageView(
                                 val r = d.rect
                                 clipRect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy, ClipOp.Difference)
                             }
-                            drawImage(bmp, dstSize = size)
+                            drawImage(bmp, dstSize = dst)
                         })
                     } else {
-                        drawImage(bmp, dstSize = size)
+                        drawImage(bmp, dstSize = dst)
                     }
                     for (d in draws) {
                         if (d.style.tintAlpha <= 0f) continue
