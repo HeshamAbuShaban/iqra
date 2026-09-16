@@ -70,9 +70,9 @@ import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.withTransform
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -1324,14 +1324,26 @@ fun MushafPageView(
                     // word rects, so they stay printed as indicators.
                     val dst = IntSize(size.width.toInt(), size.height.toInt())
                     if (hide) {
-                        withTransform({
+                        // save / clip-out / draw / restore on the native canvas:
+                        // hidden word pixels are never drawn (holes show the
+                        // parchment), then overlays draw unclipped below.
+                        drawIntoCanvas { c ->
+                            c.save()
                             for (d in draws) {
                                 if (!d.style.hidden) continue
                                 val r = d.rect
-                                clipRect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy, ClipOp.Difference)
+                                c.clipRect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy, ClipOp.Difference)
                             }
-                            drawImage(bmp, dstSize = dst)
-                        })
+                            c.drawImageRect(
+                                image = bmp,
+                                srcOffset = Offset.Zero,
+                                srcSize = Size(bmp.width.toFloat(), bmp.height.toFloat()),
+                                dstOffset = Offset.Zero,
+                                dstSize = size,
+                                paint = Paint(),
+                            )
+                            c.restore()
+                        }
                     } else {
                         drawImage(bmp, dstSize = dst)
                     }
