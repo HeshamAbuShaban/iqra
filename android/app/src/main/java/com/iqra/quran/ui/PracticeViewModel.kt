@@ -164,6 +164,74 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private fun wrongLatchFrames(): Int =
         (1.2 * (60.0 / wpmEma) / 0.25).roundToInt().coerceIn(2, 8)
 
+    private fun applyHarakatRecheck(
+        expectedStrict: List<String>,
+        transStrict: List<String>,
+        statuses: List<WordStatus>,
+    ): List<WordStatus> {
+        if (expectedStrict.isEmpty() || transStrict.isEmpty()) return statuses
+        val rate = transStrict.count { TextCtcDecoder.hasDiacritic(it) } / transStrict.size.toFloat()
+        if (rate < 0.3f) return statuses // model isn't emitting harakat; can't judge
+        val transNorm = transStrict.map { ArabicNormalizer.normalize(it) }
+        return statuses.mapIndexed { i, st ->
+            if (st != WordStatus.CORRECT) return@mapIndexed st
+            val exp = expectedStrict.getOrNull(i) ?: return@mapIndexed st
+            val expNorm = ArabicNormalizer.normalize(exp)
+            val cands = transStrict.indices.filter { transNorm[it] == expNorm }
+            if (cands.isEmpty()) st
+            else if (cands.any { TextCtcDecoder.hasDiacritic(transStrict[it]) } &&
+                cands.none { transStrict[it] == exp }
+            ) WordStatus.WRONG
+            else st
+        }
+    }
+
+    /** Greedy walk of emissions against the locked ayah's reference tokens;
+     *  returns the key of the word holding the most recent emission, or null
+     *  when nothing recent matched (caller falls back to the heuristic). */
+    private fun timedWordKey(
+        words: List<MushafWord>,
+        emissions: List<TextCtcDecoder.Emission>,
+        refWordTokens: List<IntArray>,
+        timeSteps: Int,
+    ): String? {
+        if (words.isEmpty() || emissions.isEmpty() || refWordTokens.isEmpty()) return null
+        val depth = minOf(refWordTokens.size, words.size)
+        var wi = 0
+        var ti = 0
+        var lastWord = -1
+        var lastEnd = -1
+        for (e in emissions) {
+            if (wi >= depth) break
+            val need = refWordTokens[wi]
+            if (ti < need.size && e.tokenId == need[ti]) {
+                ti++
+                if (ti >= need.size) {
+                    lastWord = wi
+                    lastEnd = e.endFrame
+                    wi++
+                    ti = 0
+                }
+            } else if (ti == 0) {
+                continue // extra sound before the word starts
+            } else {
+                ti = 0
+                if (need.isNotEmpty() && e.tokenId == need[0]) {
+                    ti = 1
+                    if (need.size == 1) {
+                        lastWord = wi
+                        lastEnd = e.endFrame
+                        wi++
+                    }
+                }
+            }
+        }
+        if (lastWord < 0) return null
+        val recent = timeSteps - maxOf(8, timeSteps / 4)
+        if (lastEnd < recent) return null
+        return keyOf(words[lastWord])
+    }
+
     /** Build per-ayah word + page maps for a surah. The page always follows the
      *  locked verse (derived from it), so it can never jump to a wrong page. */
     private fun loadSurah(surah: Int) {
@@ -387,9 +455,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 try {
                     val lp = eng.run(used)
-                    val decoded = dec.decode(lp.data, lp.timeSteps, lp.vocabSize)
-                    val transcript = decoded.text
-                    val tokenIds = decoded.tokenIds
+                    val timed = dec.decodeTimed(lp.data, lp.timeSteps, lp.vocabSize)
+                    val transcript = timed.text
+                    val tokenIds = timed.tokenIds
                     if (transcript.isBlank() || tokenIds.isEmpty()) continue
 
                     // 0) Constrained decode against the active-window lexicon.
@@ -507,7 +575,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                     val words = verseWords[lockedAyah] ?: emptyList()
-                    val statuses = alignAyah(lockedAyah, words)
+                    val rawStatuses = alignAyah(lockedAyah, words)
+                    // Harakat-aware recheck: the aligner works on normalized
+                    // text, so a wrong harakah is invisible to it. Downgrade
+                    // CORRECT -> WRONG only with positive evidence (the model
+                    // emitted a diacritic that mismatches), never on bare text.
+                    val strictWords = dec.emissionsToStrictWords(timed.emissions)
+                    val statuses = applyHarakatRecheck(words.map { it.text }, strictWords, rawStatuses)
+                    // Word timing: the word holding the most recent emission is
+                    // where the reciter stands; it overrides the heuristic key.
+                    val timedKey = timedWordKey(words, timed.emissions, d.getWordTokens(activeSurah, lockedAyah), lp.timeSteps)
                     val windowStatuses = LinkedHashMap<Int, List<WordStatus>>()
                     for (a in window) {
                         val ws = verseWords[a] ?: emptyList()
@@ -541,7 +618,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                     wrongStreak.keys.removeAll { k -> !k.startsWith("$activeSurah:$lockedAyah:") }
-                    var currentKey: String? = null
+                    var currentKey: String? = timedKey
                     var seenMatched = false
                     for (i in words.indices) {
                         val st = statuses.getOrElse(i) { WordStatus.SKIPPED }

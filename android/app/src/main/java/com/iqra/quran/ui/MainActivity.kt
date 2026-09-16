@@ -69,7 +69,9 @@ import androidx.compose.ui.graphics.Color
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
@@ -829,11 +831,7 @@ fun ReaderScreen(
                         LegendRow(goldColor, "Gold — reference audio has sung this")
                         LegendRow(wrongColor, "Red — check this word")
                         LegendRow(reciteBlue, "Blue — revealed while hidden")
-                        LegendRow(
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            "Dim + struck — skipped ahead",
-                            strike = true,
-                        )
+                        LegendRow(amberColor, "Amber outline — skipped ahead (hidden)")
                         LegendRow(accentColor.copy(alpha = 0.6f), "Teal glow — selected ayah (long-press)")
                         Spacer(Modifier.height(4.dp))
                         Text(
@@ -1115,7 +1113,11 @@ private data class WordStyle(
     val tintAlpha: Float,
     val bold: Boolean,
     val strike: Boolean,
+    val hidden: Boolean = false,
+    val outline: Boolean = false,
 )
+
+private val amberColor = Color(0xFFE09112)
 
 private fun resolveLayer(
     st: WordStatus,
@@ -1149,9 +1151,9 @@ private fun resolveWordStyle(
             HighlightLayer.WRONG -> WordStyle(wrongColor, Color.Transparent, wrongColor, 0.6f, true, false)
             HighlightLayer.SELECTION -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.7f, true, false)
             HighlightLayer.RECITATION_AYAH ->
-                if (st == WordStatus.CORRECT) WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.45f, false, false)
-                else WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false)
-            HighlightLayer.NONE -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false)
+                if (st == WordStatus.CORRECT) WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
+                else WordStyle(amberColor, Color.Transparent, amberColor, 1f, false, false, hidden = true, outline = true)
+            HighlightLayer.NONE -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false, hidden = true)
         }
     }
     return when (layer) {
@@ -1310,24 +1312,35 @@ fun MushafPageView(
                             )
                         },
                 ) {
-                Image(
-                    bitmap = bmp,
-                    contentDescription = "Mushaf page ${page.page}",
-                    contentScale = ContentScale.FillBounds,
-                    modifier = Modifier.fillMaxSize(),
-                )
                 Canvas(Modifier.fillMaxSize()) {
                     val sx = size.width / 1024f
                     val sy = size.height / 1656f
-                    if (hide) drawRect(PAGE_MASK)
+                    // Hide mode: two-pass like quran_android's HighlightingImageView.
+                    // Pass 1 clips every hidden word rect OUT, then draws the page,
+                    // so holes show the parchment scaffold = truly invisible text,
+                    // never a white cover. Ayah markers and surah headers are not
+                    // word rects, so they stay printed as indicators.
+                    if (hide) {
+                        withTransform({
+                            for (d in draws) {
+                                if (!d.style.hidden) continue
+                                val r = d.rect
+                                clipRect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy, ClipOp.Difference)
+                            }
+                            drawImage(bmp, dstSize = size)
+                        })
+                    } else {
+                        drawImage(bmp, dstSize = size)
+                    }
                     for (d in draws) {
                         if (d.style.tintAlpha <= 0f) continue
-                        drawRect(
-                            d.style.tint,
-                            Offset(d.rect.left * sx, d.rect.top * sy),
-                            Size(d.rect.width() * sx, d.rect.height() * sy),
-                            alpha = d.style.tintAlpha,
-                        )
+                        val off = Offset(d.rect.left * sx, d.rect.top * sy)
+                        val sz = Size(d.rect.width() * sx, d.rect.height() * sy)
+                        if (d.style.outline) {
+                            drawRect(d.style.tint, off, sz, alpha = d.style.tintAlpha, style = Stroke(width = 3f))
+                        } else {
+                            drawRect(d.style.tint, off, sz, alpha = d.style.tintAlpha)
+                        }
                     }
                     if (!hide) {
                         playOrder.entries.firstOrNull { it.value == playHead }?.key
