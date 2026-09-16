@@ -1334,8 +1334,9 @@ fun MushafPageView(
                                 val r = d.rect
                                 clipRect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy, ClipOp.Difference)
                             }
+                        }) {
                             drawImage(bmp, dstSize = dst)
-                        })
+                        }
                     } else {
                         drawImage(bmp, dstSize = dst)
                     }
