@@ -18,6 +18,7 @@ import com.iqra.quran.ml.TextCtcDecoder
 import com.iqra.quran.ml.TilawaEngine
 import com.iqra.quran.ml.ArabicNormalizer
 import com.iqra.quran.ml.WordAligner
+import com.iqra.quran.ml.SherpaVad
 import com.iqra.quran.ml.VerseMatcher
 import com.iqra.quran.ml.ConstrainedCtcDecoder
 import kotlin.math.roundToInt
