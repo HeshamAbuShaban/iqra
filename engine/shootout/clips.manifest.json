@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "clips": [
+    {
+      "id": "clean-001-template",
+      "wav": "../audio/001.raw",
+      "sampleRate": 16000,
+      "ayahs": ["1:1"],
+      "mistakes": []
+    }
+  ]
+}
