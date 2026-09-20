@@ -69,7 +69,7 @@ object SherpaVad {
         return try {
             v.reset()
             v.acceptWaveform(samples)
-            v.isSpeechDetected
+            v.isSpeechDetected()
         } catch (t: Throwable) {
             Log.w(TAG, "VAD probe failed", t)
             null
