@@ -426,6 +426,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _activeVerse.value = lockedAyah
         viewModelScope.launch(Dispatchers.IO) {
             if (engine == null && !ensureEngine()) return@launch
+            val vadReady = SherpaVad.ensure(getApplication())
             val eng = engine ?: return@launch
             val dec = decoder ?: return@launch
             val matcher = verseMatcher ?: return@launch
@@ -447,9 +448,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val audio = recorder.currentSamples()
                 if (audio.size < 4800) continue
                 val used = if (audio.size > CAP) audio.copyOfRange(audio.size - CAP, audio.size) else audio
-                // Skip pure silence: real recitation is full of long pauses, and
-                // decoding silence floods the matcher with garbage + drains battery.
-                if (rms(used) < SILENCE_RMS) {
+                // Silence gate: skip only when RMS is quiet AND silero VAD (when
+                // available) also hears silence. Either one hearing speech keeps
+                // the frame, so soft reciters are never cut and loud speech is
+                // never missed — VAD can only reduce garbage, never nuke audio.
+                val quiet = rms(used) < SILENCE_RMS
+                val vadSilent = if (vadReady) SherpaVad.speechInWindow(used)?.not() else null
+                if (quiet && vadSilent != false) {
                     withContext(Dispatchers.Main) { _status.value = "Listening… (silence)" }
                     continue
                 }
