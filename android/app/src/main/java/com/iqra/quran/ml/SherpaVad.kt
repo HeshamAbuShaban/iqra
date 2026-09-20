@@ -37,20 +37,19 @@ object SherpaVad {
                 failed = true
                 return false
             }
-            val silero = com.k2fsa.sherpa.onnx.SileroVadModelConfig.builder()
-                .setModel(file.absolutePath)
-                .setThreshold(0.5f)
-                .setMinSilenceDuration(0.25f)
-                .setMinSpeechDuration(0.25f)
-                .setWindowSize(512)
-                .setMaxSpeechDuration(30.0f)
-                .build()
-            val config = com.k2fsa.sherpa.onnx.VadModelConfig.builder()
-                .setSileroVadModelConfig(silero)
-                .setSampleRate(16000)
-                .setNumThreads(1)
-                .build()
-            vad = com.k2fsa.sherpa.onnx.Vad(config)
+            val silero = com.k2fsa.sherpa.onnx.SileroVadModelConfig(
+                model = file.absolutePath,
+                threshold = 0.5f,
+                minSilenceDuration = 0.25f,
+                minSpeechDuration = 0.25f,
+                windowSize = 512,
+                maxSpeechDuration = 30.0f,
+            )
+            val config = com.k2fsa.sherpa.onnx.VadModelConfig()
+            config.sileroVadModelConfig = silero
+            config.sampleRate = 16000
+            config.numThreads = 1
+            vad = com.k2fsa.sherpa.onnx.Vad(context.assets, config)
             Log.i(TAG, "silero VAD ready (${file.length()} bytes)")
             true
         } catch (t: Throwable) {

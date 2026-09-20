@@ -35,6 +35,9 @@ android {
     buildFeatures { compose = true }
     packaging {
         resources { excludes += setOf("/META-INF/*") }
+        // sherpa-onnx AAR bundles its own libonnxruntime.so; first one wins
+        // (ours, 1.29.0) so both runtimes share a single ABI-stable native lib.
+        jniLibs { pickFirsts += "lib/arm64-v8a/libonnxruntime.so" }
     }
 }
 
