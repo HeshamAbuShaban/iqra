@@ -13,16 +13,9 @@ import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.GlyphCoords
 import com.iqra.quran.data.WordStatus
-import com.iqra.quran.ml.ModelManager
-import com.iqra.quran.ml.TextCtcDecoder
-import com.iqra.quran.ml.TilawaEngine
-import com.iqra.quran.ml.ArabicNormalizer
-import com.iqra.quran.ml.WordAligner
 import com.iqra.quran.ml.SherpaVad
 import com.iqra.quran.ml.SherpaZipformer
 import com.iqra.quran.ml.PhonemeMapper
-import com.iqra.quran.ml.VerseMatcher
-import com.iqra.quran.ml.ConstrainedCtcDecoder
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -76,6 +69,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _engineLabel = MutableStateFlow("")
     val engineLabel: StateFlow<String> = _engineLabel
 
+    private val _engineHint = MutableStateFlow<String?>(null)
+    val engineHint: StateFlow<String?> = _engineHint
+
     /** Installed build tag (CI run number) so builds are verifiable on-device. */
     val buildTag: String by lazy {
         try {
@@ -127,18 +123,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private val recorder = AudioRecorder(16000)
-    private var engine: TilawaEngine? = null
-    private var decoder: TextCtcDecoder? = null
     private var activeSurah: Int = 1
     private var lockedAyah: Int = 1
-    private var pageNumber: Int = 1
+    @Volatile private var pageNumber: Int = 1
     private var verseWords: Map<Int, List<MushafWord>> = emptyMap()
     private var versePage: Map<Int, Int> = emptyMap()
-    private var verseMatcher: VerseMatcher? = null
     private var pendingNextAyah: Int? = null
     private var pendingNextFrames: Int = 0
     private var zipformerOn = false
     private var fedPosition = 0
+    // Streaming clock + tail replay: bounds emission history without losing
+    // rolling context on advance. fedTotal counts every fed sample;
+    // streamBaseSec carries pre-reset audio time for word timing.
+    private var fedTotal = 0L
+    private var streamBaseSec = 0f
+    private var tailBuf = FloatArray(0)
+    private var speechFrames = 0L
+    private var lastEmitCount = 0
+    private var nullFrames = 0
 
     private val _activeWindow = MutableStateFlow<List<Int>>(emptyList())
     val activeWindow: StateFlow<List<Int>> = _activeWindow
@@ -159,11 +161,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _activeWindow.value = computeWindow()
     }
 
-    // ---- Constrained recognition state (Phase 3) ----
-    private var constrainedDecoder: ConstrainedCtcDecoder? = null
+    // ---- Recognition state ----
     private var wpmEma = 70.0
     private var lastAdvanceAt = 0L
-    private var coveredPrefix = 0
     private val wrongStreak = mutableMapOf<String, Int>()
     /** Session verdicts per word key, retained when ayahs leave the active
      *  window so completed recitation stays visible (and stays revealed in
@@ -171,13 +171,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      *  jump, anchor and new recitation sessions. */
     private val sessionStatuses = LinkedHashMap<String, WordStatus>()
 
-    /** Advance the lock, measuring reciter speed from the finished ayah so
-     *  frame patience adapts to slow/fast reciters instead of fixed counts. */
+    /** Advance the lock, measuring reciter speed from SPEECH-ACTIVE time on
+     *  the finished ayah (wall silence excluded) so frame patience adapts
+     *  to slow/fast reciters instead of fixed counts. */
     private fun advanceLockTo(next: Int, measureSpeed: Boolean = true) {
         val prev = lockedAyah
         val now = System.currentTimeMillis()
         if (measureSpeed) {
-            val dtSec = (now - lastAdvanceAt) / 1000.0
+            val dtSec = speechFramesSinceAdvance * 0.25
             val prevWords = verseWords[prev]?.size ?: 0
             if (dtSec in 2.0..180.0 && prevWords > 0) {
                 val inst = prevWords / dtSec * 60.0
@@ -185,9 +186,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         lastAdvanceAt = now
+        speechFramesSinceAdvance = 0
         lockedAyah = next
-        coveredPrefix = 0
         pendingNextAyah = null; pendingNextFrames = 0
+        // Recycle the stream with tail replay: bounds emission history
+        // (flat per-frame cost forever) while keeping rolling context, so
+        // there is no dead zone after an advance.
+        streamBaseSec += fedTotal / 16000f
+        fedTotal = 0
+        SherpaZipformer.resetStream()
+        if (tailBuf.isNotEmpty()) {
+            SherpaZipformer.accept(tailBuf)
+            fedTotal = tailBuf.size.toLong()
+        }
     }
 
     /** Frames a WRONG flag must persist before it latches, scaled by measured
@@ -195,72 +206,38 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private fun wrongLatchFrames(): Int =
         (1.2 * (60.0 / wpmEma) / 0.25).roundToInt().coerceIn(2, 8)
 
-    private fun applyHarakatRecheck(
-        expectedStrict: List<String>,
-        transStrict: List<String>,
-        statuses: List<WordStatus>,
-    ): List<WordStatus> {
-        if (expectedStrict.isEmpty() || transStrict.isEmpty()) return statuses
-        val rate = transStrict.count { TextCtcDecoder.hasDiacritic(it) } / transStrict.size.toFloat()
-        if (rate < 0.3f) return statuses // model isn't emitting harakat; can't judge
-        val transNorm = transStrict.map { ArabicNormalizer.normalize(it) }
-        return statuses.mapIndexed { i, st ->
-            if (st != WordStatus.CORRECT) return@mapIndexed st
-            val exp = expectedStrict.getOrNull(i) ?: return@mapIndexed st
-            val expNorm = ArabicNormalizer.normalize(exp)
-            val cands = transStrict.indices.filter { transNorm[it] == expNorm }
-            if (cands.isEmpty()) st
-            else if (cands.any { TextCtcDecoder.hasDiacritic(transStrict[it]) } &&
-                cands.none { transStrict[it] == exp }
-            ) WordStatus.WRONG
-            else st
+    private var speechFramesSinceAdvance = 0L
+
+    /**
+     * Replays the recent audio tail into a FRESH stream after the lock moves,
+     * preserving rolling context while bounding emission history (flat
+     * per-frame cost no matter how long the session runs). Stream clock
+     * continuity is kept via streamBaseSec.
+     */
+    private fun recycleStreamForAdvance() {
+        streamBaseSec += fedTotal / 16000f
+        fedTotal = 0
+        SherpaZipformer.resetStream()
+        if (tailBuf.isNotEmpty()) {
+            SherpaZipformer.accept(tailBuf)
+            fedTotal = tailBuf.size.toLong()
         }
     }
 
-    /** Greedy walk of emissions against the locked ayah's reference tokens;
-     *  returns the key of the word holding the most recent emission, or null
-     *  when nothing recent matched (caller falls back to the heuristic). */
-    private fun timedWordKey(
-        words: List<MushafWord>,
-        emissions: List<TextCtcDecoder.Emission>,
-        refWordTokens: List<IntArray>,
-        timeSteps: Int,
-    ): String? {
-        if (words.isEmpty() || emissions.isEmpty() || refWordTokens.isEmpty()) return null
-        val depth = minOf(refWordTokens.size, words.size)
-        var wi = 0
-        var ti = 0
-        var lastWord = -1
-        var lastEnd = -1
-        for (e in emissions) {
-            if (wi >= depth) break
-            val need = refWordTokens[wi]
-            if (ti < need.size && e.tokenId == need[ti]) {
-                ti++
-                if (ti >= need.size) {
-                    lastWord = wi
-                    lastEnd = e.endFrame
-                    wi++
-                    ti = 0
-                }
-            } else if (ti == 0) {
-                continue // extra sound before the word starts
-            } else {
-                ti = 0
-                if (need.isNotEmpty() && e.tokenId == need[0]) {
-                    ti = 1
-                    if (need.size == 1) {
-                        lastWord = wi
-                        lastEnd = e.endFrame
-                        wi++
-                    }
-                }
-            }
-        }
-        if (lastWord < 0) return null
-        val recent = timeSteps - maxOf(8, timeSteps / 4)
-        if (lastEnd < recent) return null
-        return keyOf(words[lastWord])
+    /**
+     * Full audio pipeline reset: recorder buffer + stream + cursors + tail.
+     * Call everywhere recorder.reset() is called while recording, so heard
+     * audio is never re-fed as new and clocks never skew.
+     */
+    private fun resetAudioPipeline() {
+        recorder.reset()
+        SherpaZipformer.resetStream()
+        fedPosition = 0
+        fedTotal = 0
+        streamBaseSec = 0f
+        tailBuf = FloatArray(0)
+        lastEmitCount = 0
+        nullFrames = 0
     }
 
     /** Build per-ayah word + page maps for a surah. The page always follows the
@@ -293,7 +270,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .firstOrNull() ?: return
         loadSurah(firstWord.surah)
         lockedAyah = firstWord.verse
-        coveredPrefix = 0
         wrongStreak.clear()
         sessionStatuses.clear()
         pendingAnchor = null
@@ -368,7 +344,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         cancelRepeat()
         pendingAnchor = ayah
         pendingNextAyah = null; pendingNextFrames = 0
-        coveredPrefix = 0
         wrongStreak.clear()
         sessionStatuses.clear()
         _statusMap.value = emptyMap()
@@ -381,23 +356,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         lockedAyah = ayah
         _activeVerse.value = ayah
         refreshWindow()
-        if (_recording.value) recorder.reset()
+        if (_recording.value) resetAudioPipeline()
     }
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            // Fast path first: text + metadata only, so home renders in
-            // milliseconds instead of after a 12 MB JSON parse.
-            val d = QuranData.loadFast(getApplication())
+            val d = QuranData.load(getApplication())
             withContext(Dispatchers.Main) {
                 _data.value = d
-                decoder = TextCtcDecoder(d.vocab, d.blankId)
                 _loading.value = false
             }
-            // Heavy assets finish in background after first frame: reader
-            // pages, recognition index, glyph copy. Home is already up.
+            // Reader pages + glyph copy finish in background after first
+            // frame. Home is already up. No recognition index anymore.
             val m = Mushaf.load(getApplication())
-            d.ensureIndex(getApplication())
             GlyphCoords.ensure(getApplication())
             withContext(Dispatchers.Main) {
                 _mushaf.value = m
@@ -416,36 +387,53 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _activeVerse.value = lockedAyah
         pendingAnchor = null
         refreshWindow()
-        if (_recording.value) recorder.reset()
+        if (_recording.value) resetAudioPipeline()
     }
 
     private fun keyOf(w: MushafWord) = "${w.surah}:${w.verse}:${w.wordInVerse}"
 
-    private suspend fun ensureEngine(): Boolean {
-        if (engine != null) return true
+    /** Voice engine readiness: gated zipformer files + phoneme table +
+     *  stream start. Files are user-supplied via adb push (never bundled,
+     *  never downloaded); when absent we refuse to start rather than
+     *  silently running nothing. */
+    private suspend fun ensureVoice(): Boolean {
+        if (zipformerOn) return true
         return try {
             withContext(Dispatchers.Main) { _preparing.value = true }
-            val modelFile: File = ModelManager.ensureModel(getApplication()) { p ->
-                _modelProgress.value = p
+            val app = getApplication<Application>()
+            val okFiles = SherpaZipformer.filesPresent(app)
+            if (!okFiles) {
+                _engineHint.value = "Voice engine files missing — push model.int8.onnx, tokens.txt and ordered_quran_phonemes.json into files/zipformer via adb."
+                return false
             }
-            val d = _data.value ?: return false
-            d.ensureIndex(getApplication())
-            engine = TilawaEngine(modelFile, d.vocabSize)
-            withContext(Dispatchers.Main) { _preparing.value = false }
-            true
+            val ok = SherpaZipformer.ensure(app) &&
+                PhonemeMapper.ensureTable(File(app.filesDir, "zipformer/ordered_quran_phonemes.json")) &&
+                SherpaZipformer.startStream()
+            zipformerOn = ok
+            if (ok) {
+                fedPosition = 0
+                fedTotal = 0
+                streamBaseSec = 0f
+                tailBuf = FloatArray(0)
+                speechFramesSinceAdvance = 0
+            }
+            if (!ok) {
+                _engineHint.value = "Voice engine failed to start — see logcat (SherpaZipformer)."
+            }
+            ok
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
-                _preparing.value = false
-                _status.value = "Model error: ${e.message}"
+                _status.value = "Voice error: ${e.message}"
             }
             false
+        } finally {
+            withContext(Dispatchers.Main) { _preparing.value = false }
         }
     }
 
     fun startRecite(surah: Int, page: Int) {
         if (_recording.value || _preparing.value) return
         val pages = _mushaf.value ?: return
-        val d = _data.value ?: return
         if (Mushaf.wordsForSurah(pages, surah).isEmpty()) return
         loadSurah(surah)
         if (verseWords.isEmpty()) return
@@ -453,38 +441,27 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         pendingAnchor = null
         pageNumber = page
         refreshWindow()
-            verseMatcher = VerseMatcher(d)
-            constrainedDecoder = ConstrainedCtcDecoder(d.vocab, d.blankId)
             pendingNextAyah = null
             pendingNextFrames = 0
             wpmEma = 70.0
             lastAdvanceAt = System.currentTimeMillis()
-            coveredPrefix = 0
             wrongStreak.clear()
             sessionStatuses.clear()
             _statusMap.value = emptyMap()
         _currentKey.value = null
         _recognized.value = ""
+        _engineHint.value = null
         _currentPage.value = page
         _activeVerse.value = lockedAyah
         viewModelScope.launch(Dispatchers.IO) {
             val vadReady = SherpaVad.ensure(getApplication())
-            val zFiles = SherpaZipformer.filesPresent(getApplication())
-            zipformerOn = zFiles &&
-                SherpaZipformer.ensure(getApplication()) &&
-                PhonemeMapper.ensureTable(File(getApplication<Application>().filesDir, "zipformer/ordered_quran_phonemes.json")) &&
-                SherpaZipformer.startStream()
+            if (!ensureVoice()) return@launch
             fedPosition = 0
-            _engineLabel.value =
-                (if (zipformerOn) "zipformer" else if (!zFiles) "tilawa·no-zfiles" else "tilawa·z-ERR") +
-                    "/" + (if (vadReady) "VAD" else "RMS")
-            if (!zipformerOn) {
-                if (engine == null && !ensureEngine()) return@launch
-            }
-            val eng = engine
-            val dec = decoder ?: return@launch
-            val matcher = verseMatcher ?: return@launch
-            val ccDec = constrainedDecoder ?: return@launch
+            fedTotal = 0
+            streamBaseSec = 0f
+            tailBuf = FloatArray(0)
+            speechFramesSinceAdvance = 0
+            _engineLabel.value = "zipformer/" + (if (vadReady) "VAD" else "RMS")
             var micOk = true
             withContext(Dispatchers.Main) {
                 _status.value = "Listening…"
@@ -512,229 +489,58 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     withContext(Dispatchers.Main) { _status.value = "Listening… (silence)" }
                     continue
                 }
+                speechFramesSinceAdvance++
                 try {
-                    if (zipformerOn) {
-                        runZipformerFrame(used)
-                        continue
-                    }
-                    val e = eng ?: continue
-                    val lp = e.run(used)
-                    val timed = dec.decodeTimed(lp.data, lp.timeSteps, lp.vocabSize)
-                    val transcript = timed.text
-                    val tokenIds = timed.tokenIds
-                    if (transcript.isBlank() || tokenIds.isEmpty()) continue
-
-                    // 0) Constrained decode against the active-window lexicon.
-                    //    Allowed tokens = locked + next ayah only, reference =
-                    //    locked ayah. Tracks cumulative prefix coverage so the
-                    //    advance gate knows how much of the locked ayah was
-                    //    actually heard (across rolling windows, not one frame).
-                    val refFlat = d.getWordTokens(activeSurah, lockedAyah).flatMap { it.toList() }.toIntArray()
-                    val allowedIds = HashSet<Int>(refFlat.size * 2 + 16)
-                    for (id in refFlat) allowedIds.add(id)
-                    for (arr in d.getWordTokens(activeSurah, lockedAyah + 1)) for (id in arr) allowedIds.add(id)
-                    val constrained = ccDec.decodeConstrained(lp, allowedIds, refFlat)
-                    if (refFlat.isNotEmpty()) {
-                        coveredPrefix = maxOf(coveredPrefix, (constrained.prefixCoverage * refFlat.size).toInt())
-                    }
-                    val coverageOk = refFlat.isEmpty() || coveredPrefix >= (0.5 * refFlat.size)
-
-                    // 1) Detect the current verse with the faithful @tilawa joint
-                    //    matcher, scoped to this surah (+ the next, for handoff).
-                    //    It picks the verse whose FULL text best matches — so it
-                    //    can't jump on a stray first word like "Qul".
-                    val scope = if (activeSurah < 114) setOf(activeSurah, activeSurah + 1) else setOf(activeSurah)
-                    val match = matcher.bestMatch(transcript, scope)
-                    if (match == null || match.score < 0.30) {
-                        withContext(Dispatchers.Main) { if (transcript.isNotBlank()) _recognized.value = transcript }
-                        continue
-                    }
-
-                    // 2) Move the lock FORWARD only, one ayah at a time, and only
-                    //    when confident -> strict ayah-by-ayah, no cascading jumps.
-                    if (match.surah == activeSurah) {
-                        val step = match.ayah - lockedAyah
-                        // Visible-page attention: the candidate must live on a
-                        // page the viewer can see (current ±1), unless it is a
-                        // high-confidence relocation. Kills whole-Quran misroutes.
-                        val matchPage = versePage[match.ayah]
-                        val inView = matchPage == null || matchPage in (pageNumber - 1..pageNumber + 1)
-                        // Hysteresis scaled by measured reciter speed: slow
-                        // reciters get more confirmation frames. A strong
-                        // single-frame match still advances immediately.
-                        val needFrames = if (wpmEma < 50) 3 else 2
-                        val candidate: Int? =
-                            if (step in 1..3 && match.score >= 0.40 && coverageOk && inView) minOf(match.ayah, lockedAyah + 1) else null
-                        if (candidate != null) {
-                            val strong = candidate == lockedAyah + 1 && match.score >= 0.60 && coverageOk
-                            if (strong) {
-                                advanceLockTo(candidate)
-                            } else if (pendingNextAyah == candidate) {
-                                pendingNextFrames++
-                                if (pendingNextFrames >= needFrames) {
-                                    advanceLockTo(candidate)
-                                }
-                            } else {
-                                pendingNextAyah = candidate
-                                pendingNextFrames = 1
-                            }
-                        } else {
-                            pendingNextAyah = null; pendingNextFrames = 0
-                        }
-                        if (step > 3 && match.score >= 0.85) {
-                            advanceLockTo(match.ayah, measureSpeed = false)
-                        }
-                    } else if (match.surah == activeSurah + 1 && activeSurah < 114) {
-                        pendingNextAyah = null; pendingNextFrames = 0
-                        val lastAyah = verseWords.keys.maxOrNull() ?: lockedAyah
-                        if (lockedAyah >= lastAyah && match.score >= 0.6) {
-                            loadSurah(activeSurah + 1)
-                            lockedAyah = 1
-                            coveredPrefix = 0
-                            lastAdvanceAt = System.currentTimeMillis()
-                            recorder.reset()
-                        }
-                    } else {
-                        pendingNextAyah = null; pendingNextFrames = 0
-                    }
-
-                    // 2b) Repeat practice: when the lock moves past the repeat
-                    //     ayah, loop back until the count is exhausted.
-                    val rep = repeatAyah
-                    if (rep != null) {
-                        if (activeSurah == rep.first && lockedAyah > rep.second && repeatLeftCount > 0) {
-                            repeatLeftCount--
-                            _repeatLeft.value = repeatLeftCount
-                            lockedAyah = rep.second
-                            coveredPrefix = 0
-                            pendingNextAyah = null; pendingNextFrames = 0
-                            wrongStreak.clear()
-                            recorder.reset()
-                            refreshWindow()
-                            if (repeatLeftCount <= 0) {
-                                repeatAyah = null
-                                _repeatAyahKey.value = null
-                            }
-                        } else if (repeatLeftCount <= 0) {
-                            repeatAyah = null
-                            _repeatAyahKey.value = null
-                        }
-                    }
-
-                    // 3) Word-level alignment across the narrow active window.
-                    //    Locked ayah: full token alignment. Previous ayah: done,
-                    //    all CORRECT so said words stay visible. Next ayah: same
-                    //    alignment, so its said words reveal progressively even
-                    //    before the lock advances.
-                    refreshWindow()
-                    val window = _activeWindow.value
-                    fun alignAyah(ayah: Int, ws: List<MushafWord>): List<WordStatus> {
-                        if (ws.isEmpty()) return emptyList()
-                        val targetTokens = d.getWordTokens(activeSurah, ayah)
-                        val targetArabic = ws.map { it.text }
-                        return if (targetTokens.isNotEmpty()) {
-                            WordAligner.align(tokenIds, targetTokens, targetArabic).map { it.second }
-                        } else {
-                            WordAligner.alignWords(targetArabic, transcript.split(" "))
-                        }
-                    }
-                    val words = verseWords[lockedAyah] ?: emptyList()
-                    val rawStatuses = alignAyah(lockedAyah, words)
-                    // Harakat-aware recheck: the aligner works on normalized
-                    // text, so a wrong harakah is invisible to it. Downgrade
-                    // CORRECT -> WRONG only with positive evidence (the model
-                    // emitted a diacritic that mismatches), never on bare text.
-                    val strictWords = dec.emissionsToStrictWords(timed.emissions)
-                    val statuses = applyHarakatRecheck(words.map { it.text }, strictWords, rawStatuses)
-                    // Word timing: the word holding the most recent emission is
-                    // where the reciter stands; it overrides the heuristic key.
-                    val timedKey = timedWordKey(words, timed.emissions, d.getWordTokens(activeSurah, lockedAyah), lp.timeSteps)
-                    val windowStatuses = LinkedHashMap<Int, List<WordStatus>>()
-                    for (a in window) {
-                        val ws = verseWords[a] ?: emptyList()
-                        windowStatuses[a] = when {
-                            ws.isEmpty() -> emptyList()
-                            a < lockedAyah -> List(ws.size) { WordStatus.CORRECT }
-                            a == lockedAyah -> statuses
-                            else -> alignAyah(a, ws)
-                        }
-                    }
-
-                    // 4) Build keyed status map across the window + current-word highlight.
-                    //    WRONG on the locked ayah must persist for speed-scaled
-                    //    frames before it latches, so a slow reciter's mid-word
-                    //    frames never flash red.
-                    val needWrong = wrongLatchFrames()
-                    val newMap = LinkedHashMap<String, WordStatus>()
-                    for ((a, sts) in windowStatuses) {
-                        val ws = verseWords[a] ?: emptyList()
-                        for (i in ws.indices) {
-                            val key = keyOf(ws[i])
-                            var s = sts.getOrElse(i) { WordStatus.SKIPPED }
-                            if (a == lockedAyah && s == WordStatus.WRONG) {
-                                val streak = (wrongStreak[key] ?: 0) + 1
-                                wrongStreak[key] = streak
-                                if (streak < needWrong) s = WordStatus.SKIPPED
-                            } else {
-                                wrongStreak.remove(key)
-                            }
-                            if (a != lockedAyah) {
-                                // Never downgrade a settled verdict outside the
-                                // lock: CORRECT persists, WRONG persists until
-                                // the word is heard correctly.
-                                val old = sessionStatuses[key]
-                                if (old == WordStatus.CORRECT) s = WordStatus.CORRECT
-                                else if (old == WordStatus.WRONG && s == WordStatus.SKIPPED) s = WordStatus.WRONG
-                            }
-                            sessionStatuses[key] = s
-                            newMap[key] = s
-                        }
-                    }
-                    // Retain verdicts of ayahs that left the window.
-                    for ((k, v) in sessionStatuses) newMap.putIfAbsent(k, v)
-                    wrongStreak.keys.removeAll { k -> !k.startsWith("$activeSurah:$lockedAyah:") }
-                    var currentKey: String? = timedKey
-                    var seenMatched = false
-                    for (i in words.indices) {
-                        val st = statuses.getOrElse(i) { WordStatus.SKIPPED }
-                        if (st != WordStatus.SKIPPED) seenMatched = true
-                        if (st == WordStatus.SKIPPED && seenMatched && currentKey == null) currentKey = keyOf(words[i])
-                    }
-                    if (currentKey == null) {
-                        for (i in words.indices.reversed()) {
-                            val st = statuses.getOrElse(i) { WordStatus.SKIPPED }
-                            if (st != WordStatus.SKIPPED) { currentKey = keyOf(words[i]); break }
-                        }
-                    }
-
-                    val page = versePage[lockedAyah] ?: pageNumber
-                    withContext(Dispatchers.Main) {
-                        pageNumber = page
-                        _statusMap.value = newMap
-                        _currentKey.value = currentKey
-                        _currentPage.value = page
-                        _activeVerse.value = lockedAyah
-                        _recognized.value = match.transcript
-                    }
+                    runZipformerFrame(used)
                 } catch (_: Exception) {
                 }
             }
         }
     }
 
-    /** Zipformer streaming frame: feed fresh audio, decode phonemes when
-     *  ready, map onto the active window via the canonical phoneme table.
-     *  Advance, latch, WPM, repeat and publish machinery is shared with the
-     *  Tilawa path so behavior (never the tuning) stays identical. */
+    /** Zipformer streaming frame. Streaming discipline, enforced:
+     *  - deltas fed every non-silent frame; stream NEVER reset on advance
+     *    (only handoff / anchor / swipe / session / stop);
+     *  - tail replay on advance bounds emission history (flat per-frame
+     *    cost) while keeping rolling context;
+     *  - stream-relative clock for word timing (never recorder-cumulative);
+     *  - WRONG requires confident model disagreement (mean chosen-prob),
+     *    low-confidence positions stay neutral — the lab's own doctrine. */
     private suspend fun runZipformerFrame(used: FloatArray) {
         try {
-            if (used.size < fedPosition) fedPosition = 0
+            if (used.size < fedPosition) {
+                // Recorder buffer was reset elsewhere: pair it with a full
+                // pipeline reset so heard audio is never re-fed as new.
+                resetAudioPipeline()
+            }
             val fresh = if (used.size > fedPosition) used.copyOfRange(fedPosition, used.size) else FloatArray(0)
             fedPosition = used.size
-            if (fresh.isNotEmpty()) SherpaZipformer.accept(fresh)
-            val res = SherpaZipformer.decodeIfReady() ?: return
+            if (fresh.isNotEmpty()) {
+                SherpaZipformer.accept(fresh)
+                fedTotal += fresh.size
+                tailBuf = (tailBuf + fresh).takeLast(24000).toFloatArray()
+            }
+            var res = SherpaZipformer.decodeIfReady()
+            if (res == null) {
+                nullFrames++
+                // Don't starve on isReady: force a decode when tokens may
+                // have grown while the endpoint stayed quiet.
+                if (nullFrames < 3) return
+                nullFrames = 0
+                res = SherpaZipformer.decodeForced() ?: return
+            } else {
+                if (res.symbols.size == lastEmitCount) {
+                    nullFrames++
+                    if (nullFrames < 6) return
+                    nullFrames = 0
+                    res = SherpaZipformer.decodeForced() ?: return
+                } else {
+                    nullFrames = 0
+                }
+            }
+            lastEmitCount = res.symbols.size
             if (res.symbols.isEmpty()) return
-            val audioSec = used.size / 16000f
+            val audioSec = streamBaseSec + fedTotal / 16000f
             val emitted = res.symbols.joinToString(" ")
 
             // Handoff: last ayah + next surah head matches phonetically.
@@ -746,11 +552,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     if (ns != null && ns.second >= 0.60) {
                         loadSurah(activeSurah + 1)
                         lockedAyah = 1
-                        coveredPrefix = 0
                         lastAdvanceAt = System.currentTimeMillis()
-                        SherpaZipformer.resetStream()
-                        fedPosition = used.size
-                        recorder.reset()
+                        resetAudioPipeline()
                         refreshWindow()
                         return
                     }
@@ -776,37 +579,36 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val strong = candidate == lockedAyah + 1 && score >= 0.78
                 if (strong) {
                     advanceLockTo(candidate)
-                    SherpaZipformer.resetStream()
                 } else if (pendingNextAyah == candidate) {
                     pendingNextFrames++
                     if (pendingNextFrames >= needFrames) {
                         advanceLockTo(candidate)
-                        SherpaZipformer.resetStream()
                     }
                 } else {
                     pendingNextAyah = candidate
                     pendingNextFrames = 1
                 }
+            } else if (score < 0.35) {
+                // Weak frame: leaky counter instead of a hard reset, so one
+                // bad frame can't erase accumulated confidence.
+                if (pendingNextFrames > 0) pendingNextFrames--
             } else {
                 pendingNextAyah = null; pendingNextFrames = 0
             }
             if (step > 3 && score >= 0.92) {
                 advanceLockTo(matchAyah, measureSpeed = false)
-                SherpaZipformer.resetStream()
             }
 
-            // Repeat practice hook (shared semantics).
+            // Repeat practice hook.
             val rep = repeatAyah
             if (rep != null) {
                 if (activeSurah == rep.first && lockedAyah > rep.second && repeatLeftCount > 0) {
                     repeatLeftCount--
                     _repeatLeft.value = repeatLeftCount
                     lockedAyah = rep.second
-                    coveredPrefix = 0
                     pendingNextAyah = null; pendingNextFrames = 0
                     wrongStreak.clear()
-                    SherpaZipformer.resetStream()
-                    recorder.reset()
+                    resetAudioPipeline()
                     refreshWindow()
                     if (repeatLeftCount <= 0) {
                         repeatAyah = null
@@ -818,6 +620,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
+            // Stuck recovery: speech flowing but no advance for ~6s of audio
+            // on a short ayah -> one relaxed probe advance, gates restore after.
+            if (pendingNextAyah == null && speechFramesSinceAdvance * 0.25f > 6f &&
+                verseWords.keys.any { it == lockedAyah + 1 } && score >= 0.45 && step in 1..3
+            ) {
+                advanceLockTo(lockedAyah + 1)
+            }
+
             refreshWindow()
             val window = _activeWindow.value
             val needWrong = wrongLatchFrames()
@@ -827,15 +637,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val ws = verseWords[a] ?: emptyList()
                 if (ws.isEmpty()) continue
                 val pw = PhonemeMapper.phonemeWords(activeSurah, a)
-                if (pw.isEmpty()) continue
-                val al = PhonemeMapper.alignToWords(res.symbols, pw)
+                if (pw.isEmpty() || pw.size != ws.size) continue
+                val al = PhonemeMapper.alignToWords(res.symbols, pw, res.probs)
                 for (i in ws.indices) {
                     val key = keyOf(ws[i])
-                    var s = if (pw.size == ws.size) {
-                        al.statuses.getOrElse(i) { WordStatus.SKIPPED }
-                    } else {
-                        // Phoneme/mushaf segmentation differs: proportional map.
-                        al.statuses.getOrElse((i * al.statuses.size / ws.size).coerceIn(0, al.statuses.size - 1)) { WordStatus.SKIPPED }
+                    var s = al.statuses.getOrElse(i) { WordStatus.SKIPPED }
+                    if (s == WordStatus.WRONG) {
+                        // Confident disagreement only: low model confidence
+                        // stays neutral instead of flashing red.
+                        val conf = al.wordProb.getOrElse(i) { 0f }
+                        if (a != lockedAyah || conf < 0.5f) {
+                            s = WordStatus.SKIPPED
+                        }
                     }
                     if (a == lockedAyah && s == WordStatus.WRONG) {
                         val streak = (wrongStreak[key] ?: 0) + 1
@@ -844,21 +657,26 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     } else {
                         wrongStreak.remove(key)
                     }
-                    if (a != lockedAyah) {
+                    if (a != lockedAyah && s == WordStatus.CORRECT) {
                         val old = sessionStatuses[key]
                         if (old == WordStatus.CORRECT) s = WordStatus.CORRECT
-                        else if (old == WordStatus.WRONG && s == WordStatus.SKIPPED) s = WordStatus.WRONG
                     }
-                    sessionStatuses[key] = s
+                    if (a == lockedAyah || s != WordStatus.SKIPPED) {
+                        sessionStatuses[key] = s
+                    }
                     newMap[key] = s
                 }
                 if (a == lockedAyah) {
                     val tw = PhonemeMapper.timedWord(al.emitWord, res.timestamps, audioSec)
-                    if (tw != null) {
-                        val wi = if (pw.size == ws.size) tw else (tw * ws.size / al.statuses.size).coerceIn(0, ws.size - 1)
-                        timedKey = keyOf(ws[wi])
-                    }
+                    if (tw != null && tw < ws.size) timedKey = keyOf(ws[tw])
                 }
+            }
+            // Expire verdicts outside lock±2: stale paint can never freeze.
+            // WRONG is never retained: recomputed live every frame.
+            val keep = (lockedAyah - 2)..(lockedAyah + 2)
+            sessionStatuses.keys.removeAll { k ->
+                val v = k.split(":").getOrNull(1)?.toIntOrNull()
+                v == null || v !in keep
             }
             for ((k, v) in sessionStatuses) newMap.putIfAbsent(k, v)
             wrongStreak.keys.removeAll { k -> !k.startsWith("$activeSurah:$lockedAyah:") }
@@ -884,7 +702,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 _currentKey.value = currentKey
                 _currentPage.value = page
                 _activeVerse.value = lockedAyah
-                _recognized.value = emitted.takeLast(160)
+                _recognized.value = (verseWords[lockedAyah] ?: emptyList()).joinToString(" ") { it.text }
             }
         } catch (_: Exception) {
         }
@@ -983,7 +801,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         stopPlayback()
-        engine?.close()
+        SherpaZipformer.close()
+        SherpaVad.close()
         super.onCleared()
     }
 

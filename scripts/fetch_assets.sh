@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Fetch the open-source Tilawa (MIT) model + Quran token tables into the
-# Android asset folder. The app bundles these so it runs fully OFFLINE at
-# runtime — this download happens once, at build time, on your machine.
+# Fetch bundled assets into the Android asset folder. The voice engine
+# (zipformer) and VAD models are user-supplied via adb push (gated weights)
+# and are NEVER bundled or committed — so there is no acoustic model here.
+# quran.json (verse texts + names, MIT) is the only text table we ship.
 #
 # Source: https://github.com/yazinsai/tilawa/releases/tag/v0.2.0  (MIT)
 set -euo pipefail
@@ -21,17 +22,9 @@ fetch() { # fetch <url> <out-name>
   curl -fL -o "$ASSET_DIR/$2" "$1"
 }
 
-# The 85 MB acoustic model is NOT bundled in CI builds — the app downloads it
-# once on first launch (see ModelManager). Set SKIP_MODEL=1 to skip it; run the
-# script without that var to bundle it for a fully offline local build.
-if [ -z "${SKIP_MODEL:-}" ]; then
-  fetch "$BASE/fastconformer_full_mixed.onnx" model.onnx
-else
-  echo "skip   model.onnx (SKIP_MODEL set)"
-fi
-fetch "$BASE/vocab.json"                     vocab.json
+# Stale tilawa-era assets must never linger next to the new pipeline.
+rm -f "$ASSET_DIR/model.onnx" "$ASSET_DIR/vocab.json" "$ASSET_DIR/quran_ctc_tokens.json"
 fetch "$BASE/quran.json"                     quran.json
-fetch "$BASE/quran_ctc_tokens.json"          quran_ctc_tokens.json
 
 # --- Authentic Madinah Mushaf page images (offline bundle) ---
 # Source: murtraja/quran-android-images-helper -> the SAME standard Madinah

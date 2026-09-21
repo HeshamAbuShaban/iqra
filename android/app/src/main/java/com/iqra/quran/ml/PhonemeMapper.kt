@@ -42,7 +42,12 @@ object PhonemeMapper {
     fun phonemeWords(surah: Int, ayah: Int): List<String> =
         table?.get("$surah:$ayah") ?: emptyList()
 
-    data class Alignment(val statuses: List<WordStatus>, val emitWord: IntArray)
+    data class Alignment(
+        val statuses: List<WordStatus>,
+        val emitWord: IntArray,
+        /** Mean chosen-token probability per expected word (-1 = no evidence). */
+        val wordProb: FloatArray,
+    )
 
     /**
      * Symbol-level edit DP of emitted phonemes against expected phoneme
@@ -50,9 +55,13 @@ object PhonemeMapper {
      * when every symbol matches, WRONG on substitution, SKIPPED on deletion.
      * emitWord maps each emission index to its expected word index (-1).
      */
-    fun alignToWords(emitted: List<String>, expectedWords: List<String>): Alignment {
+    fun alignToWords(
+        emitted: List<String>,
+        expectedWords: List<String>,
+        probs: FloatArray? = null,
+    ): Alignment {
         val m = expectedWords.size
-        if (m == 0) return Alignment(emptyList(), IntArray(emitted.size) { -1 })
+        if (m == 0) return Alignment(emptyList(), IntArray(emitted.size) { -1 }, FloatArray(0))
         // Flatten expected symbols with word boundaries.
         val flat = ArrayList<String>()
         val wordOf = ArrayList<Int>()
@@ -68,7 +77,7 @@ object PhonemeMapper {
         val n = emitted.size
         val len = flat.size
         if (len == 0) {
-            return Alignment(List(m) { WordStatus.SKIPPED }, IntArray(n) { -1 })
+            return Alignment(List(m) { WordStatus.SKIPPED }, IntArray(n) { -1 }, FloatArray(m) { -1f })
         }
         val dp = Array(n + 1) { IntArray(len + 1) }
         val dir = Array(n + 1) { IntArray(len + 1) } // 0=sub,1=del-from-expected,2=ins
@@ -134,7 +143,24 @@ object PhonemeMapper {
                 else -> WordStatus.WRONG
             }
         }
-        return Alignment(statuses, emitWord)
+        val wordProb = FloatArray(m) { -1f }
+        if (probs != null) {
+            // Mean chosen-token probability per expected word from emissions
+            // mapped to it (matched or substituted); insertions ignored.
+            val sum = FloatArray(m)
+            val cnt = IntArray(m)
+            for (k in emitted.indices) {
+                val wi = emitWord[k]
+                if (wi in 0 until m && k < probs.size) {
+                    sum[wi] += probs[k]
+                    cnt[wi]++
+                }
+            }
+            for (wi in 0 until m) {
+                if (cnt[wi] > 0) wordProb[wi] = sum[wi] / cnt[wi]
+            }
+        }
+        return Alignment(statuses, emitWord, wordProb)
     }
 
     /** Word holding the most recent emission within [recencySec] of now. */

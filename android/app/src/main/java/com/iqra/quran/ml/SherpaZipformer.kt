@@ -26,6 +26,9 @@ object SherpaZipformer {
     data class PhonemeResult(
         val symbols: List<String>,
         val timestamps: FloatArray,
+        /** Chosen-token probabilities parallel to symbols; drives the
+         *  confident-disagreement gate for WRONG flags. */
+        val probs: FloatArray,
         val text: String,
     )
 
@@ -108,9 +111,25 @@ object SherpaZipformer {
             rec.decode(s)
             val r = rec.getResult(s)
             val syms = r.tokens.toList()
-            PhonemeResult(syms, r.timestamps, syms.joinToString(" "))
+            PhonemeResult(syms, r.timestamps, r.ysProbs, syms.joinToString(" "))
         } catch (t: Throwable) {
             Log.w(TAG, "decode failed", t)
+            null
+        }
+    }
+
+    /** Unconditional decode for frames starved by isReady gating. */
+    fun decodeForced(): PhonemeResult? {
+        val rec = recognizer
+        val s = stream
+        if (rec == null || s == null) return null
+        return try {
+            rec.decode(s)
+            val r = rec.getResult(s)
+            val syms = r.tokens.toList()
+            PhonemeResult(syms, r.timestamps, r.ysProbs, syms.joinToString(" "))
+        } catch (t: Throwable) {
+            Log.w(TAG, "forced decode failed", t)
             null
         }
     }

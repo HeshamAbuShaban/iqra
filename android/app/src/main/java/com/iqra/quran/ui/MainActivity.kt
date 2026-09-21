@@ -190,6 +190,52 @@ private fun mushafShapes() = Shapes(
 )
 
 @Composable
+private fun ExpectedWordsLine(
+    words: List<MushafWord>,
+    statusMap: Map<String, WordStatus>,
+    currentKey: String?,
+    playOrder: Map<String, Int>,
+    playHead: Int,
+) {
+    if (words.isEmpty()) return
+    val b = AnnotatedString.Builder()
+    words.forEachIndexed { i, w ->
+        val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
+        val st = statusMap[key] ?: WordStatus.SKIPPED
+        val gi = playOrder[key]
+        val isPlayed = gi != null && gi <= playHead
+        val isHead = gi != null && gi == playHead
+        val isCur = key == currentKey
+        val fg = when {
+            st == WordStatus.WRONG -> wrongColor
+            isCur -> accentColor
+            isPlayed || isHead -> goldColor
+            st == WordStatus.SKIPPED -> Chrome.OnChrome.copy(alpha = 0.45f)
+            else -> Chrome.OnChrome
+        }
+        b.pushStyle(
+            SpanStyle(
+                color = fg,
+                background = if (isCur) accentColor.copy(alpha = 0.30f)
+                else if (st == WordStatus.WRONG) wrongColor.copy(alpha = 0.25f)
+                else Color.Transparent,
+                fontWeight = if (isCur || isHead) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+        )
+        b.append(w.text)
+        b.pop()
+        if (i < words.lastIndex) b.append(" ")
+    }
+    Text(
+        b.toAnnotatedString(),
+        fontFamily = quranFont,
+        fontSize = 15.sp,
+        maxLines = 2,
+        modifier = Modifier.weight(1f),
+    )
+}
+
+@Composable
 private fun PulseDot(color: Color = wrongColor) {
     val t = rememberInfiniteTransition(label = "pulse")
     val a by t.animateFloat(
@@ -692,9 +738,15 @@ fun ReaderScreen(
     val selectedAyah by vm.selectedAyah.collectAsStateWithLifecycle()
     val repeatKey by vm.repeatAyahKey.collectAsStateWithLifecycle()
     val repeatLeft by vm.repeatLeft.collectAsStateWithLifecycle()
-    val recognized by vm.recognizedText.collectAsStateWithLifecycle()
     val playIndex by vm.playIndex.collectAsStateWithLifecycle()
     val playHead by vm.playHead.collectAsStateWithLifecycle()
+    val engineHint by vm.engineHint.collectAsStateWithLifecycle()
+    val standWords = remember(activeVerse, mushaf) {
+        val av = activeVerse ?: return@remember emptyList<MushafWord>()
+        mushaf.flatMap { pg -> pg.lines.flatMap { it.words ?: emptyList() } }
+            .filter { it.surah == surah && it.verse == av }
+            .sortedBy { it.wordInVerse }
+    }
     val bookmarkPages by vm.bookmarks.collectAsStateWithLifecycle()
     var showGoto by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
@@ -764,7 +816,7 @@ fun ReaderScreen(
                             tint = Chrome.OnChrome,
                         )
                     }
-                    if (recording && recognized.isEmpty()) {
+                    if (recording && standWords.isEmpty()) {
                         Spacer(Modifier.width(6.dp))
                         PulseDot()
                         Spacer(Modifier.width(6.dp))
@@ -800,14 +852,16 @@ fun ReaderScreen(
                             Text(if (recording) "Stop" else "Recite")
                         }
                     }
-                    if (recognized.isNotEmpty()) {
+                    if (recording && standWords.isNotEmpty()) {
+                        Spacer(Modifier.width(10.dp))
+                        ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead)
+                    } else if (!recording && engineHint != null) {
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            recognized,
-                            fontSize = 13.sp,
-                            fontFamily = quranFont,
-                            color = accentColor,
-                            maxLines = 1,
+                            engineHint ?: "",
+                            fontSize = 11.sp,
+                            color = wrongColor.copy(alpha = 0.85f),
+                            maxLines = 2,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -1315,6 +1369,11 @@ fun MushafPageView(
             }
         }
     }
+    val juzNum = remember(page.page) {
+        val starts = com.iqra.quran.data.QuranData.JUZ_START_PAGES
+        val idx = starts.indexOfFirst { it > page.page }
+        if (idx == -1) 30 else idx
+    }
     Box(
         Modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter,
@@ -1326,7 +1385,7 @@ fun MushafPageView(
             modifier = Modifier.padding(bottom = 72.dp),
         ) {
             Text(
-                "Page ${page.page} · Juz ${page.page.let { p -> com.iqra.quran.data.QuranData.JUZ_START_PAGES.indexOfFirst { it > p }.let { if (it == -1) 30 else it } }}",
+                "Page ${page.page} · Juz $juzNum",
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                 fontSize = 11.sp,
                 color = Color.White.copy(alpha = 0.9f),
