@@ -114,6 +114,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var verseMatcher: VerseMatcher? = null
     private var pendingNextAyah: Int? = null
     private var pendingNextFrames: Int = 0
+    private var zipformerOn = false
+    private var fedPosition = 0
 
     private val _activeWindow = MutableStateFlow<List<Int>>(emptyList())
     val activeWindow: StateFlow<List<Int>> = _activeWindow
@@ -443,9 +445,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _currentPage.value = page
         _activeVerse.value = lockedAyah
         viewModelScope.launch(Dispatchers.IO) {
-            if (engine == null && !ensureEngine()) return@launch
             val vadReady = SherpaVad.ensure(getApplication())
-            val eng = engine ?: return@launch
+            zipformerOn = SherpaZipformer.ensure(getApplication()) &&
+                PhonemeMapper.ensureTable(File(getApplication<Application>().filesDir, "zipformer/ordered_quran_phonemes.json")) &&
+                SherpaZipformer.startStream()
+            fedPosition = 0
+            if (!zipformerOn) {
+                if (engine == null && !ensureEngine()) return@launch
+            }
+            val eng = engine
             val dec = decoder ?: return@launch
             val matcher = verseMatcher ?: return@launch
             val ccDec = constrainedDecoder ?: return@launch
@@ -477,7 +485,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     continue
                 }
                 try {
-                    val lp = eng.run(used)
+                    if (zipformerOn) {
+                        runZipformerFrame(used)
+                        continue
+                    }
+                    val e = eng ?: continue
+                    val lp = e.run(used)
                     val timed = dec.decodeTimed(lp.data, lp.timeSteps, lp.vocabSize)
                     val transcript = timed.text
                     val tokenIds = timed.tokenIds
@@ -681,10 +694,179 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Zipformer streaming frame: feed fresh audio, decode phonemes when
+     *  ready, map onto the active window via the canonical phoneme table.
+     *  Advance, latch, WPM, repeat and publish machinery is shared with the
+     *  Tilawa path so behavior (never the tuning) stays identical. */
+    private suspend fun runZipformerFrame(used: FloatArray) {
+        try {
+            if (used.size < fedPosition) fedPosition = 0
+            val fresh = if (used.size > fedPosition) used.copyOfRange(fedPosition, used.size) else FloatArray(0)
+            fedPosition = used.size
+            if (fresh.isNotEmpty()) SherpaZipformer.accept(fresh)
+            val res = SherpaZipformer.decodeIfReady() ?: return
+            if (res.symbols.isEmpty()) return
+            val audioSec = used.size / 16000f
+            val emitted = res.symbols.joinToString(" ")
+
+            // Handoff: last ayah + next surah head matches phonetically.
+            val lastAyah = verseWords.keys.maxOrNull() ?: lockedAyah
+            if (lockedAyah >= lastAyah && activeSurah < 114) {
+                val npw = PhonemeMapper.phonemeWords(activeSurah + 1, 1)
+                if (npw.isNotEmpty()) {
+                    val ns = PhonemeMapper.matchAyah(emitted, listOf(1 to npw.joinToString(" ")))
+                    if (ns != null && ns.second >= 0.60) {
+                        loadSurah(activeSurah + 1)
+                        lockedAyah = 1
+                        coveredPrefix = 0
+                        lastAdvanceAt = System.currentTimeMillis()
+                        SherpaZipformer.resetStream()
+                        fedPosition = used.size
+                        recorder.reset()
+                        refreshWindow()
+                        return
+                    }
+                }
+            }
+
+            val scopeAyahs = (_activeWindow.value + verseWords.keys.filter { it > lockedAyah }.take(3)).distinct().sorted()
+            val cands = scopeAyahs.mapNotNull { a ->
+                val pw = PhonemeMapper.phonemeWords(activeSurah, a)
+                if (pw.isEmpty()) null else a to pw.joinToString(" ")
+            }
+            if (cands.isEmpty()) return
+            val found = PhonemeMapper.matchAyah(emitted, cands) ?: return
+            val matchAyah = found.first
+            val score = found.second
+            val matchPage = versePage[matchAyah]
+            val inView = matchPage == null || matchPage in (pageNumber - 1..pageNumber + 1)
+            val step = matchAyah - lockedAyah
+            val needFrames = if (wpmEma < 50) 3 else 2
+            val candidate: Int? =
+                if (step in 1..3 && score >= 0.60 && inView) minOf(matchAyah, lockedAyah + 1) else null
+            if (candidate != null) {
+                val strong = candidate == lockedAyah + 1 && score >= 0.78
+                if (strong) {
+                    advanceLockTo(candidate)
+                    SherpaZipformer.resetStream()
+                } else if (pendingNextAyah == candidate) {
+                    pendingNextFrames++
+                    if (pendingNextFrames >= needFrames) {
+                        advanceLockTo(candidate)
+                        SherpaZipformer.resetStream()
+                    }
+                } else {
+                    pendingNextAyah = candidate
+                    pendingNextFrames = 1
+                }
+            } else {
+                pendingNextAyah = null; pendingNextFrames = 0
+            }
+            if (step > 3 && score >= 0.92) {
+                advanceLockTo(matchAyah, measureSpeed = false)
+                SherpaZipformer.resetStream()
+            }
+
+            // Repeat practice hook (shared semantics).
+            val rep = repeatAyah
+            if (rep != null) {
+                if (activeSurah == rep.first && lockedAyah > rep.second && repeatLeftCount > 0) {
+                    repeatLeftCount--
+                    _repeatLeft.value = repeatLeftCount
+                    lockedAyah = rep.second
+                    coveredPrefix = 0
+                    pendingNextAyah = null; pendingNextFrames = 0
+                    wrongStreak.clear()
+                    SherpaZipformer.resetStream()
+                    recorder.reset()
+                    refreshWindow()
+                    if (repeatLeftCount <= 0) {
+                        repeatAyah = null
+                        _repeatAyahKey.value = null
+                    }
+                } else if (repeatLeftCount <= 0) {
+                    repeatAyah = null
+                    _repeatAyahKey.value = null
+                }
+            }
+
+            refreshWindow()
+            val window = _activeWindow.value
+            val needWrong = wrongLatchFrames()
+            val newMap = LinkedHashMap<String, WordStatus>()
+            var timedKey: String? = null
+            for (a in window) {
+                val ws = verseWords[a] ?: emptyList()
+                if (ws.isEmpty()) continue
+                val pw = PhonemeMapper.phonemeWords(activeSurah, a)
+                if (pw.isEmpty()) continue
+                val al = PhonemeMapper.alignToWords(res.symbols, pw)
+                for (i in ws.indices) {
+                    val key = keyOf(ws[i])
+                    var s = if (pw.size == ws.size) {
+                        al.statuses.getOrElse(i) { WordStatus.SKIPPED }
+                    } else {
+                        // Phoneme/mushaf segmentation differs: proportional map.
+                        al.statuses.getOrElse((i * al.statuses.size / ws.size).coerceIn(0, al.statuses.size - 1)) { WordStatus.SKIPPED }
+                    }
+                    if (a == lockedAyah && s == WordStatus.WRONG) {
+                        val streak = (wrongStreak[key] ?: 0) + 1
+                        wrongStreak[key] = streak
+                        if (streak < needWrong) s = WordStatus.SKIPPED
+                    } else {
+                        wrongStreak.remove(key)
+                    }
+                    if (a != lockedAyah) {
+                        val old = sessionStatuses[key]
+                        if (old == WordStatus.CORRECT) s = WordStatus.CORRECT
+                        else if (old == WordStatus.WRONG && s == WordStatus.SKIPPED) s = WordStatus.WRONG
+                    }
+                    sessionStatuses[key] = s
+                    newMap[key] = s
+                }
+                if (a == lockedAyah) {
+                    val tw = PhonemeMapper.timedWord(al.emitWord, res.timestamps, audioSec)
+                    if (tw != null) {
+                        val wi = if (pw.size == ws.size) tw else (tw * ws.size / al.statuses.size).coerceIn(0, ws.size - 1)
+                        timedKey = keyOf(ws[wi])
+                    }
+                }
+            }
+            for ((k, v) in sessionStatuses) newMap.putIfAbsent(k, v)
+            wrongStreak.keys.removeAll { k -> !k.startsWith("$activeSurah:$lockedAyah:") }
+
+            var currentKey: String? = timedKey
+            if (currentKey == null) {
+                val ws = verseWords[lockedAyah] ?: emptyList()
+                var seen = false
+                for (w in ws) {
+                    val st = newMap[keyOf(w)] ?: WordStatus.SKIPPED
+                    if (st != WordStatus.SKIPPED) seen = true
+                    if (st == WordStatus.SKIPPED && seen) {
+                        currentKey = keyOf(w)
+                        break
+                    }
+                }
+            }
+
+            val page = versePage[lockedAyah] ?: pageNumber
+            withContext(Dispatchers.Main) {
+                pageNumber = page
+                _statusMap.value = newMap
+                _currentKey.value = currentKey
+                _currentPage.value = page
+                _activeVerse.value = lockedAyah
+                _recognized.value = emitted.takeLast(160)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     fun stopRecite() {
         if (!_recording.value) return
         _recording.value = false
         cancelRepeat()
+        SherpaZipformer.closeStream()
         recorder.stop()
         _status.value = "Done — review your recitation below"
         _activeVerse.value = null

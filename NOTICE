@@ -41,3 +41,16 @@ THIRD-PARTY COMPONENTS
   - ONNX Runtime (onnxruntime-android) — MIT, Microsoft.
   - AndroidX / Jetpack Compose — Apache-2.0, Google.
   - Kotlin — Apache-2.0, JetBrains.
+  - sherpa-onnx runtime — Apache-2.0, Xiaomi (k2-fsa); silero VAD model
+    bundled by that project.
+  - Quran-Lab zipformer_p-arabic-v3 (opt-in, user-supplied gated weights)
+    — Quran-Lab No-Profit License 1.2 (no profit; attribution required).
+  - Muno459 fastconformer-quran second-opinion weights (opt-in,
+    user-supplied) — Quran-Lab No-Profit License 1.1; base model
+    nvidia/stt_ar_fastconformer_hybrid_large_pcd_v1.0 — CC-BY-4.0 NVIDIA.
+  - Tarteel EveryAyah / tlog datasets (evaluation only) — CC-BY-4.0 Tarteel.
+
+AUTOMATIC-FEEDBACK DISCLAIMER (required by the Quran-Lab model licences
+and stated honestly): automatic tajweed/recitation feedback in this app
+can be wrong and is never a ruling on anyone's recitation — a qualified
+teacher's ear is the authority.

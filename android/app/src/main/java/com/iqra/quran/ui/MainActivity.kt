@@ -848,6 +848,12 @@ fun ReaderScreen(
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Automatic feedback can be wrong — a qualified teacher's ear is the authority.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        )
                     }
                 }
             }
