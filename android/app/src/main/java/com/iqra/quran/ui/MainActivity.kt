@@ -246,19 +246,26 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     val lastRead by vm.lastRead.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf<Screen>(Screen.Picker) }
 
-    if (loading || data == null || mushaf == null) {
+    if (loading || data == null) {
         SplashScreen()
         return
     }
     when (val s = screen) {
         Screen.Picker -> HomeScreen(vm, lastRead) { surah, page -> screen = Screen.Reader(surah, page) }
-        is Screen.Reader -> ReaderScreen(
-            vm = vm,
-            surah = s.surah,
-            startPage = s.page,
-            onBack = { screen = Screen.Picker },
-            onRequestMic = onRequestMic,
-        )
+        is Screen.Reader -> {
+            val pages = mushaf
+            if (pages == null) {
+                SplashScreen()
+            } else {
+                ReaderScreen(
+                    vm = vm,
+                    surah = s.surah,
+                    startPage = s.page,
+                    onBack = { screen = Screen.Picker },
+                    onRequestMic = onRequestMic,
+                )
+            }
+        }
     }
 }
 

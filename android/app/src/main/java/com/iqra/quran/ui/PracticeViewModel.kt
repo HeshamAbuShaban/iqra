@@ -140,6 +140,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var lastAdvanceAt = 0L
     private var coveredPrefix = 0
     private val wrongStreak = mutableMapOf<String, Int>()
+    /** Session verdicts per word key, retained when ayahs leave the active
+     *  window so completed recitation stays visible (and stays revealed in
+     *  hide mode) instead of reverting to untouched. Cleared on surah load,
+     *  jump, anchor and new recitation sessions. */
+    private val sessionStatuses = LinkedHashMap<String, WordStatus>()
 
     /** Advance the lock, measuring reciter speed from the finished ayah so
      *  frame patience adapts to slow/fast reciters instead of fixed counts. */
@@ -237,6 +242,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      *  locked verse (derived from it), so it can never jump to a wrong page. */
     private fun loadSurah(surah: Int) {
         val pages = _mushaf.value ?: return
+        sessionStatuses.clear()
         activeSurah = surah
         val all = Mushaf.wordsForSurah(pages, surah)
         val byAyah = all.groupBy { it.verse }
@@ -264,6 +270,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         lockedAyah = firstWord.verse
         coveredPrefix = 0
         wrongStreak.clear()
+        sessionStatuses.clear()
         pendingAnchor = null
         refreshWindow()
         _activeVerse.value = null
@@ -338,6 +345,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         pendingNextAyah = null; pendingNextFrames = 0
         coveredPrefix = 0
         wrongStreak.clear()
+        sessionStatuses.clear()
         _statusMap.value = emptyMap()
         _currentKey.value = null
         val targetPage = versePage[ayah]
@@ -353,14 +361,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            val d = QuranData.load(getApplication())
-            val m = Mushaf.load(getApplication())
-            GlyphCoords.ensure(getApplication())
+            // Fast path first: text + metadata only, so home renders in
+            // milliseconds instead of after a 12 MB JSON parse.
+            val d = QuranData.loadFast(getApplication())
             withContext(Dispatchers.Main) {
                 _data.value = d
-                _mushaf.value = m
                 decoder = TextCtcDecoder(d.vocab, d.blankId)
                 _loading.value = false
+            }
+            // Heavy assets finish in background after first frame: reader
+            // pages, recognition index, glyph copy. Home is already up.
+            val m = Mushaf.load(getApplication())
+            d.ensureIndex(getApplication())
+            GlyphCoords.ensure(getApplication())
+            withContext(Dispatchers.Main) {
+                _mushaf.value = m
             }
         }
     }
@@ -389,6 +404,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 _modelProgress.value = p
             }
             val d = _data.value ?: return false
+            d.ensureIndex(getApplication())
             engine = TilawaEngine(modelFile, d.vocabSize)
             withContext(Dispatchers.Main) { _preparing.value = false }
             true
@@ -420,6 +436,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             lastAdvanceAt = System.currentTimeMillis()
             coveredPrefix = 0
             wrongStreak.clear()
+            sessionStatuses.clear()
             _statusMap.value = emptyMap()
         _currentKey.value = null
         _recognized.value = ""
@@ -620,9 +637,20 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                             } else {
                                 wrongStreak.remove(key)
                             }
+                            if (a != lockedAyah) {
+                                // Never downgrade a settled verdict outside the
+                                // lock: CORRECT persists, WRONG persists until
+                                // the word is heard correctly.
+                                val old = sessionStatuses[key]
+                                if (old == WordStatus.CORRECT) s = WordStatus.CORRECT
+                                else if (old == WordStatus.WRONG && s == WordStatus.SKIPPED) s = WordStatus.WRONG
+                            }
+                            sessionStatuses[key] = s
                             newMap[key] = s
                         }
                     }
+                    // Retain verdicts of ayahs that left the window.
+                    for ((k, v) in sessionStatuses) newMap.putIfAbsent(k, v)
                     wrongStreak.keys.removeAll { k -> !k.startsWith("$activeSurah:$lockedAyah:") }
                     var currentKey: String? = timedKey
                     var seenMatched = false

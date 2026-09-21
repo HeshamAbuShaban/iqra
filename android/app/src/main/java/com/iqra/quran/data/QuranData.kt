@@ -18,17 +18,72 @@ class QuranData private constructor(
     val vocab: Map<Int, String>,
     val blankId: Int,
     val vocabSize: Int,
-    private val singleVerseTokens: Map<Int, IntArray>,
-    private val reference: Map<Int, String>,
-    private val refNoSpace: List<String>,
-    private val ngram2: List<Set<String>>,
-    private val ngram3: List<Set<String>>,
+    private var singleVerseTokens: Map<Int, IntArray>,
+    private var reference: Map<Int, String>,
+    private var refNoSpace: List<String>,
+    private var ngram2: List<Set<String>>,
+    private var ngram3: List<Set<String>>,
     private val metaByNumber: Map<Int, JSONObject>,
 ) {
     private val byRef = verses.associateBy { it.surah * 1000 + it.ayah }
     private val bySurah = verses.groupBy { it.surah }
     private val wordTokensCache = mutableMapOf<Int, List<IntArray>>()
     private val decoder = TextCtcDecoder(vocab, blankId)
+    @Volatile private var indexReady = false
+
+    /** Builds the heavy recognition index (CTC tables + reference + n-grams)
+     *  once, in background. Recognition safely falls back to text alignment
+     *  until ready, so startup never waits on the 12 MB token file. */
+    suspend fun ensureIndex(context: Context) = withContext(Dispatchers.IO) {
+        if (indexReady) return@withContext
+        val assets = context.assets
+        fun read(name: String): String =
+            assets.open(name).bufferedReader().use { it.readText() }
+        val ctcRaw = JSONObject(read("quran_ctc_tokens.json"))
+        val tokens = mutableMapOf<Int, IntArray>()
+        val ctcKeys = ctcRaw.keys()
+        while (ctcKeys.hasNext()) {
+            val key = ctcKeys.next()
+            val parts = key.split(":")
+            if (parts.size != 3) continue
+            val surah = parts[0].toIntOrNull() ?: continue
+            val ayah = parts[1].toIntOrNull() ?: continue
+            val end = parts[2].toIntOrNull() ?: continue
+            if (end != ayah) continue
+            val arr = ctcRaw.getJSONArray(key)
+            val ids = IntArray(arr.length()) { arr.getInt(it) }
+            tokens[surah * 1000 + ayah] = ids
+        }
+        val ref = mutableMapOf<Int, String>()
+        val noSpace = mutableListOf<String>()
+        val ng2 = mutableListOf<Set<String>>()
+        val ng3 = mutableListOf<Set<String>>()
+        for (v in verses) {
+            val key = v.surah * 1000 + v.ayah
+            val r = if (tokens.containsKey(key)) {
+                decoder.tokenIdsToText(tokens[key]!!)
+            } else {
+                ArabicNormalizer.normalize(v.textClean)
+            }
+            ref[key] = r
+            val ns = r.replace(" ", "")
+            noSpace.add(ns)
+            val s2 = mutableSetOf<String>()
+            val s3 = mutableSetOf<String>()
+            for (i in 0..ns.length - 2) s2.add(ns.substring(i, i + 2))
+            for (i in 0..ns.length - 3) s3.add(ns.substring(i, i + 3))
+            ng2.add(s2)
+            ng3.add(s3)
+        }
+        singleVerseTokens = tokens
+        reference = ref
+        refNoSpace = noSpace
+        ngram2 = ng2
+        ngram3 = ng3
+        wordTokensCache.clear()
+        indexReady = true
+        Log.i("QuranData", "index ready: ctc=${tokens.size}")
+    }
 
     fun getVerse(surah: Int, ayah: Int): Verse? = byRef[surah * 1000 + ayah]
     fun getSurah(surah: Int): List<Verse> = bySurah[surah] ?: emptyList()
@@ -122,7 +177,8 @@ class QuranData private constructor(
 
         private var cache: QuranData? = null
 
-        suspend fun load(context: Context): QuranData = withContext(Dispatchers.IO) {
+        /** Fast path: text + metadata only (home screen). See [QuranData.ensureIndex]. */
+        suspend fun loadFast(context: Context): QuranData = withContext(Dispatchers.IO) {
             cache?.let { return@withContext it }
             val assets = context.assets
 
@@ -157,44 +213,6 @@ class QuranData private constructor(
                 )
             }
 
-            val ctcRaw = JSONObject(readAsset(assets, "quran_ctc_tokens.json"))
-            val singleVerseTokens = mutableMapOf<Int, IntArray>()
-            val ctcKeys = ctcRaw.keys()
-            while (ctcKeys.hasNext()) {
-                val key = ctcKeys.next()
-                val parts = key.split(":")
-                if (parts.size != 3) continue
-                val surah = parts[0].toIntOrNull() ?: continue
-                val ayah = parts[1].toIntOrNull() ?: continue
-                val end = parts[2].toIntOrNull() ?: continue
-                if (end != ayah) continue // keep only single-verse spans (S:A:A)
-                val arr = ctcRaw.getJSONArray(key)
-                val ids = IntArray(arr.length()) { arr.getInt(it) }
-                singleVerseTokens[surah * 1000 + ayah] = ids
-            }
-
-            val reference = mutableMapOf<Int, String>()
-            val refNoSpace = mutableListOf<String>()
-            val ngram2 = mutableListOf<Set<String>>()
-            val ngram3 = mutableListOf<Set<String>>()
-            for (v in verses) {
-                val key = v.surah * 1000 + v.ayah
-                val ref = if (singleVerseTokens.containsKey(key)) {
-                    decoder.tokenIdsToText(singleVerseTokens[key]!!)
-                } else {
-                    ArabicNormalizer.normalize(v.textClean)
-                }
-                reference[key] = ref
-                val ns = ref.replace(" ", "")
-                refNoSpace.add(ns)
-                val ng2 = mutableSetOf<String>()
-                val ng3 = mutableSetOf<String>()
-                for (i in 0..ns.length - 2) ng2.add(ns.substring(i, i + 2))
-                for (i in 0..ns.length - 3) ng3.add(ns.substring(i, i + 3))
-                ngram2.add(ng2)
-                ngram3.add(ng3)
-            }
-
             val metaMap = mutableMapOf<Int, JSONObject>()
             try {
                 val metaRaw = JSONArray(readAsset(assets, "surah_meta.json"))
@@ -206,11 +224,17 @@ class QuranData private constructor(
                 Log.w("QuranData", "surah_meta.json missing/invalid; using defaults", e)
             }
 
-            Log.i("QuranData", "loaded ${verses.size} verses, vocab=$vocabSize, ctc=${singleVerseTokens.size}")
+            Log.i("QuranData", "fast load: ${verses.size} verses, vocab=$vocabSize")
             QuranData(
-                verses, vocab, blankId, vocabSize, singleVerseTokens,
-                reference, refNoSpace, ngram2, ngram3, metaMap,
+                verses, vocab, blankId, vocabSize, mutableMapOf(),
+                mutableMapOf(), mutableListOf(), mutableListOf(), mutableListOf(), metaMap,
             ).also { cache = it }
+        }
+
+        suspend fun load(context: Context): QuranData = withContext(Dispatchers.IO) {
+            val d = loadFast(context)
+            d.ensureIndex(context)
+            d
         }
 
         private fun readAsset(assets: android.content.res.AssetManager, name: String): String {
