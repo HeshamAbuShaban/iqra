@@ -196,6 +196,7 @@ private fun ExpectedWordsLine(
     currentKey: String?,
     playOrder: Map<String, Int>,
     playHead: Int,
+    modifier: Modifier = Modifier,
 ) {
     if (words.isEmpty()) return
     val b = AnnotatedString.Builder()
@@ -231,7 +232,7 @@ private fun ExpectedWordsLine(
         fontFamily = quranFont,
         fontSize = 15.sp,
         maxLines = 2,
-        modifier = Modifier.weight(1f),
+        modifier = modifier,
     )
 }
 
@@ -854,7 +855,7 @@ fun ReaderScreen(
                     }
                     if (recording && standWords.isNotEmpty()) {
                         Spacer(Modifier.width(10.dp))
-                        ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead)
+                        ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead, Modifier.weight(1f))
                     } else if (!recording && engineHint != null) {
                         Spacer(Modifier.width(10.dp))
                         Text(
