@@ -73,6 +73,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _recognized = MutableStateFlow("")
     val recognizedText: StateFlow<String> = _recognized
 
+    private val _engineLabel = MutableStateFlow("")
+    val engineLabel: StateFlow<String> = _engineLabel
+
     private val prefs = app.getSharedPreferences("iqra", Context.MODE_PRIVATE)
     private val _lastRead = MutableStateFlow(loadLast())
     val lastRead: StateFlow<Pair<Int, Int>?> = _lastRead
@@ -448,10 +451,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _activeVerse.value = lockedAyah
         viewModelScope.launch(Dispatchers.IO) {
             val vadReady = SherpaVad.ensure(getApplication())
-            zipformerOn = SherpaZipformer.ensure(getApplication()) &&
+            val zFiles = SherpaZipformer.filesPresent(getApplication())
+            zipformerOn = zFiles &&
+                SherpaZipformer.ensure(getApplication()) &&
                 PhonemeMapper.ensureTable(File(getApplication<Application>().filesDir, "zipformer/ordered_quran_phonemes.json")) &&
                 SherpaZipformer.startStream()
             fedPosition = 0
+            _engineLabel.value =
+                (if (zipformerOn) "zipformer" else if (!zFiles) "tilawa·no-zfiles" else "tilawa·z-ERR") +
+                    "/" + (if (vadReady) "VAD" else "RMS")
             if (!zipformerOn) {
                 if (engine == null && !ensureEngine()) return@launch
             }

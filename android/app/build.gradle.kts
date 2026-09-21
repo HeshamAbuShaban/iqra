@@ -17,7 +17,7 @@ android {
             // older 32-bit devices need to be supported.
             abiFilters += listOf("arm64-v8a")
         }
-        versionCode = 1
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = "0.1.0"
     }
     buildTypes {
@@ -52,6 +52,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.28.0")
     implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.8")
 }

@@ -1,5 +1,6 @@
 package com.iqra.quran.ui
 
+import com.iqra.quran.BuildConfig
 import com.iqra.quran.R
 import android.Manifest
 import android.content.pm.PackageManager
@@ -51,7 +52,6 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
 import android.content.Intent
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -294,11 +294,18 @@ fun HomeScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Iqra", fontFamily = quranFont, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = goldColor)
                 Spacer(Modifier.width(10.dp))
-                Text(
-                    "Memorize with live recitation feedback",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
+                Column {
+                    Text(
+                        "Memorize with live recitation feedback",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                    Text(
+                        "build #${BuildConfig.VERSION_CODE} · auto feedback can err — a teacher's ear is the authority",
+                        fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    )
+                }
             }
         }
         HomeTabRow(tab) { tab = it }
@@ -677,6 +684,7 @@ fun ReaderScreen(
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val currentPage by vm.currentPage.collectAsStateWithLifecycle()
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
+    val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val modelProgress by vm.modelProgress.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
@@ -690,7 +698,6 @@ fun ReaderScreen(
     val bookmarkPages by vm.bookmarks.collectAsStateWithLifecycle()
     var showGoto by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
-    var showLegend by remember { mutableStateOf(false) }
 
     val surahInfo = remember(data, surah) {
         data?.surahList()?.firstOrNull { it.number == surah }
@@ -742,13 +749,6 @@ fun ReaderScreen(
                     Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = { showLegend = !showLegend }) {
-                        Icon(
-                            Icons.Filled.Info,
-                            "What the colors mean",
-                            tint = if (showLegend) accentColor else Chrome.OnChrome,
-                        )
-                    }
                     IconButton(onClick = { vm.toggleHide() }) {
                         Icon(
                             if (hide) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
@@ -769,7 +769,7 @@ fun ReaderScreen(
                         PulseDot()
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "Listening…",
+                            if (engineLabel.isNotEmpty()) "Listening… · $engineLabel" else "Listening…",
                             fontSize = 12.sp,
                             color = Chrome.OnChromeMuted,
                         )
@@ -809,50 +809,6 @@ fun ReaderScreen(
                             color = accentColor,
                             maxLines = 1,
                             modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-            }
-            if (showLegend) {
-                Card(
-                    Modifier.align(Alignment.BottomCenter).padding(bottom = 92.dp, start = 16.dp, end = 16.dp),
-                    shape = CardRadius,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                ) {
-                    Column(Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "What the colors mean",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(
-                                onClick = { showLegend = false },
-                                modifier = Modifier.size(28.dp),
-                            ) {
-                                Icon(Icons.Filled.Close, "Close", modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        LegendRow(accentColor, "Teal — the word you're on")
-                        LegendRow(goldColor, "Gold — reference audio has sung this")
-                        LegendRow(wrongColor, "Red — check this word")
-                        LegendRow(reciteBlue, "Blue — revealed while hidden")
-                        LegendRow(amberColor, "Amber outline — skipped ahead (hidden)")
-                        LegendRow(accentColor.copy(alpha = 0.6f), "Teal glow — selected ayah (long-press)")
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Tip: tap any ayah on the page to start practicing from it.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Automatic feedback can be wrong — a qualified teacher's ear is the authority.",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         )
                     }
                 }
@@ -1004,19 +960,6 @@ fun ReaderScreen(
             }
         }
         }
-    }
-}
-
-@Composable
-private fun LegendRow(dot: Color, text: String, strike: Boolean = false) {
-    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(10.dp).background(dot, CircleShape))
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text,
-            fontSize = 13.sp,
-            textDecoration = if (strike) TextDecoration.LineThrough else null,
-        )
     }
 }
 

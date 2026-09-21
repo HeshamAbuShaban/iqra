@@ -32,6 +32,15 @@ object SherpaZipformer {
     @Volatile private var recognizer: OnlineRecognizer? = null
     @Volatile private var stream: OnlineStream? = null
     @Volatile private var failed = false
+    @Volatile var lastError: String? = null
+        private set
+
+    fun filesPresent(context: Context): Boolean {
+        val dir = modelDir(context)
+        val model = File(dir, MODEL_FILE)
+        val tokens = File(dir, TOKENS_FILE)
+        return model.exists() && model.length() > 0 && tokens.exists() && tokens.length() > 0
+    }
 
     fun modelDir(context: Context): File = File(context.filesDir, DIR)
 
@@ -61,6 +70,7 @@ object SherpaZipformer {
             true
         } catch (t: Throwable) {
             Log.w(TAG, "zipformer unavailable, tilawa fallback", t)
+            lastError = (t::class.simpleName ?: "err") + ": " + (t.message?.take(60) ?: "")
             failed = true
             false
         }
