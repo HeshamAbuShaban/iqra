@@ -76,6 +76,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _engineLabel = MutableStateFlow("")
     val engineLabel: StateFlow<String> = _engineLabel
 
+    /** Installed build tag (CI run number) so builds are verifiable on-device. */
+    val buildTag: String by lazy {
+        try {
+            val app = getApplication<Application>()
+            val code = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                app.packageManager.getPackageInfo(
+                    app.packageName,
+                    android.content.pm.PackageManager.PackageInfoFlags.of(0),
+                ).versionCode
+            } else {
+                @Suppress("DEPRECATION") app.packageManager.getPackageInfo(app.packageName, 0).versionCode
+            }
+            "#$code"
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
     private val prefs = app.getSharedPreferences("iqra", Context.MODE_PRIVATE)
     private val _lastRead = MutableStateFlow(loadLast())
     val lastRead: StateFlow<Pair<Int, Int>?> = _lastRead

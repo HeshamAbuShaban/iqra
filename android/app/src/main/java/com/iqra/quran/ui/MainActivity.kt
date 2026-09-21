@@ -1,6 +1,5 @@
 package com.iqra.quran.ui
 
-import com.iqra.quran.BuildConfig
 import com.iqra.quran.R
 import android.Manifest
 import android.content.pm.PackageManager
@@ -284,6 +283,7 @@ fun HomeScreen(
     onOpen: (Int, Int) -> Unit,
 ) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
+    val buildTag = remember { vm.buildTag }
     var tab by remember { mutableStateOf(HomeTab.Surahs) }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Box(
@@ -301,7 +301,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
                     Text(
-                        "build #${BuildConfig.VERSION_CODE} · auto feedback can err — a teacher's ear is the authority",
+                        "build $buildTag · auto feedback can err — a teacher's ear is the authority",
                         fontSize = 9.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
                     )
