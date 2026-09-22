@@ -12,10 +12,9 @@ android {
         minSdk = 24
         targetSdk = 36
         ndk {
-            // Ship only arm64-v8a: covers virtually all modern phones (incl. the
-            // test device) and keeps the APK small. Add "armeabi-v7a" back if
-            // older 32-bit devices need to be supported.
-            abiFilters += listOf("arm64-v8a")
+            // arm64 + 32-bit ARM: the user's phone (LMQ710) is armeabi-v7a
+            // and refuses arm64-only APKs (INSTALL_FAILED_NO_MATCHING_ABIS).
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = "0.1.0"
