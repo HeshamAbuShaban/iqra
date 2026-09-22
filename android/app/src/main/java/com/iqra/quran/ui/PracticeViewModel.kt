@@ -143,6 +143,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var speechFrames = 0L
     private var lastEmitCount = 0
     private var nullFrames = 0
+    // Per-ayah emission slice: window ayat align against emissions heard
+    // since the lock last moved — never against other ayat's history.
+    // Kills cross-ayah ghost matches (partial reveals of unrecited text).
+    private var sliceStart = 0
+    private var rebaseSlice = false
 
     private val _activeWindow = MutableStateFlow<List<Int>>(emptyList())
     val activeWindow: StateFlow<List<Int>> = _activeWindow
@@ -192,6 +197,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         lockedAyah = next
         pendingNextAyah = null; pendingNextFrames = 0
         pendingBackAyah = null; pendingBackFrames = 0
+        rebaseSlice = true
         // Recycle the stream with tail replay: bounds emission history
         // (flat per-frame cost forever) while keeping rolling context, so
         // there is no dead zone after an advance.
@@ -273,6 +279,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .firstOrNull() ?: return
         loadSurah(firstWord.surah)
         lockedAyah = firstWord.verse
+        rebaseSlice = true
         wrongStreak.clear()
         sessionStatuses.clear()
         pendingAnchor = null
@@ -358,6 +365,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             _currentPage.value = targetPage
         }
         lockedAyah = ayah
+        rebaseSlice = true
         _activeVerse.value = ayah
         refreshWindow()
         publishAnchor()
@@ -383,16 +391,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleHide() { _hideVerse.value = !_hideVerse.value }
 
-    /** Let the reader tell us which page the user is viewing (manual swipe). */
+    /** Pager bookkeeping only: records which page the user is viewing.
+     *  Never touches the lock — the lock follows the reciter (or an
+     *  explicit anchor/jump), never the eyes. This kills the phantom
+     *  highlight that painted an ayah active on every page open. */
     fun setCurrentPage(page: Int) {
         if (page == pageNumber) return
         pageNumber = page
         _currentPage.value = page
-        lockedAyah = ayahOnPage(page)
-        _activeVerse.value = lockedAyah
-        pendingAnchor = null
-        refreshWindow()
-        if (_recording.value) resetAudioPipeline()
     }
 
     private fun keyOf(w: MushafWord) = "${w.surah}:${w.verse}:${w.wordInVerse}"
@@ -450,6 +456,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         loadSurah(surah)
         if (verseWords.isEmpty()) return
         lockedAyah = pendingAnchor ?: ayahOnPage(page)
+        rebaseSlice = true
         pendingAnchor = null
         pageNumber = page
         refreshWindow()
@@ -538,8 +545,20 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val res = SherpaZipformer.decodeIfReady() ?: return
             if (res.symbols.isEmpty() || res.symbols.size == lastEmitCount) return
             lastEmitCount = res.symbols.size
+            // Per-ayah emission slice: after any lock move, window ayat align
+            // against emissions heard SINCE the move — never against other
+            // ayat's history. Kills cross-ayah ghost matches.
+            if (rebaseSlice) {
+                sliceStart = res.symbols.size
+                rebaseSlice = false
+            }
+            val base = sliceStart.coerceAtMost(res.symbols.size)
+            val obs = res.symbols.drop(base)
+            if (obs.isEmpty()) return
+            val obsProbs = res.probs.drop(base)
+            val obsTs = res.timestamps.drop(base)
             val audioSec = streamBaseSec + fedTotal / 16000f
-            val emitted = res.symbols.joinToString(" ")
+            val emitted = obs.joinToString(" ")
 
             // Handoff: last ayah + next surah head matches phonetically.
             val lastAyah = verseWords.keys.maxOrNull() ?: lockedAyah
@@ -550,6 +569,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     if (ns != null && ns.second >= 0.60) {
                         loadSurah(activeSurah + 1)
                         lockedAyah = 1
+                        rebaseSlice = true
                         lastAdvanceAt = System.currentTimeMillis()
                         resetAudioPipeline()
                         refreshWindow()
@@ -558,7 +578,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            val scopeAyahs = (_activeWindow.value + verseWords.keys.filter { it > lockedAyah }.take(3)).distinct().sorted()
+            val scopeAyahs = (_activeWindow.value +
+                verseWords.keys.filter { it < lockedAyah }.takeLast(3) +
+                verseWords.keys.filter { it > lockedAyah }.take(3)).distinct().sorted()
             val cands = scopeAyahs.mapNotNull { a ->
                 val pw = PhonemeMapper.phonemeWords(activeSurah, a)
                 if (pw.isEmpty()) null else a to pw.joinToString(" ")
@@ -594,7 +616,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 pendingNextAyah = null; pendingNextFrames = 0
         pendingBackAyah = null; pendingBackFrames = 0
             }
-            if (step > 3 && score >= 0.92) {
+            if (step > 3 && score >= 0.95 && inView) {
                 advanceLockTo(matchAyah, measureSpeed = false)
             }
             // Backward recovery: the lock overshoots (swipe reseat, fuzzy
@@ -624,7 +646,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     _repeatLeft.value = repeatLeftCount
                     lockedAyah = rep.second
                     pendingNextAyah = null; pendingNextFrames = 0
-        pendingBackAyah = null; pendingBackFrames = 0
+                    pendingBackAyah = null; pendingBackFrames = 0
+                    rebaseSlice = true
                     wrongStreak.clear()
                     resetAudioPipeline()
                     refreshWindow()
@@ -638,15 +661,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            // Stuck recovery: speech flowing but no advance for ~6s of audio.
-            // Gated on phoneme evidence for the NEXT ayah specifically — never
-            // on bare sound — so noise can no longer march the lock forward.
-            if (pendingNextAyah == null && speechFramesSinceAdvance * 0.25f > 6f &&
-                verseWords.keys.any { it == lockedAyah + 1 } && score >= 0.55 && step == 1
-            ) {
-                advanceLockTo(lockedAyah + 1)
-            }
-
             refreshWindow()
             val window = _activeWindow.value
             val needWrong = wrongLatchFrames()
@@ -657,7 +671,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 if (ws.isEmpty()) continue
                 val pw = PhonemeMapper.phonemeWords(activeSurah, a)
                 if (pw.isEmpty() || pw.size != ws.size) continue
-                val al = PhonemeMapper.alignToWords(res.symbols, pw, res.probs)
+                val al = PhonemeMapper.alignToWords(obs, pw, obsProbs.toFloatArray())
                 for (i in ws.indices) {
                     val key = keyOf(ws[i])
                     var s = al.statuses.getOrElse(i) { WordStatus.SKIPPED }
@@ -680,13 +694,22 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         val old = sessionStatuses[key]
                         if (old == WordStatus.CORRECT) s = WordStatus.CORRECT
                     }
-                    if (a == lockedAyah || s != WordStatus.SKIPPED) {
+                    // Retain CORRECT only for ayat BEHIND the lock (done work).
+                    // WRONG is never retained anywhere: recomputed live every
+                    // frame, so stale red can never freeze. Ahead-of-lock
+                    // words are always recomputed live, never kept.
+                    if (a < lockedAyah && s == WordStatus.CORRECT) {
                         sessionStatuses[key] = s
+                    } else if (a == lockedAyah) {
+                        if (s != WordStatus.SKIPPED) sessionStatuses[key] = s
+                        else sessionStatuses.remove(key)
+                    } else {
+                        sessionStatuses.remove(key)
                     }
                     newMap[key] = s
                 }
                 if (a == lockedAyah) {
-                    val tw = PhonemeMapper.timedWord(al.emitWord, res.timestamps, audioSec)
+                    val tw = PhonemeMapper.timedWord(al.emitWord, obsTs.toFloatArray(), audioSec)
                     if (tw != null && tw < ws.size) timedKey = keyOf(ws[tw])
                 }
             }
