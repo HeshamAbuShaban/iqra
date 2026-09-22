@@ -48,4 +48,6 @@ enum class HighlightLayer {
     AUDIO,
     RECITATION_AYAH,
     NONE,
+    /** Word never judged yet: clean in normal mode, masked in hide mode. */
+    UNSTARTED,
 }

@@ -129,6 +129,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var verseWords: Map<Int, List<MushafWord>> = emptyMap()
     private var versePage: Map<Int, Int> = emptyMap()
     private var pendingNextAyah: Int? = null
+    private var pendingBackAyah: Int? = null
+    private var pendingBackFrames: Int = 0
     private var pendingNextFrames: Int = 0
     private var zipformerOn = false
     private var fedPosition = 0
@@ -189,6 +191,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         speechFramesSinceAdvance = 0
         lockedAyah = next
         pendingNextAyah = null; pendingNextFrames = 0
+        pendingBackAyah = null; pendingBackFrames = 0
         // Recycle the stream with tail replay: bounds emission history
         // (flat per-frame cost forever) while keeping rolling context, so
         // there is no dead zone after an advance.
@@ -344,6 +347,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         cancelRepeat()
         pendingAnchor = ayah
         pendingNextAyah = null; pendingNextFrames = 0
+        pendingBackAyah = null; pendingBackFrames = 0
         wrongStreak.clear()
         sessionStatuses.clear()
         _statusMap.value = emptyMap()
@@ -356,6 +360,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         lockedAyah = ayah
         _activeVerse.value = ayah
         refreshWindow()
+        publishAnchor()
         if (_recording.value) resetAudioPipeline()
     }
 
@@ -391,6 +396,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun keyOf(w: MushafWord) = "${w.surah}:${w.verse}:${w.wordInVerse}"
+
+    /** Publish the anchor instantly: active verse set, standing word = its
+     *  first word, everything else UNSTARTED (clean). The opening frame must
+     *  invite recitation, never pre-accuse it. */
+    private fun publishAnchor() {
+        _currentKey.value = verseWords[lockedAyah]?.firstOrNull()?.let { keyOf(it) }
+    }
 
     /** Voice engine readiness: gated zipformer files + phoneme table +
      *  stream start. Files are user-supplied via adb push (never bundled,
@@ -448,7 +460,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             wrongStreak.clear()
             sessionStatuses.clear()
             _statusMap.value = emptyMap()
-        _currentKey.value = null
+        publishAnchor()
         _recognized.value = ""
         _engineHint.value = null
         _currentPage.value = page
@@ -594,9 +606,28 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 if (pendingNextFrames > 0) pendingNextFrames--
             } else {
                 pendingNextAyah = null; pendingNextFrames = 0
+        pendingBackAyah = null; pendingBackFrames = 0
             }
             if (step > 3 && score >= 0.92) {
                 advanceLockTo(matchAyah, measureSpeed = false)
+            }
+            // Backward recovery: the lock overshoots (swipe reseat, fuzzy
+            // relocation, blind probe). Strong multi-frame evidence that the
+            // reciter is on an ayah BEHIND the lock reseats it — a lock that
+            // cannot return to the recited ayah is definitionally broken.
+            if (step in -2..-1 && score >= 0.85 && inView) {
+                if (pendingBackAyah == matchAyah) {
+                    pendingBackFrames++
+                    if (pendingBackFrames >= 2) {
+                        advanceLockTo(matchAyah, measureSpeed = false)
+                        pendingBackAyah = null; pendingBackFrames = 0
+                    }
+                } else {
+                    pendingBackAyah = matchAyah
+                    pendingBackFrames = 1
+                }
+            } else if (pendingBackFrames > 0) {
+                pendingBackFrames--
             }
 
             // Repeat practice hook.
@@ -607,6 +638,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     _repeatLeft.value = repeatLeftCount
                     lockedAyah = rep.second
                     pendingNextAyah = null; pendingNextFrames = 0
+        pendingBackAyah = null; pendingBackFrames = 0
                     wrongStreak.clear()
                     resetAudioPipeline()
                     refreshWindow()
@@ -620,10 +652,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            // Stuck recovery: speech flowing but no advance for ~6s of audio
-            // on a short ayah -> one relaxed probe advance, gates restore after.
+            // Stuck recovery: speech flowing but no advance for ~6s of audio.
+            // Gated on phoneme evidence for the NEXT ayah specifically — never
+            // on bare sound — so noise can no longer march the lock forward.
             if (pendingNextAyah == null && speechFramesSinceAdvance * 0.25f > 6f &&
-                verseWords.keys.any { it == lockedAyah + 1 } && score >= 0.45 && step in 1..3
+                verseWords.keys.any { it == lockedAyah + 1 } && score >= 0.55 && step == 1
             ) {
                 advanceLockTo(lockedAyah + 1)
             }

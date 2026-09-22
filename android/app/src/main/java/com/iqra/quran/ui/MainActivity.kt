@@ -202,12 +202,13 @@ private fun ExpectedWordsLine(
     val b = AnnotatedString.Builder()
     words.forEachIndexed { i, w ->
         val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
-        val st = statusMap[key] ?: WordStatus.SKIPPED
+        val st = statusMap[key]
         val gi = playOrder[key]
         val isPlayed = gi != null && gi <= playHead
         val isHead = gi != null && gi == playHead
         val isCur = key == currentKey
         val fg = when {
+            st == null -> Chrome.OnChrome
             st == WordStatus.WRONG -> wrongColor
             isCur -> accentColor
             isPlayed || isHead -> goldColor
@@ -765,7 +766,7 @@ fun ReaderScreen(
     LaunchedEffect(currentPage) {
         val target = (currentPage ?: (startIdx + 1)) - 1
         if (target != pagerState.currentPage) {
-            pagerState.scrollToPage(target)
+            pagerState.animateScrollToPage(target)
         }
         vm.saveLastRead(surah, currentPage ?: (startIdx + 1))
     }
@@ -1166,7 +1167,9 @@ private fun resolveWordStyle(
             HighlightLayer.RECITATION_AYAH ->
                 if (st == WordStatus.CORRECT) WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
                 else WordStyle(amberColor, Color.Transparent, amberColor, 1f, false, false, hidden = true, outline = true)
-            HighlightLayer.NONE -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false, hidden = true)
+            HighlightLayer.NONE,
+            HighlightLayer.UNSTARTED,
+            -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false, hidden = true)
         }
     }
     return when (layer) {
@@ -1185,7 +1188,9 @@ private fun resolveWordStyle(
                 true,
             )
             else WordStyle(onSurface, accentColor.copy(alpha = 0.10f), accentColor, 0.10f, false, false)
-        HighlightLayer.NONE -> WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
+        HighlightLayer.NONE,
+        HighlightLayer.UNSTARTED,
+        -> WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
     }
 }
 
@@ -1268,14 +1273,15 @@ fun MushafPageView(
                     } ?: continue
                     val w = lineWords[i]
                     val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
-                    val st = statusMap[key] ?: WordStatus.SKIPPED
+                    val st = statusMap[key]
                     val isCur = key == currentKey
                     val gi = playOrder[key]
                     val isPlayed = gi != null && gi <= playHead
                     val isPlayHead = gi != null && gi == playHead
                     val inActive = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
-                    val layer = resolveLayer(st, isCur, isPlayed, isPlayHead, inActive, "${w.surah}:${w.verse}" == selectedAyah)
-                    val style = resolveWordStyle(layer, st, hide, cs.onSurface, cs.background)
+                    val layer = if (st == null) HighlightLayer.UNSTARTED
+                    else resolveLayer(st, isCur, isPlayed, isPlayHead, inActive, "${w.surah}:${w.verse}" == selectedAyah)
+                    val style = resolveWordStyle(layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background)
                     add(WordDraw(rect, style))
                 }
             }
@@ -1440,15 +1446,16 @@ fun LineText(
     val builder = AnnotatedString.Builder()
     words.forEachIndexed { i, w ->
         val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
-        val st = statusMap[key] ?: WordStatus.SKIPPED
+        val st = statusMap[key]
         val isCur = key == currentKey
         val inActiveAyah = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
         val gi = playOrder[key]
         val isPlayed = gi != null && gi <= playHead
         val isPlayHead = gi != null && gi == playHead
         val cs = MaterialTheme.colorScheme
-        val layer = resolveLayer(st, isCur, isPlayed, isPlayHead, inActiveAyah, "${w.surah}:${w.verse}" == selectedAyah)
-        val style = resolveWordStyle(layer, st, hide, cs.onSurface, cs.background)
+        val layer = if (st == null) HighlightLayer.UNSTARTED
+        else resolveLayer(st, isCur, isPlayed, isPlayHead, inActiveAyah, "${w.surah}:${w.verse}" == selectedAyah)
+        val style = resolveWordStyle(layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background)
         builder.pushStyle(
             SpanStyle(
                 color = style.fg,
