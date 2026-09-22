@@ -532,26 +532,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 fedTotal += fresh.size
                 tailBuf = (tailBuf + fresh).takeLast(24000).toFloatArray()
             }
-            var res = SherpaZipformer.decodeIfReady()
-            if (res == null) {
-                nullFrames++
-                // Don't starve on isReady: force a decode when tokens may
-                // have grown while the endpoint stayed quiet.
-                if (nullFrames < 3) return
-                nullFrames = 0
-                res = SherpaZipformer.decodeForced() ?: return
-            } else {
-                if (res.symbols.size == lastEmitCount) {
-                    nullFrames++
-                    if (nullFrames < 6) return
-                    nullFrames = 0
-                    res = SherpaZipformer.decodeForced() ?: return
-                } else {
-                    nullFrames = 0
-                }
-            }
+            // Decode ONLY when sherpa reports ready: forcing decode with
+            // insufficient buffered frames trips a native CHECK abort
+            // (features.cc GetFrames) and kills the process instantly.
+            val res = SherpaZipformer.decodeIfReady() ?: return
+            if (res.symbols.isEmpty() || res.symbols.size == lastEmitCount) return
             lastEmitCount = res.symbols.size
-            if (res.symbols.isEmpty()) return
             val audioSec = streamBaseSec + fedTotal / 16000f
             val emitted = res.symbols.joinToString(" ")
 

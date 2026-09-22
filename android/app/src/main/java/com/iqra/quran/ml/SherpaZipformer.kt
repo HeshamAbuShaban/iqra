@@ -118,21 +118,7 @@ object SherpaZipformer {
         }
     }
 
-    /** Unconditional decode for frames starved by isReady gating. */
-    fun decodeForced(): PhonemeResult? {
-        val rec = recognizer
-        val s = stream
-        if (rec == null || s == null) return null
-        return try {
-            rec.decode(s)
-            val r = rec.getResult(s)
-            val syms = r.tokens.toList()
-            PhonemeResult(syms, r.timestamps, r.ysProbs, syms.joinToString(" "))
-        } catch (t: Throwable) {
-            Log.w(TAG, "forced decode failed", t)
-            null
-        }
-    }
+
 
     fun resetStream() {
         val rec = recognizer
