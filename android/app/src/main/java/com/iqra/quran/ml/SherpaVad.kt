@@ -49,7 +49,10 @@ object SherpaVad {
             config.sileroVadModelConfig = silero
             config.sampleRate = 16000
             config.numThreads = 1
-            vad = com.k2fsa.sherpa.onnx.Vad(context.assets, config)
+            // assetManager MUST be null for filesDir paths, else sherpa treats
+            // the path as an APK asset, fatally aborts the process (no Java
+            // exception — instant death on Recite). See sherpa issue #2562.
+            vad = com.k2fsa.sherpa.onnx.Vad(null, config)
             Log.i(TAG, "silero VAD ready (${file.length()} bytes)")
             true
         } catch (t: Throwable) {
