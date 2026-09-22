@@ -34,9 +34,6 @@ android {
     buildFeatures { compose = true }
     packaging {
         resources { excludes += setOf("/META-INF/*") }
-        // sherpa-onnx AAR bundles its own libonnxruntime.so; first one wins
-        // (ours, 1.29.0) so both runtimes share a single ABI-stable native lib.
-        jniLibs { pickFirsts += "**/libonnxruntime.so" }
     }
 }
 
@@ -51,6 +48,5 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.28.0")
     implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.8")
 }
