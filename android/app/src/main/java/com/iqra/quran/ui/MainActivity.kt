@@ -724,7 +724,6 @@ fun BookmarkList(
 }
 
 @Composable
-@Composable
 fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
     val lastMatch by vm.lastMatch.collectAsStateWithLifecycle()
