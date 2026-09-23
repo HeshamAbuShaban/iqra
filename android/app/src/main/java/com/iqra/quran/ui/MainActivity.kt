@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material.icons.filled.Refresh
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
@@ -298,7 +300,11 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         return
     }
     when (val s = screen) {
-        Screen.Picker -> HomeScreen(vm, lastRead) { surah, page -> screen = Screen.Reader(surah, page) }
+        Screen.Picker -> HomeScreen(vm, lastRead,
+            onOpen = { surah, page -> screen = Screen.Reader(surah, page) },
+            onDiag = { screen = Screen.Diag },
+        )
+        is Screen.Diag -> DiagScreen(vm) { screen = Screen.Picker }
         is Screen.Reader -> {
             val pages = mushaf
             if (pages == null) {
@@ -319,6 +325,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
 sealed interface Screen {
     data object Picker : Screen
     data class Reader(val surah: Int, val page: Int? = null) : Screen
+    data object Diag : Screen
 }
 
 enum class HomeTab { Surahs, Juz, Bookmarks }
@@ -329,6 +336,7 @@ fun HomeScreen(
     vm: PracticeViewModel,
     lastRead: Pair<Int, Int>?,
     onOpen: (Int, Int) -> Unit,
+    onDiag: () -> Unit = {},
 ) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
     val buildTag = remember { vm.buildTag }
@@ -357,6 +365,13 @@ fun HomeScreen(
             }
         }
         HomeTabRow(tab) { tab = it }
+        TextButton(onClick = onDiag, modifier = Modifier.align(Alignment.End).padding(end = 12.dp)) {
+            Text(
+                "Engine check",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        }
         when (tab) {
             HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen)
             HomeTab.Juz -> JuzList(vm, data, onOpen)
@@ -705,6 +720,154 @@ fun BookmarkList(
                 }
             }
         }
+    }
+}
+
+@Composable
+@Composable
+fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
+    val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
+    val lastMatch by vm.lastMatch.collectAsStateWithLifecycle()
+    val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
+    val gate by vm.gateReason.collectAsStateWithLifecycle()
+    val recording by vm.recording.collectAsStateWithLifecycle()
+    val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
+    val log by vm.diagLog.collectAsStateWithLifecycle()
+    var snap by remember { mutableStateOf(vm.engineFilesInfo()) }
+    var micDb by remember { mutableStateOf(0f) }
+    var micN by remember { mutableStateOf(0) }
+    var micStalled by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    LaunchedEffect(recording) {
+        var last = -1
+        while (true) {
+            micDb = vm.micLevel()
+            val n = vm.micSampleCount()
+            micStalled = recording && n == last && n > 0
+            last = n
+            micN = n
+            delay(300)
+        }
+    }
+    fun hint(): String? {
+        if (snap.any { !it.present }) return "Missing engine files — push them via adb (commands on each row), then restart recitation."
+        if (recording && micN > 0 && micDb < 0.005f) return "Mic delivers near-silence — check gain, distance, or another app holding the mic."
+        if (micStalled) return "Mic stream frozen — stop and start recitation again."
+        if (recording && gate == "silence") return "Gate hears silence — recite louder or check VAD state above."
+        if (recording && lastMatch == null) return "No ayah matched yet — recite the locked ayah clearly."
+        return null
+    }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
+            }
+            Text("Engine check", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = { snap = vm.engineFilesInfo() }) {
+                Icon(Icons.Filled.Refresh, "Refresh", tint = MaterialTheme.colorScheme.onSurface)
+            }
+            IconButton(onClick = { clipboard.setText(AnnotatedString(log.joinToString("\n"))) }) {
+                Icon(Icons.Filled.ContentCopy, "Copy log")
+            }
+        }
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 12.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
+            item {
+                DiagSection("Engine · " + if (engineLabel.isNotEmpty()) engineLabel else "idle") {
+                    snap.forEach { f ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(10.dp).background(
+                                    if (f.present) accentColor else wrongColor,
+                                    CircleShape,
+                                ),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(f.name, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                                Text(
+                                    f.detail + (f.fix?.let { " — $it" } ?: ""),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                DiagSection("Mic · ${"%.3f".format(micDb)} · $micN samples") {
+                    DiagRow("Recording", if (recording) "yes" else "no")
+                    DiagRow("Stalled", if (micStalled) "YES — restart recitation" else "no")
+                }
+            }
+            item {
+                DiagSection("Matcher") {
+                    DiagRow("Lock", activeVerse?.toString() ?: "—")
+                    DiagRow("Last match", lastMatch?.let { "${it.first} @ ${"%.2f".format(it.second)}" } ?: "—")
+                    DiagRow("WPM", "%.0f".format(wpm))
+                    DiagRow("Gate", gate.ifEmpty { "—" })
+                    hint()?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(it, fontSize = 13.sp, color = goldColor)
+                    }
+                }
+            }
+            item {
+                DiagSection("Events (${log.size})") {
+                    if (log.isEmpty()) {
+                        Text(
+                            "No events yet — start a recitation.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                        )
+                    } else {
+                        log.takeLast(60).reversed().forEach {
+                            Text(
+                                it,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                modifier = Modifier.padding(vertical = 1.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagSection(title: String, content: @Composable () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        shape = CardRadius,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = goldColor)
+            Spacer(Modifier.height(6.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun DiagRow(k: String, v: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(
+            k,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            modifier = Modifier.width(110.dp),
+        )
+        Text(fontSize = 13.sp, text = v)
     }
 }
 

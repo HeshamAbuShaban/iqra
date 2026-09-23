@@ -39,6 +39,10 @@ object PhonemeMapper {
         }
     }
 
+    fun isReady(): Boolean = table != null
+
+    fun tableSize(): Int = table?.size ?: 0
+
     fun phonemeWords(surah: Int, ayah: Int): List<String> =
         table?.get("$surah:$ayah") ?: emptyList()
 

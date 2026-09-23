@@ -69,6 +69,59 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _engineLabel = MutableStateFlow("")
     val engineLabel: StateFlow<String> = _engineLabel
 
+    private val _lastMatch = MutableStateFlow<Pair<Int, Double>?>(null)
+    val lastMatch: StateFlow<Pair<Int, Double>?> = _lastMatch
+    private val _wpmFlow = MutableStateFlow(70.0)
+    val wpmFlow: StateFlow<Double> = _wpmFlow
+    private val _gateReason = MutableStateFlow("")
+    val gateReason: StateFlow<String> = _gateReason
+
+    private val diagBuffer = ArrayDeque<Pair<Long, String>>()
+    private val _diagLog = MutableStateFlow<List<String>>(emptyList())
+    val diagLog: StateFlow<List<String>> = _diagLog
+
+    /** Ring-buffer diagnostic event: state changes + errors only, never
+     *  per-frame spam. Powers the diagnostics screen; no logcat needed. */
+    fun diag(msg: String) {
+        val t = (System.currentTimeMillis() / 1000) % 100000
+        diagBuffer.addLast(t to msg)
+        while (diagBuffer.size > 200) diagBuffer.removeFirst()
+        _diagLog.value = diagBuffer.map { (tt, m) -> "$tt $m" }
+    }
+
+    data class EngineFileInfo(val name: String, val present: Boolean, val detail: String, val fix: String?)
+
+    /** Snapshot for the diagnostics screen: every gated file + engine state. */
+    fun engineFilesInfo(): List<EngineFileInfo> {
+        val app = getApplication<Application>()
+        val dir = SherpaZipformer.modelDir(app)
+        fun info(name: String, f: File, fix: String): EngineFileInfo {
+            val ok = f.exists() && f.length() > 0
+            val detail = if (ok) "%.1f MB".format(f.length() / 1048576.0) else "missing"
+            return EngineFileInfo(name, ok, detail, if (ok) null else fix)
+        }
+        return listOf(
+            info("model.int8.onnx", File(dir, "model.int8.onnx"), "adb push model.int8.onnx → files/zipformer/"),
+            info("tokens.txt", File(dir, "tokens.txt"), "adb push tokens.txt → files/zipformer/"),
+            info("ordered_quran_phonemes.json", File(dir, "ordered_quran_phonemes.json"), "adb push ordered_quran_phonemes.json → files/zipformer/"),
+            info("silero_vad.onnx", File(app.filesDir, "silero_vad.onnx"), "adb push silero_vad.onnx → files/"),
+        )
+    }
+
+    fun micLevel(): Float {
+        val s = recorder.currentSamples()
+        if (s.isEmpty()) return 0f
+        var sum = 0.0
+        for (v in s.takeLast(8000)) sum += v * v
+        return kotlin.math.sqrt(sum / 8000).toFloat()
+    }
+
+    fun micSampleCount(): Int = recorder.sampleCount()
+    fun clearDiag() {
+        diagBuffer.clear()
+        _diagLog.value = emptyList()
+    }
+
     private val _engineHint = MutableStateFlow<String?>(null)
     val engineHint: StateFlow<String?> = _engineHint
 
@@ -195,6 +248,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         lastAdvanceAt = now
         speechFramesSinceAdvance = 0
         lockedAyah = next
+        _wpmFlow.value = wpmEma
+        diag("lock $prev → $next")
         pendingNextAyah = null; pendingNextFrames = 0
         pendingBackAyah = null; pendingBackFrames = 0
         rebaseSlice = true
@@ -247,6 +302,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         tailBuf = FloatArray(0)
         lastEmitCount = 0
         nullFrames = 0
+        diag("audio pipeline reset")
     }
 
     /** Build per-ayah word + page maps for a surah. The page always follows the
@@ -280,6 +336,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         loadSurah(firstWord.surah)
         lockedAyah = firstWord.verse
         rebaseSlice = true
+        diag("jump → s=${firstWord.surah}:${firstWord.verse} p=$page")
         wrongStreak.clear()
         sessionStatuses.clear()
         pendingAnchor = null
@@ -369,6 +426,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _activeVerse.value = ayah
         refreshWindow()
         publishAnchor()
+        diag("anchor → $surah:$ayah")
         if (_recording.value) resetAudioPipeline()
     }
 
@@ -481,6 +539,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             tailBuf = FloatArray(0)
             speechFramesSinceAdvance = 0
             _engineLabel.value = "zipformer/" + (if (vadReady) "VAD" else "RMS")
+            diag("session start s=$surah lock=$lockedAyah engine=${_engineLabel.value}")
             var micOk = true
             withContext(Dispatchers.Main) {
                 _status.value = "Listening…"
@@ -505,9 +564,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val quiet = rms(used) < SILENCE_RMS
                 val vadSilent = if (vadReady) SherpaVad.speechInWindow(used)?.not() else null
                 if (quiet && vadSilent != false) {
+                    _gateReason.value = "silence"
                     withContext(Dispatchers.Main) { _status.value = "Listening… (silence)" }
                     continue
                 }
+                _gateReason.value = "decoding"
                 speechFramesSinceAdvance++
                 try {
                     runZipformerFrame(used)
@@ -573,6 +634,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         lastAdvanceAt = System.currentTimeMillis()
                         resetAudioPipeline()
                         refreshWindow()
+                        diag("handoff → s=${activeSurah}:1 score=${"%.2f".format(ns.second)}")
                         return
                     }
                 }
@@ -589,6 +651,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val found = PhonemeMapper.matchAyah(emitted, cands) ?: return
             val matchAyah = found.first
             val score = found.second
+            _lastMatch.value = matchAyah to score
             val matchPage = versePage[matchAyah]
             val inView = matchPage == null || matchPage in (pageNumber - 1..pageNumber + 1)
             val step = matchAyah - lockedAyah
@@ -651,6 +714,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     wrongStreak.clear()
                     resetAudioPipeline()
                     refreshWindow()
+                    diag("repeat loop → ${rep.second} (${repeatLeftCount} left)")
                     if (repeatLeftCount <= 0) {
                         repeatAyah = null
                         _repeatAyahKey.value = null

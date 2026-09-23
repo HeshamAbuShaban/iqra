@@ -64,4 +64,7 @@ class AudioRecorder(private val sampleRate: Int = 16000) {
 
     /** Snapshot of currently captured samples (for live/streaming recognition). */
     fun currentSamples(): FloatArray = synchronized(samples) { samples.toFloatArray() }
+
+    /** Buffered sample count without copying (for stall detection). */
+    fun sampleCount(): Int = synchronized(samples) { samples.size }
 }
