@@ -97,7 +97,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val dir = SherpaZipformer.modelDir(app)
         fun info(name: String, f: File, fix: String): EngineFileInfo {
             val ok = f.exists() && f.length() > 0
-            val detail = if (ok) "%.1f MB".format(f.length() / 1048576.0) else "missing"
+            val detail = if (!ok) "missing"
+            else if (f.length() < 1048576) "${f.length() / 1024} KB"
+            else "%.1f MB".format(f.length() / 1048576.0)
             return EngineFileInfo(name, ok, detail, if (ok) null else fix)
         }
         return listOf(
@@ -117,6 +119,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun micSampleCount(): Int = recorder.sampleCount()
+
+    /** One-line streaming counters for the diagnostics screen. */
+    fun streamStats(): String =
+        "fed=${SherpaZipformer.acceptedSamples} toks=$lastEmitCount decodes=${SherpaZipformer.decodeCalls}" +
+            (SherpaZipformer.lastOpError?.let { " ERR=$it" } ?: "")
     fun clearDiag() {
         diagBuffer.clear()
         _diagLog.value = emptyList()
@@ -636,7 +643,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     System.currentTimeMillis() - lastRecoveryTime > 10000
                 ) {
                     lastRecoveryTime = System.currentTimeMillis()
-                    diag("decoder starved ${idleSec}s with audio flowing — resetting stream (lock untouched)")
+                    diag("decoder starved ${idleSec}s: fed=${fedTotal} toks=${lastEmitCount} " +
+                        "opErr=${SherpaZipformer.lastOpError ?: "-"} — resetting stream (lock untouched)")
                     resetAudioPipeline()
                 }
                 return

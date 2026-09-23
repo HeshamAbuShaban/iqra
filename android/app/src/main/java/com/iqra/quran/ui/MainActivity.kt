@@ -737,6 +737,7 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
     var micDb by remember { mutableStateOf(0f) }
     var micN by remember { mutableStateOf(0) }
     var micStalled by remember { mutableStateOf(false) }
+    var streamInfo by remember { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
     LaunchedEffect(recording) {
         var last = -1
@@ -746,6 +747,7 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
             micStalled = recording && n == last && n > 0
             last = n
             micN = n
+            streamInfo = vm.streamStats()
             delay(300)
         }
     }
@@ -812,6 +814,8 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                     DiagRow("Last match", lastMatch?.let { "${it.first} @ ${"%.2f".format(it.second)}" } ?: "—")
                     DiagRow("WPM", "%.0f".format(wpm))
                     DiagRow("Gate", gate.ifEmpty { "—" })
+                    DiagRow("Decoder", decoder.ifEmpty { "—" })
+                    DiagRow("Stream", streamInfo.ifEmpty { "—" })
                     DiagRow("Decoder", decoder.ifEmpty { "—" })
                     hint()?.let {
                         Spacer(Modifier.height(6.dp))

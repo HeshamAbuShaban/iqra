@@ -72,7 +72,7 @@ object SherpaZipformer {
             Log.i(TAG, "zipformer streaming ready (${model.length()} bytes)")
             true
         } catch (t: Throwable) {
-            Log.w(TAG, "zipformer unavailable, tilawa fallback", t)
+            Log.w(TAG, "zipformer unavailable, no voice engine", t)
             lastError = (t::class.simpleName ?: "err") + ": " + (t.message?.take(60) ?: "")
             failed = true
             false
@@ -91,14 +91,27 @@ object SherpaZipformer {
         }
     }
 
+    @Volatile var lastOpError: String? = null
+        private set
+    @Volatile var acceptedSamples = 0L
+        private set
+    @Volatile var decodeCalls = 0L
+        private set
+
+    private fun noteOpError(op: String, t: Throwable) {
+        lastOpError = "$op: ${(t::class.simpleName ?: "err")}: ${(t.message?.take(80) ?: "")}"
+        Log.w(TAG, lastOpError, t)
+    }
+
     fun accept(samples: FloatArray) {
         val rec = recognizer
         val s = stream
         if (rec == null || s == null || samples.isEmpty()) return
         try {
             s.acceptWaveform(samples, 16000)
+            acceptedSamples += samples.size
         } catch (t: Throwable) {
-            Log.w(TAG, "accept failed", t)
+            noteOpError("accept", t)
         }
     }
 
@@ -108,12 +121,13 @@ object SherpaZipformer {
         if (rec == null || s == null) return null
         return try {
             if (!rec.isReady(s)) return null
+            decodeCalls++
             rec.decode(s)
             val r = rec.getResult(s)
             val syms = r.tokens.toList()
             PhonemeResult(syms, r.timestamps, r.ysProbs, syms.joinToString(" "))
         } catch (t: Throwable) {
-            Log.w(TAG, "decode failed", t)
+            noteOpError("decode", t)
             null
         }
     }
