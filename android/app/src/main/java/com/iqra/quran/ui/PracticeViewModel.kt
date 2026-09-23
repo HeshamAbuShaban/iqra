@@ -187,6 +187,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingNextFrames: Int = 0
     private var zipformerOn = false
     private var fedPosition = 0
+    private val _decoderState = MutableStateFlow("idle")
+    val decoderState: StateFlow<String> = _decoderState
+    private var noiseFloor = SILENCE_RMS
+    private var lastTokenTime = 0L
+    private var lastRecoveryTime = 0L
+    private var lastFrameError: String? = null
     // Streaming clock + tail replay: bounds emission history without losing
     // rolling context on advance. fedTotal counts every fed sample;
     // streamBaseSec carries pre-reset audio time for word timing.
@@ -552,6 +558,17 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             if (!micOk) return@launch
+            // Calibrate the silence gate to THIS mic: sample ambient floor
+            // once, then require 3x floor (bounded below by the constant).
+            // A fixed threshold deafens quiet mics and starves the decoder.
+            delay(400)
+            val floorProbe = recorder.currentSamples().takeLast(8000).toFloatArray()
+            if (floorProbe.isNotEmpty()) {
+                noiseFloor = maxOf(SILENCE_RMS, rms(floorProbe) * 3f)
+            }
+            lastTokenTime = System.currentTimeMillis()
+            lastRecoveryTime = System.currentTimeMillis()
+            diag("mic floor calibrated: ${"%.4f".format(noiseFloor)}")
             while (_recording.value) {
                 delay(250)
                 val audio = recorder.currentSamples()
@@ -561,7 +578,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 // available) also hears silence. Either one hearing speech keeps
                 // the frame, so soft reciters are never cut and loud speech is
                 // never missed — VAD can only reduce garbage, never nuke audio.
-                val quiet = rms(used) < SILENCE_RMS
+                val quiet = rms(used) < noiseFloor
                 val vadSilent = if (vadReady) SherpaVad.speechInWindow(used)?.not() else null
                 if (quiet && vadSilent != false) {
                     _gateReason.value = "silence"
@@ -572,7 +589,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 speechFramesSinceAdvance++
                 try {
                     runZipformerFrame(used)
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    val m = e.message ?: e::class.simpleName ?: "frame error"
+                    if (m != lastFrameError) {
+                        lastFrameError = m
+                        diag("frame error: $m")
+                    }
                 }
             }
         }
@@ -595,7 +617,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             }
             val fresh = if (used.size > fedPosition) used.copyOfRange(fedPosition, used.size) else FloatArray(0)
             fedPosition = used.size
-            if (fresh.isNotEmpty()) {
+            val fedThisFrame = fresh.isNotEmpty()
+            if (fedThisFrame) {
                 SherpaZipformer.accept(fresh)
                 fedTotal += fresh.size
                 tailBuf = (tailBuf + fresh).takeLast(24000).toFloatArray()
@@ -603,9 +626,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // Decode ONLY when sherpa reports ready: forcing decode with
             // insufficient buffered frames trips a native CHECK abort
             // (features.cc GetFrames) and kills the process instantly.
-            val res = SherpaZipformer.decodeIfReady() ?: return
-            if (res.symbols.isEmpty() || res.symbols.size == lastEmitCount) return
+            val res = SherpaZipformer.decodeIfReady()
+            if (res == null || res.symbols.isEmpty() || res.symbols.size == lastEmitCount) {
+                // Starvation watch: audio flows but tokens never grow. Recover
+                // with ONE stream reset per 10s (lock untouched); report it.
+                val idleSec = (System.currentTimeMillis() - lastTokenTime) / 1000
+                _decoderState.value = "starved ${idleSec}s"
+                if (fedThisFrame && idleSec >= 4 && fedTotal > 0 &&
+                    System.currentTimeMillis() - lastRecoveryTime > 10000
+                ) {
+                    lastRecoveryTime = System.currentTimeMillis()
+                    diag("decoder starved ${idleSec}s with audio flowing — resetting stream (lock untouched)")
+                    resetAudioPipeline()
+                }
+                return
+            }
             lastEmitCount = res.symbols.size
+            lastTokenTime = System.currentTimeMillis()
+            _decoderState.value = "active"
             // Per-ayah emission slice: after any lock move, window ayat align
             // against emissions heard SINCE the move — never against other
             // ayat's history. Kills cross-ayah ghost matches.

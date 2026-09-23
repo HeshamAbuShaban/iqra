@@ -729,6 +729,7 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
     val lastMatch by vm.lastMatch.collectAsStateWithLifecycle()
     val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
     val gate by vm.gateReason.collectAsStateWithLifecycle()
+    val decoder by vm.decoderState.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val log by vm.diagLog.collectAsStateWithLifecycle()
@@ -811,6 +812,7 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                     DiagRow("Last match", lastMatch?.let { "${it.first} @ ${"%.2f".format(it.second)}" } ?: "—")
                     DiagRow("WPM", "%.0f".format(wpm))
                     DiagRow("Gate", gate.ifEmpty { "—" })
+                    DiagRow("Decoder", decoder.ifEmpty { "—" })
                     hint()?.let {
                         Spacer(Modifier.height(6.dp))
                         Text(it, fontSize = 13.sp, color = goldColor)
