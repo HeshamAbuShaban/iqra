@@ -1427,19 +1427,32 @@ fun MushafPageView(
         page.page, statusMap, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow,
     ) {
         buildList {
-            for ((groupKey, rects) in lineGroups) {
-                val pp = groupKey.split(":")
-                val s = pp[0].toInt(); val a = pp[1].toInt(); val l = pp[2].toInt()
-                val lineWords = allWords.filter { it.line == l && it.surah == s && it.verse == a }
-                val n = lineWords.size; val m = rects.size
-                for (i in 0 until n) {
-                    val rect: RectF = when {
-                        m == n -> rects[i]
-                        m == n + 1 -> rects[i]
-                        i < m -> rects[i]
-                        else -> null
-                    } ?: continue
-                    val w = lineWords[i]
+            // Join on (sura, ayah, position) — NEVER on line numbers. Mushaf
+            // word lines are 0-based text ordinals while glyph lines are
+            // printed line numbers, so line-equality paired every box with
+            // the wrong ayah's words. Lines are ordering-only here.
+            val byAyah = LinkedHashMap<String, MutableList<RectF>>()
+            val orderedKeys = lineGroups.keys.mapNotNull { k ->
+                val pp = k.split(":")
+                if (pp.size != 3) null
+                else Triple(pp[0].toInt(), pp[1].toInt(), pp[2].toInt()) to k
+            }.sortedWith(compareBy({ it.first.first }, { it.first.second }, { it.first.third }))
+            for ((_, gk) in orderedKeys) {
+                val ak = gk.substringBeforeLast(":")
+                byAyah.getOrPut(ak) { mutableListOf() }.addAll(lineGroups[gk] ?: emptyList())
+            }
+            val wordsByAyah = allWords.groupBy { "${it.surah}:${it.verse}" }
+                .mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
+            for ((ak, rectsAll) in byAyah) {
+                val words = wordsByAyah[ak] ?: continue
+                // Last glyph position is the end-of-ayah marker: exclude it
+                // so markers stay printed as indicators, never painted.
+                val rects = if (rectsAll.size == words.size + 1) rectsAll.dropLast(1) else rectsAll
+                for (i in words.indices) {
+                    // Best-effort prefix on count mismatch: map what aligns,
+                    // leave the rest without boxes rather than wrong boxes.
+                    val rect = rects.getOrNull(i) ?: continue
+                    val w = words[i]
                     val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
                     val st = statusMap[key]
                     val isCur = key == currentKey
