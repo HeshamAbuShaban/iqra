@@ -1130,14 +1130,18 @@ fun ReaderScreen(
                 offset = chromeOffset,
             )
             // Floating recitation bar - off the bottom while chrome is hidden
-            val bottomShift = with(density) { (chromeOffset * 220.dp.toPx()).toDp() }
+            // quran_android slides the bottom bar off the BOTTOM with
+            // translationY(+height). Adding padding instead only grows the
+            // surface, so the bar stayed on screen.
+            val bottomShift = with(density) { (chromeOffset * 200.dp.toPx()).toDp() }
             Surface(
                 shape = Pill,
                 color = Chrome.Bar,
                 shadowElevation = 10.dp,
                 modifier = Modifier.align(Alignment.BottomCenter)
+                    .offset(y = bottomShift)
                     .navigationBarsPadding()
-                    .padding(bottom = 14.dp + bottomShift, start = 12.dp, end = 12.dp),
+                    .padding(bottom = 14.dp, start = 12.dp, end = 12.dp),
             ) {
                 Row(
                     Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
