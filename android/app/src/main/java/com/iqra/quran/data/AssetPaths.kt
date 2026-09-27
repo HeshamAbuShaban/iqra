@@ -193,20 +193,30 @@ object AssetPaths {
 
     fun status(context: Context, spec: Spec): Status {
         val manifest = readManifest(context)
+        // The page set is an aggregate, not a single file, so it never carries
+        // a page number and must be routed explicitly. Previously it fell
+        // through to the single-file branch and looked for a FILE named
+        // "pages", so the whole 604-image set always reported as missing.
+        val isPageSet = spec.key == "pages"
         val file = if (spec.page in 1..PAGE_COUNT) {
             pageFile(context, spec.page)
         } else {
             file(context, spec.key)
         }
-        val present = if (spec.page in 1..PAGE_COUNT) {
+        val present = if (isPageSet || spec.page in 1..PAGE_COUNT) {
             pagesPresent(context)
         } else {
             file.isFile || bundledExists(context, spec.key)
         }
         val expected = manifest[spec.key]?.bytes ?: spec.bytes
-        val hashOk = if (spec.page in 1..PAGE_COUNT || !present || !file.isFile) null
+        val hashOk = if (isPageSet || spec.page in 1..PAGE_COUNT || !present || !file.isFile) null
         else manifest[spec.key]?.sha256?.let { sha256(file) == it }
-        return Status(spec, present, if (file.isFile) file.length() else 0L, file.absolutePath, expected, hashOk)
+        val where = if (isPageSet) {
+            pageRoots(context).joinToString("  ") { it.absolutePath }
+        } else {
+            file.absolutePath
+        }
+        return Status(spec, present, if (file.isFile) file.length() else 0L, where, expected, hashOk)
     }
 
     fun allStatuses(context: Context): List<Status> = specs().map { status(context, it) }
