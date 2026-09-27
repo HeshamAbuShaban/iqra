@@ -81,7 +81,10 @@ rm -f "$ASSET_DIR/ayahinfo.db"
 DB_DEST="${IQRA_STAGE_DIR:-$PWD/.iqra-stage}/ayahinfo_1024.db"
 mkdir -p "$(dirname "$DB_DEST")"
 if [ ! -f "$DB_DEST" ]; then
-  fetch "https://raw.githubusercontent.com/murtraja/quran-android-images-helper/master/static/databases/ayahinfo_1024.db" "$DB_DEST"
+  echo "fetch  ayahinfo_1024.db -> $DB_DEST"
+  # NB: not via fetch(), which prefixes $ASSET_DIR onto its name argument.
+  curl -fL -o "$DB_DEST" \
+    "https://raw.githubusercontent.com/murtraja/quran-android-images-helper/master/static/databases/ayahinfo_1024.db"
 fi
 rm -f "$ASSET_DIR/ayahinfo_1024.db"
 
