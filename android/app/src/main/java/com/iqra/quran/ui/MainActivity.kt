@@ -417,7 +417,7 @@ fun HomeScreen(
             },
             singleLine = true,
             shape = Pill,
-            leadingIcon = { Icon(Icons.Outlined.Search, null, tint = cs.onSurface.copy(alpha = 0.5f)) },
+            leadingIcon = { Icon(Icons.Filled.Search, null, tint = cs.onSurface.copy(alpha = 0.5f)) },
             trailingIcon = {
                 if (q.isNotEmpty()) {
                     IconButton(onClick = { q = "" }) {
@@ -486,7 +486,7 @@ private fun SearchResults(
         if (surahHits.isNotEmpty()) {
             item { SectionHeader("Surahs", surahHits.size, false) }
             items(surahHits, key = { "s${it.number}" }) { s ->
-                SurahRow(s) { onOpen(s.number, s.startPage) }
+                SurahRow(s) { n, p -> onOpen(n, p) }
             }
         }
         if (ayahHits.isNotEmpty()) {
