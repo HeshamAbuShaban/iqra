@@ -23,8 +23,15 @@ object GlyphCoords {
         val out = File(context.getDatabasePath(DB_ASSET).path)
         if (!out.exists() || out.length() < 4096) {
             out.parentFile?.mkdirs()
-            context.assets.open(DB_ASSET).use { input ->
-                out.outputStream().use { input.copyTo(it) }
+            // Prefer the shared folder; fall back to the bundled copy so
+            // existing installs keep working.
+            val shared = AssetPaths.file(context, DB_ASSET)
+            if (shared.isFile) {
+                shared.inputStream().use { i -> out.outputStream().use { o -> i.copyTo(o) } }
+            } else {
+                context.assets.open(DB_ASSET).use { input ->
+                    out.outputStream().use { input.copyTo(it) }
+                }
             }
         }
         db = SQLiteDatabase.openDatabase(out.absolutePath, null, SQLiteDatabase.OPEN_READONLY)

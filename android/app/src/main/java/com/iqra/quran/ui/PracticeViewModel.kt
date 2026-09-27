@@ -87,6 +87,37 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         diagBuffer.addLast(t to msg)
         while (diagBuffer.size > 200) diagBuffer.removeFirst()
         _diagLog.value = diagBuffer.map { (tt, m) -> "$tt $m" }
+        appendDiagFile(t, msg)
+    }
+
+    /**
+     * Mirror the event ring buffer to disk. The in-memory copy is lost on
+     * process death, which is exactly when you most want to read why a
+     * session went wrong - force-stopping the app used to erase the evidence.
+     */
+    private fun appendDiagFile(t: Long, msg: String) {
+        try {
+            val f = File(getApplication<Application>().filesDir, "diag.log")
+            if (f.length() > 512 * 1024) f.writeText("")
+            f.appendText("$t $msg\n")
+        } catch (t2: Throwable) {
+            // diagnostics must never break recognition
+        }
+    }
+
+    /** Previous session's events, newest last, for the diagnostics screen. */
+    fun persistedDiag(): List<String> = try {
+        val f = File(getApplication<Application>().filesDir, "diag.log")
+        if (f.isFile) f.readLines().takeLast(200) else emptyList()
+    } catch (t: Throwable) {
+        emptyList()
+    }
+
+    fun clearPersistedDiag() {
+        try {
+            File(getApplication<Application>().filesDir, "diag.log").writeText("")
+        } catch (t: Throwable) {
+        }
     }
 
     data class EngineFileInfo(val name: String, val present: Boolean, val detail: String, val fix: String?)
@@ -94,7 +125,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Snapshot for the diagnostics screen: every gated file + engine state. */
     fun engineFilesInfo(): List<EngineFileInfo> {
         val app = getApplication<Application>()
-        val dir = SherpaZipformer.modelDir(app)
         fun info(name: String, f: File, fix: String): EngineFileInfo {
             val ok = f.exists() && f.length() > 0
             val detail = if (!ok) "missing"
@@ -103,10 +133,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             return EngineFileInfo(name, ok, detail, if (ok) null else fix)
         }
         return listOf(
-            info("model.int8.onnx", File(dir, "model.int8.onnx"), "adb push model.int8.onnx → files/zipformer/"),
-            info("tokens.txt", File(dir, "tokens.txt"), "adb push tokens.txt → files/zipformer/"),
-            info("ordered_quran_phonemes.json", File(dir, "ordered_quran_phonemes.json"), "adb push ordered_quran_phonemes.json → files/zipformer/"),
-            info("silero_vad.onnx", File(app.filesDir, "silero_vad.onnx"), "adb push silero_vad.onnx → files/"),
+            info("model.int8.onnx", com.iqra.quran.data.AssetPaths.file(app, "model.int8.onnx"), "copy model.int8.onnx → /sdcard/Iqra/"),
+            info("tokens.txt", com.iqra.quran.data.AssetPaths.file(app, "tokens.txt"), "copy tokens.txt → /sdcard/Iqra/"),
+            info("ordered_quran_phonemes.json", com.iqra.quran.data.AssetPaths.file(app, "ordered_quran_phonemes.json"), "fetched automatically, or copy → /sdcard/Iqra/"),
+            info("silero_vad.onnx", com.iqra.quran.data.AssetPaths.file(app, "silero_vad.onnx"), "fetched automatically, or copy → /sdcard/Iqra/"),
         )
     }
 
@@ -507,10 +537,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 return false
             }
             val ok = SherpaZipformer.ensure(app) &&
-                PhonemeMapper.ensureTable(File(app.filesDir, "zipformer/ordered_quran_phonemes.json")) &&
+                PhonemeMapper.ensureTable(com.iqra.quran.data.AssetPaths.file(app, "ordered_quran_phonemes.json")) &&
                 // The expected side must be expressed in the MODEL's unit
                 // inventory, otherwise coverage is identically zero.
-                PhonemeMapper.ensureUnits(File(app.filesDir, "zipformer/tokens.txt")) &&
+                PhonemeMapper.ensureUnits(com.iqra.quran.data.AssetPaths.file(app, "tokens.txt")) &&
                 SherpaZipformer.startStream()
             zipformerOn = ok
             if (ok) {

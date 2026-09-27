@@ -29,9 +29,10 @@ object SherpaVad {
         if (vad != null) return true
         if (failed) return false
         return try {
-            val file = File(context.filesDir, MODEL_NAME)
+            var file = com.iqra.quran.data.AssetPaths.file(context, MODEL_NAME)
             if (!file.exists() || file.length() == 0L) {
                 download(file)
+                file = com.iqra.quran.data.AssetPaths.file(context, MODEL_NAME)
             }
             if (!file.exists() || file.length() == 0L) {
                 failed = true

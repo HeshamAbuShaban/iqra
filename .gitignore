@@ -40,3 +40,6 @@ Thumbs.db
 /reference/quran_android/
 __pycache__/
 *.pyc
+
+# Locally staged heavy data for adb/USB push (never committed)
+/.iqra-stage/

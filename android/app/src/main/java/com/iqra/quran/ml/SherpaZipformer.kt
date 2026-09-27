@@ -12,7 +12,7 @@ import java.io.File
 /**
  * Quran-Lab zipformer_p-arabic-v3 streaming phoneme recognizer behind the
  * sherpa-onnx runtime (gated weights, user-supplied — never bundled, never
- * committed; adb-push model.int8.onnx + tokens.txt into filesDir/zipformer/).
+ * committed. The user supplies them into /sdcard/Iqra (or filesDir/zipformer).
  *
  * Any failure degrades to null/false so the Tilawa path keeps working.
  */
@@ -39,22 +39,21 @@ object SherpaZipformer {
         private set
 
     fun filesPresent(context: Context): Boolean {
-        val dir = modelDir(context)
-        val model = File(dir, MODEL_FILE)
-        val tokens = File(dir, TOKENS_FILE)
+        val model = com.iqra.quran.data.AssetPaths.file(context, MODEL_FILE)
+        val tokens = com.iqra.quran.data.AssetPaths.file(context, TOKENS_FILE)
         return model.exists() && model.length() > 0 && tokens.exists() && tokens.length() > 0
     }
 
-    fun modelDir(context: Context): File = File(context.filesDir, DIR)
+    fun modelDir(context: Context): File =
+        com.iqra.quran.data.AssetPaths.engineDir(context)
 
     /** True when gated files are present AND the streaming recognizer started. */
     fun ensure(context: Context): Boolean {
         if (recognizer != null) return true
         if (failed) return false
         return try {
-            val dir = modelDir(context)
-            val model = File(dir, MODEL_FILE)
-            val tokens = File(dir, TOKENS_FILE)
+            val model = com.iqra.quran.data.AssetPaths.file(context, MODEL_FILE)
+            val tokens = com.iqra.quran.data.AssetPaths.file(context, TOKENS_FILE)
             if (!model.exists() || model.length() == 0L || !tokens.exists() || tokens.length() == 0L) {
                 return false
             }

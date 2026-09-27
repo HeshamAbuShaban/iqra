@@ -73,6 +73,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
@@ -161,16 +169,19 @@ private object Chrome {
     val OnChromeMuted = Color(0xB3F2E8D5)
 }
 
-private fun lightReaderScheme() = lightColorScheme(
+private fun lightReaderScheme(night: Boolean, mat: Color, ink: Color, chrome: Color) = lightColorScheme(
     primary = accentColor,
     secondary = goldColor,
-    background = ParchmentScaffold,
-    surface = ParchmentScaffold,
-    surfaceVariant = Color(0xFFEFE6CF),
-    onBackground = Color(0xFF1B1B1F),
-    onSurface = Color(0xFF1B1B1F),
-    onPrimary = Color(0xFF06231F),
-    outline = Color(0x22000000),
+    background = mat,
+    surface = mat,
+    surfaceVariant = if (night) Color(0xFF1A1A1C) else Color(0xFFEFE6CF),
+    onBackground = chrome,
+    onSurface = chrome,
+    onPrimary = if (night) Color(0xFF101012) else Color(0xFF06231F),
+    outline = if (night) Color(0x33FFFFFF) else Color(0x22000000),
+    // keep the API-wide behaviour predictable when ink differs from onSurface
+    onSurfaceVariant = if (night) Color(0xFF8A8D95) else Color(0xFF5A5A60),
+    error = wrongColor,
 )
 
 private val Pill = RoundedCornerShape(50)
@@ -307,6 +318,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         return
     }
     when (val s = screen) {
+        Screen.Data -> DataSetupScreen { screen = Screen.Picker }
         Screen.Picker -> HomeScreen(vm, lastRead,
             onOpen = { surah, page -> screen = Screen.Reader(surah, page) },
             onDiag = { screen = Screen.Diag },
@@ -321,6 +333,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                     vm = vm,
                     surah = s.surah,
                     startPage = s.page,
+                    initialAnchorAyah = s.anchorAyah,
                     onBack = { screen = Screen.Picker },
                     onRequestMic = onRequestMic,
                 )
@@ -331,8 +344,9 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
 
 sealed interface Screen {
     data object Picker : Screen
-    data class Reader(val surah: Int, val page: Int? = null) : Screen
+    data class Reader(val surah: Int, val page: Int? = null, val anchorAyah: Int? = null) : Screen
     data object Diag : Screen
+    data object Data : Screen
 }
 
 enum class HomeTab { Surahs, Juz, Bookmarks }
@@ -896,6 +910,7 @@ fun ReaderScreen(
     vm: PracticeViewModel,
     surah: Int,
     startPage: Int? = null,
+    initialAnchorAyah: Int? = null,
     onBack: () -> Unit,
     onRequestMic: (() -> Unit) -> Unit,
 ) {
@@ -928,8 +943,12 @@ fun ReaderScreen(
     var showGoto by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
 
-    val surahInfo = remember(data, surah) {
-        data?.surahList()?.firstOrNull { it.number == surah }
+    // The header must describe the page currently on screen. It used to be
+    // remember(data, surah) - frozen at the surah you opened - so the title and
+    // page indicator stayed on the original surah after swiping into another.
+    val headerSurah = data?.surahAtPage(currentPage ?: (startPage ?: 1))?.number ?: surah
+    val surahInfo = remember(data, headerSurah) {
+        data?.surahList()?.firstOrNull { it.number == headerSurah }
     }
     val active = recording || statusMap.isNotEmpty()
     val startIdx = remember(surah, startPage) { (startPage ?: Mushaf_firstPage(mushaf, surah)) - 1 }
@@ -949,11 +968,52 @@ fun ReaderScreen(
         vm.setCurrentPage(pagerState.currentPage + 1)
     }
 
+    // A deep link from search can pin the opening ayah.
+    LaunchedEffect(initialAnchorAyah) {
+        initialAnchorAyah?.let { vm.anchorToVerse(surah, it) }
+    }
+
+    // ---- Reader chrome, ported from quran_android's PagerActivity ----------
+    // Chrome starts HIDDEN and auto-hides 2s after the window regains focus;
+    // a single tap anywhere on the page toggles it, sliding the top bar off the
+    // top and the bottom bar off the bottom together in 250ms.
+    val ctx = LocalContext.current
+    var chromeVisible by remember { mutableStateOf(false) }
+    val chromeOffset by animateFloatAsState(
+        targetValue = if (chromeVisible) 0f else 1f,
+        animationSpec = tween(250),
+        label = "chrome",
+    )
+    var night by remember { mutableStateOf(ReaderPrefs.nightMode(ctx)) }
+    val mat = remember(night) { NightPalette.mat(ctx) }
+    val pageInk = remember(night) { NightPalette.pageInk(ctx) }
+    val chromeInk = remember(night) { NightPalette.chrome(ctx) }
+
+    fun showChrome() {
+        chromeVisible = true
+    }
+
+    LaunchedEffect(Unit) {
+        // quran_android: DEFAULT_HIDE_AFTER_TIME = 2000
+        kotlinx.coroutines.delay(2000)
+        chromeVisible = false
+    }
+    LaunchedEffect(Unit) { showChrome() }
+
     CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {
-        MaterialTheme(colorScheme = lightReaderScheme()) {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        MaterialTheme(colorScheme = remember(night, mat, chromeInk) {
+            lightReaderScheme(night, mat, pageInk, chromeInk)
+        }) {
+        Box(Modifier.fillMaxSize().background(mat)) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { idx ->
-                MushafPageView(mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead, onAnchorAyah = vm::anchorToVerse, onSelectAyah = { s, a -> vm.selectAyah(s, a) }, selectedAyah = selectedAyah, activeWindow = activeWindow)
+                MushafPageView(
+                    mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead,
+                    onAnchorAyah = vm::anchorToVerse,
+                    onSelectAyah = { s, a -> vm.selectAyah(s, a) },
+                    selectedAyah = selectedAyah, activeWindow = activeWindow,
+                    night = night, pageInk = pageInk, mat = mat,
+                    chromeVisible = chromeVisible, onTapChrome = { chromeVisible = !chromeVisible },
+                )
             }
             // Immersive reader header
             ReaderHeader(
@@ -964,15 +1024,19 @@ fun ReaderScreen(
                 onPlayToggle = { vm.togglePlaySurah(surah) },
                 onToggleBookmark = { vm.toggleBookmark(currentPage ?: (startIdx + 1)) },
                 onBack = onBack,
+                onToggleNight = { night = !night; ReaderPrefs.setNightMode(ctx, night) },
+                night = night,
+                offset = chromeOffset,
             )
-            // Floating recitation bar
+            // Floating recitation bar - off the bottom while chrome is hidden
+            val bottomShift = with(density) { (chromeOffset * 220.dp.toPx()).toDp() }
             Surface(
                 shape = Pill,
                 color = Chrome.Bar,
                 shadowElevation = 10.dp,
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 14.dp, start = 12.dp, end = 12.dp),
+                    .padding(bottom = 14.dp + bottomShift, start = 12.dp, end = 12.dp),
             ) {
                 Row(
                     Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
@@ -1215,9 +1279,16 @@ fun ReaderHeader(
     onPlayToggle: () -> Unit,
     onToggleBookmark: () -> Unit,
     onBack: () -> Unit,
+    onToggleNight: () -> Unit = {},
+    night: Boolean = false,
+    offset: Float = 0f,
 ) {
+    // quran_android slides the whole bar off the top over 250ms; offset 1 = hidden.
+    val density = LocalDensity.current
+    val shift = with(density) { (offset * -160.dp.toPx()).toDp() }
     Box(
         Modifier.fillMaxWidth()
+            .offset(y = shift)
             .background(
                 Brush.verticalGradient(
                     listOf(Chrome.HeaderTop, Chrome.HeaderMid, Color.Transparent)
@@ -1230,6 +1301,13 @@ fun ReaderHeader(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Chrome.OnChrome)
         }
         Row(Modifier.align(Alignment.TopEnd)) {
+            IconButton(onClick = onToggleNight) {
+                Icon(
+                    if (night) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                    if (night) "Day mode" else "Night mode",
+                    tint = Chrome.OnChrome,
+                )
+            }
             IconButton(onClick = onToggleBookmark) {
                 Icon(
                     if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
@@ -1383,6 +1461,11 @@ fun MushafPageView(
     onSelectAyah: (Int, Int) -> Unit = { _, _ -> },
     selectedAyah: String? = null,
     activeWindow: List<Int> = emptyList(),
+    night: Boolean = false,
+    pageInk: Color = Color(0xFF505050),
+    mat: Color = Color(0xFFF4EAD3),
+    chromeVisible: Boolean = true,
+    onTapChrome: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -1395,9 +1478,15 @@ fun MushafPageView(
         if (value == null && !loadFailed) {
             value = withContext(Dispatchers.IO) {
                 try {
-                    val name = "pages/%03d.png".format(page.page)
-                    ctx.assets.open(name).use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
-                        ?.also { PageImageCache.put(page.page, it) }
+                    // Pages live in the shared folder (or are bundled); both
+                    // are reached through AssetPaths so the APK stays small.
+                    val f = com.iqra.quran.data.AssetPaths.pageFile(ctx, page.page)
+                    val bmp = if (f.isFile) {
+                        BitmapFactory.decodeFile(f.absolutePath)
+                    } else {
+                        ctx.assets.open("pages/%03d.png".format(page.page)).use { BitmapFactory.decodeStream(it) }
+                    }
+                    bmp?.asImageBitmap()?.also { PageImageCache.put(page.page, it) }
                 } catch (e: Exception) { null }
             }
             if (value == null) loadFailed = true
@@ -1521,14 +1610,22 @@ fun MushafPageView(
                                 }
                                 return null
                             }
+                            // Gesture map, matching quran_android's PagerActivity:
+                            //   single tap  -> toggle the chrome
+                            //   long press  -> anchor the recitation lock to that ayah
+                            //   double tap  -> ayah actions sheet
                             detectTapGestures(
-                                onTap = { offset ->
+                                onTap = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onTapChrome()
+                                },
+                                onLongPress = { offset ->
                                     hit(offset.x, offset.y)?.let { (s, a) ->
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         onAnchorAyah(s, a)
                                     }
                                 },
-                                onLongPress = { offset ->
+                                onDoubleTap = { offset ->
                                     hit(offset.x, offset.y)?.let { (s, a) ->
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         onSelectAyah(s, a)
@@ -1546,6 +1643,22 @@ fun MushafPageView(
                     // never a white cover. Ayah markers and surah headers are not
                     // word rects, so they stay printed as indicators.
                     val dst = IntSize(size.width.toInt(), size.height.toInt())
+                    // quran_android applies a single ColorMatrixColorFilter to the
+                    // page: out = adjusted - in per channel, alpha preserved.
+                    // High filter quality matters because the default is a
+                    // bilinear downscale, which visibly softens the glyphs.
+                    val inkF = if (night) {
+                        val a = NightPalette.adjustedTextBrightness(
+                            ReaderPrefs.textBrightness(ctx), ReaderPrefs.backgroundBrightness(ctx))
+                        ColorFilter.colorMatrix(ColorMatrix(
+                            floatArrayOf(
+                                -1f, 0f, 0f, 0f, a.toFloat(),
+                                0f, -1f, 0f, 0f, a.toFloat(),
+                                0f, 0f, -1f, 0f, a.toFloat(),
+                                0f, 0f, 0f, 1f, 0f,
+                            )
+                        ))
+                    } else null
                     if (hide) {
                         // Clip hidden word rects OUT, then draw the page: those
                         // pixels are never drawn (holes show the parchment),
@@ -1558,10 +1671,10 @@ fun MushafPageView(
                                 clipRect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy, ClipOp.Difference)
                             }
                         }) {
-                            drawImage(bmp, dstSize = dst)
+                            drawImage(bmp, dstSize = dst, filterQuality = FilterQuality.High, colorFilter = inkF)
                         }
                     } else {
-                        drawImage(bmp, dstSize = dst)
+                        drawImage(bmp, dstSize = dst, filterQuality = FilterQuality.High, colorFilter = inkF)
                     }
                     for (d in draws) {
                         if (d.style.tintAlpha <= 0f) continue
