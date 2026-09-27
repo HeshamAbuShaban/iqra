@@ -289,27 +289,4 @@ object PhonemeMapper {
         if (best < 0 || bestTs < 0) return null
         return if (audioSec - bestTs <= recencySec) best else null
     }
-
-    /**
-     * Rank candidate ayat by how much of each ayah's phoneme inventory the
-     * emission accounts for.
-     *
-     * The previous scorer was Levenshtein.ratio(emission, wholeAyah) gated at
-     * 0.60, which is unreachable: the score DECREASES as the user recites
-     * (measured 0.48 -> 0.15 across Al-Fatiha) because a growing slice is
-     * length-penalised against one short ayah. Coverage is monotone in
-     * progress and ignores leading noise such as istiaadha/basmala.
-     */
-    fun bestByCoverage(
-        emitted: List<String>,
-        candidates: List<Pair<Int, Expected>>,
-    ): Pair<Int, Float>? {
-        if (emitted.isEmpty() || candidates.isEmpty()) return null
-        var best: Pair<Int, Float>? = null
-        for ((ayah, exp) in candidates) {
-            val cov = align(emitted, exp).coverage
-            if (best == null || cov > best.second) best = ayah to cov
-        }
-        return best
-    }
 }

@@ -261,6 +261,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         lastAdvanceAt = now
         speechFramesSinceAdvance = 0
         lockedAyah = next
+        sessionAnchor = activeSurah to next
         _wpmFlow.value = wpmEma
         diag("lock $prev → $next")
         pendingNextAyah = null; pendingNextFrames = 0
@@ -372,6 +373,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var repeatLeftCount = 0
     private var pendingAnchor: Int? = null
 
+    /**
+     * Where the reciter actually is, as (surah, ayah). Navigation used to
+     * re-anchor a resumed session to the FIRST ayah of the page, so leaving
+     * the reader and coming back silently threw away the reciter's place.
+     * Only genuine recitation positions write here - a page jump deliberately
+     * does not.
+     */
+    @Volatile private var sessionAnchor: Pair<Int, Int>? = null
+
     fun selectAyah(surah: Int, ayah: Int) {
         if (surah in 1..114 && ayah >= 1) _selectedAyah.value = "$surah:$ayah"
     }
@@ -435,6 +445,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             _currentPage.value = targetPage
         }
         lockedAyah = ayah
+        sessionAnchor = surah to ayah
         rebaseSlice = true
         _activeVerse.value = ayah
         refreshWindow()
@@ -529,7 +540,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (Mushaf.wordsForSurah(pages, surah).isEmpty()) return
         loadSurah(surah)
         if (verseWords.isEmpty()) return
-        lockedAyah = pendingAnchor ?: ayahOnPage(page)
+        lockedAyah = pendingAnchor
+            ?: sessionAnchor?.takeIf { it.first == surah }?.second
+            ?: ayahOnPage(page)
+        sessionAnchor = surah to lockedAyah
         rebaseSlice = true
         pendingAnchor = null
         pageNumber = page
@@ -678,6 +692,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     if (cov >= HANDOFF_COVERAGE) {
                         loadSurah(activeSurah + 1)
                         lockedAyah = 1
+                        sessionAnchor = activeSurah to 1
                         rebaseSlice = true
                         lastAdvanceAt = System.currentTimeMillis()
                         resetAudioPipeline()
@@ -688,60 +703,75 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            val scopeAyahs = (_activeWindow.value +
-                verseWords.keys.filter { it < lockedAyah }.takeLast(3) +
-                verseWords.keys.filter { it > lockedAyah }.take(3)).distinct().sorted()
-            val cands = scopeAyahs.mapNotNull { a ->
-                PhonemeMapper.expected(activeSurah, a)?.let { a to it }
-            }
-            if (cands.isEmpty()) return
-            val found = PhonemeMapper.bestByCoverage(obs, cands) ?: return
-            val matchAyah = found.first
-            val score = found.second
-            _lastMatch.value = matchAyah to score.toDouble()
-            val matchPage = versePage[matchAyah]
-            val inView = matchPage == null || matchPage in (pageNumber - 1..pageNumber + 1)
-            val step = matchAyah - lockedAyah
+            // Lock policy: direct coverage of the NEXT ayah, not an argmax
+            // over a window. Argmax was fragile because a partially recited
+            // locked ayah often outscores the next one (coverage is relative
+            // to each ayah's own length), and ties resolved to the LOWEST
+            // index, so advancing stalled and could drift backwards. Coverage
+            // of lock+1 alone is monotone in real progress - this is the
+            // policy measured at 28/28 in engine/replay/lock_policy.py.
+            val nextAyah = lockedAyah + 1
+            val nextExp = PhonemeMapper.expected(activeSurah, nextAyah)
+            val nextCov = if (nextExp != null) PhonemeMapper.align(obs, nextExp).coverage else 0f
+            val hereExp = PhonemeMapper.expected(activeSurah, lockedAyah)
+            val hereCov = if (hereExp != null) PhonemeMapper.align(obs, hereExp).coverage else 0f
+            val best = listOfNotNull(
+                nextExp?.let { nextAyah to nextCov },
+                hereExp?.let { lockedAyah to hereCov },
+            ).maxByOrNull { it.second }
+            if (best != null) _lastMatch.value = best.first to best.second.toDouble()
             val needFrames = if (wpmEma < 50) 3 else 2
-            val candidate: Int? =
-                if (step in 1..3 && score >= ADVANCE_COVERAGE && inView) minOf(matchAyah, lockedAyah + 1) else null
-            if (candidate != null) {
-                val strong = candidate == lockedAyah + 1 && score >= STRONG_COVERAGE
-                if (strong) {
-                    advanceLockTo(candidate)
-                } else if (pendingNextAyah == candidate) {
+
+            // Forward: the next ayah is sufficiently covered.
+            if (nextCov >= ADVANCE_COVERAGE) {
+                if (nextCov >= STRONG_COVERAGE) {
+                    advanceLockTo(nextAyah)
+                } else if (pendingNextAyah == nextAyah) {
                     pendingNextFrames++
-                    if (pendingNextFrames >= needFrames) {
-                        advanceLockTo(candidate)
-                    }
+                    if (pendingNextFrames >= needFrames) advanceLockTo(nextAyah)
                 } else {
-                    pendingNextAyah = candidate
+                    pendingNextAyah = nextAyah
                     pendingNextFrames = 1
                 }
-            } else if (score < WEAK_COVERAGE) {
-                // Weak frame: leaky counter instead of a hard reset, so one
-                // bad frame can't erase accumulated confidence.
+            } else if (nextCov < WEAK_COVERAGE) {
                 if (pendingNextFrames > 0) pendingNextFrames--
             } else {
                 pendingNextAyah = null; pendingNextFrames = 0
-        pendingBackAyah = null; pendingBackFrames = 0
             }
-            if (step > 3 && score >= JUMP_COVERAGE && inView) {
-                advanceLockTo(matchAyah, measureSpeed = false)
+
+            // Gated long jump: the reciter skipped ahead. Kept deliberately -
+            // only when the evidence is near-total and the target is on screen.
+            if (nextCov < ADVANCE_COVERAGE) {
+                val ahead = verseWords.keys.filter { it > lockedAyah + 1 }
+                    .mapNotNull { a ->
+                        PhonemeMapper.expected(activeSurah, a)?.let { a to PhonemeMapper.align(obs, it).coverage }
+                    }
+                    .filter { it.second >= JUMP_COVERAGE }
+                    .minByOrNull { it.first }
+                if (ahead != null) {
+                    val p = versePage[ahead.first]
+                    if (p == null || p in (pageNumber - 1..pageNumber + 1)) {
+                        advanceLockTo(ahead.first, measureSpeed = false)
+                    }
+                }
             }
-            // Backward recovery: the lock overshoots (swipe reseat, fuzzy
-            // relocation, blind probe). Strong multi-frame evidence that the
-            // reciter is on an ayah BEHIND the lock reseats it — a lock that
-            // cannot return to the recited ayah is definitionally broken.
-            if (step in -2..-1 && score >= BACK_COVERAGE && inView) {
-                if (pendingBackAyah == matchAyah) {
+
+            // Backward recovery, but ONLY when the lock is clearly not what is
+            // being recited. Requiring hereCov to be low stops the lock
+            // ping-ponging: previously any ayat behind the lock scoring well
+            // could drag it backwards mid-session.
+            val backAyah = lockedAyah - 1
+            val backExp = PhonemeMapper.expected(activeSurah, backAyah)
+            val backCov = if (backExp != null) PhonemeMapper.align(obs, backExp).coverage else 0f
+            if (backCov >= BACK_COVERAGE && hereCov < STUCK_COVERAGE) {
+                if (pendingBackAyah == backAyah) {
                     pendingBackFrames++
                     if (pendingBackFrames >= 2) {
-                        advanceLockTo(matchAyah, measureSpeed = false)
+                        advanceLockTo(backAyah, measureSpeed = false)
                         pendingBackAyah = null; pendingBackFrames = 0
                     }
                 } else {
-                    pendingBackAyah = matchAyah
+                    pendingBackAyah = backAyah
                     pendingBackFrames = 1
                 }
             } else if (pendingBackFrames > 0) {
@@ -975,6 +1005,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         private const val JUMP_COVERAGE = 0.92f
         private const val BACK_COVERAGE = 0.80f
         private const val HANDOFF_COVERAGE = 0.60f
+        // The lock only yields BACKWARDS when the ayah it holds is clearly not
+        // what is being recited. Without this the lock ping-pongs mid-session.
+        private const val STUCK_COVERAGE = 0.35f
     }
 }
 
