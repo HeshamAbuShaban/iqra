@@ -572,59 +572,22 @@ fun SurahIndex(
     onOpen: (Int, Int) -> Unit,
 ) {
     val surahs = remember { data.surahList() }
-    var query by remember { mutableStateOf("") }
     var view by remember { mutableStateOf(SurahView.List) }
-    val filtered = remember(query) {
-        if (query.isBlank()) {
-            surahs
-        } else {
-            surahs.filter {
-                it.number.toString().contains(query) ||
-                    it.name.contains(query) ||
-                    it.nameEn.contains(query, ignoreCase = true)
-            }
-        }
-    }
+    // Filtering is driven by the single search field on HomeScreen; this
+    // composable used to carry a second one and home rendered two boxes.
+    val filtered = surahs
     val meccan = remember(filtered) { filtered.filter { it.revelationType == "Meccan" } }
     val madani = remember(filtered) { filtered.filter { it.revelationType == "Madani" } }
     val gridRows = remember(filtered) { filtered.chunked(3) }
-    val focusManager = LocalFocusManager.current
     val continueInfo = remember(lastRead, surahs) {
         lastRead?.let { (num, page) -> surahs.firstOrNull { it.number == num }?.let { it to page } }
     }
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search surah name or number") },
-                singleLine = true,
-                shape = Pill,
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(
-                                Icons.Filled.Close,
-                                "Clear search",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            )
-                        }
-                    }
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
-            )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.weight(1f))
             IconButton(onClick = { view = if (view == SurahView.List) SurahView.Grid else SurahView.List }) {
                 Icon(
                     if (view == SurahView.List) Icons.Filled.ViewModule else Icons.Filled.ViewList,
