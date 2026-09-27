@@ -119,7 +119,6 @@ object AssetPaths {
     fun engineDir(context: Context): File =
         file(context, "model.int8.onnx").parentFile ?: writableRoot(context)
 
-    fun pageFile(context: Context, page: Int): File = file(context, "page", page)
 
     // ---- manifest ------------------------------------------------------------
 
