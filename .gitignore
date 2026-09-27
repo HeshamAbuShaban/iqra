@@ -19,7 +19,11 @@ captures/
 /work/
 
 # Node prototype (rejected web PWA + local proofs); see reference/ for the kept proof
-/engine/
+# NOTE: engine/replay/ IS tracked - it is the project's only measurement loop.
+/engine/*
+!/engine/replay/
+/engine/replay/out/
+/engine/.venv-replay/
 
 # Node prototype (optional reference only)
 /engine/node_modules/
@@ -34,3 +38,5 @@ Thumbs.db
 # Vendored reference (not committed)
 /reference/tarteel-ml/
 /reference/quran_android/
+__pycache__/
+*.pyc

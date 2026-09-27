@@ -9,10 +9,22 @@ import java.io.File
  * Maps zipformer phoneme emissions onto mushaf words using the canonical
  * phonemisation table (ordered_quran_phonemes.json: "S:A" ->
  * {"aya_phonemes_list": [...]}). Pure logic, no audio, no Android UI.
+ *
+ * CRITICAL: the table's `aya_phonemes_list` entries are per-WORD phoneme
+ * STRINGS ("بِسمِ"), but the model emits per-PHONEME UNITS ("بِ", "س", "مِ").
+ * Comparing them directly yields coverage of exactly 0.00 - no ayah can ever
+ * be detected. Every expected word is therefore EXPLODED into the model's own
+ * unit inventory (tokens.txt) before alignment, with a unit->word map kept so
+ * per-word verdicts still work.
  */
 object PhonemeMapper {
     private const val TAG = "PhonemeMapper"
     @Volatile private var table: Map<String, List<String>>? = null
+
+    /** Model unit inventory, longest-first for greedy matching. */
+    @Volatile private var unitsByLength: List<String>? = null
+    @Volatile private var unitSet: Set<String>? = null
+    private val expectedCache = HashMap<String, Expected>()
 
     /** Idempotent; ~5 MB JSON parsed once per process. */
     fun ensureTable(file: File): Boolean {
@@ -39,49 +51,136 @@ object PhonemeMapper {
         }
     }
 
-    fun isReady(): Boolean = table != null
+    /**
+     * Load the acoustic model's unit inventory from tokens.txt. Without this
+     * the expected side cannot be expressed in the model's own alphabet.
+     */
+    fun ensureUnits(tokensFile: File): Boolean {
+        if (unitsByLength != null) return true
+        return try {
+            if (!tokensFile.exists() || tokensFile.length() == 0L) return false
+            val set = HashSet<String>(512)
+            tokensFile.bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    val s = line.trimEnd('\n', '\r')
+                    if (s.isEmpty()) continue
+                    val sp = s.lastIndexOf(' ')
+                    if (sp <= 0) continue
+                    val sym = s.substring(0, sp)
+                    if (sym.isNotEmpty()) set.add(sym)
+                }
+            }
+            if (set.isEmpty()) return false
+            unitSet = set
+            // Longest first: units are multi-codepoint and ambiguous if
+            // scanned shortest-first ("ا" vs "اا" vs "اااااا").
+            unitsByLength = set.sortedByDescending { it.length }
+            Log.i(TAG, "model unit inventory ready (${set.size} units)")
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "unit inventory load failed", t)
+            false
+        }
+    }
+
+    fun isReady(): Boolean = table != null && unitsByLength != null
 
     fun tableSize(): Int = table?.size ?: 0
 
-    fun phonemeWords(surah: Int, ayah: Int): List<String> =
-        table?.get("$surah:$ayah") ?: emptyList()
+    fun unitCount(): Int = unitSet?.size ?: 0
+
+    /**
+     * An ayah expressed in the model's own alphabet: the phoneme UNITS to
+     * align against, plus the unit->word map used for per-word verdicts.
+     */
+    data class Expected(
+        val wordCount: Int,
+        val units: List<String>,
+        /** units[i] belongs to word unitWord[i]. */
+        val unitWord: IntArray,
+    )
+
+    /** Split a word's phoneme string into model units (greedy longest match). */
+    private fun explode(wordPhonemes: String): List<String> {
+        val ordered = unitsByLength ?: return wordPhonemes.split(" ").filter { it.isNotEmpty() }
+        val out = ArrayList<String>(wordPhonemes.length)
+        var i = 0
+        val n = wordPhonemes.length
+        while (i < n) {
+            var matched = false
+            for (u in ordered) {
+                if (u.length <= n - i && wordPhonemes.regionMatches(i, u, 0, u.length)) {
+                    out.add(u)
+                    i += u.length
+                    matched = true
+                    break
+                }
+            }
+            if (!matched) i++ // codepoint the model does not emit
+        }
+        return out
+    }
+
+    /** Expected units for an ayah, cached. Null if the table has no entry. */
+    @Synchronized
+    fun expected(surah: Int, ayah: Int): Expected? {
+        val key = "$surah:$ayah"
+        expectedCache[key]?.let { return it }
+        val words = table?.get(key) ?: return null
+        if (words.isEmpty()) return null
+        val units = ArrayList<String>(words.size * 4)
+        val unitWord = ArrayList<Int>(words.size * 4)
+        for (wi in words.indices) {
+            for (u in explode(words[wi])) {
+                units.add(u)
+                unitWord.add(wi)
+            }
+        }
+        if (units.isEmpty()) return null
+        val e = Expected(words.size, units, unitWord.toIntArray())
+        if (expectedCache.size > 8000) expectedCache.clear()
+        expectedCache[key] = e
+        return e
+    }
 
     data class Alignment(
         val statuses: List<WordStatus>,
         val emitWord: IntArray,
         /** Mean chosen-token probability per expected word (-1 = no evidence). */
         val wordProb: FloatArray,
-    )
+        /** Expected units aligned 1:1 with an emission. */
+        val unitsMatched: Int = 0,
+        val unitsTotal: Int = 0,
+    ) {
+        /** Fraction of this ayah's phonemes the emission accounts for. */
+        val coverage: Float
+            get() = if (unitsTotal == 0) 0f else unitsMatched.toFloat() / unitsTotal
+    }
 
     /**
-     * Symbol-level edit DP of emitted phonemes against expected phoneme
-     * words. Insertions (extra sounds) are ignored; a word is CORRECT only
-     * when every symbol matches, WRONG on substitution, SKIPPED on deletion.
-     * emitWord maps each emission index to its expected word index (-1).
+     * Unit-level edit DP of emitted phonemes against an ayah's expected units.
+     * Insertions (extra sounds) are ignored, so leading noise such as
+     * istiaadha or basmala cannot reduce coverage. A word is CORRECT only when
+     * every one of its units matches, WRONG on substitution, SKIPPED when none
+     * match. emitWord maps each emission index to its expected word index (-1).
      */
-    fun alignToWords(
+    fun align(
         emitted: List<String>,
-        expectedWords: List<String>,
+        expected: Expected,
         probs: FloatArray? = null,
     ): Alignment {
-        val m = expectedWords.size
-        if (m == 0) return Alignment(emptyList(), IntArray(emitted.size) { -1 }, FloatArray(0))
-        // Flatten expected symbols with word boundaries.
-        val flat = ArrayList<String>()
-        val wordOf = ArrayList<Int>()
-        for (wi in expectedWords.indices) {
-            for (sym in expectedWords[wi].split(" ")) {
-                if (sym.isEmpty()) continue
-                flat.add(sym)
-                wordOf.add(wi)
-            }
-        }
-        // Symbols may themselves contain spaces? No: aya_phonemes_list items
-        // are whole words like "بِسمِ". Split above is a no-op safeguard.
+        val m = expected.wordCount
+        val flat = expected.units
+        val wordOf = expected.unitWord
         val n = emitted.size
         val len = flat.size
-        if (len == 0) {
-            return Alignment(List(m) { WordStatus.SKIPPED }, IntArray(n) { -1 }, FloatArray(m) { -1f })
+        if (len == 0 || n == 0) {
+            return Alignment(
+                if (len == 0) List(m) { WordStatus.SKIPPED } else emptyList(),
+                IntArray(n) { -1 },
+                FloatArray(m) { -1f },
+                0, len,
+            )
         }
         val dp = Array(n + 1) { IntArray(len + 1) }
         val dir = Array(n + 1) { IntArray(len + 1) } // 0=sub,1=del-from-expected,2=ins
@@ -110,12 +209,17 @@ object PhonemeMapper {
         val matched = BooleanArray(len)
         val wrong = BooleanArray(len)
         val emitWord = IntArray(n) { -1 }
+        var unitsMatched = 0
         var i = n
         var j = len
         while (i > 0 || j > 0) {
             if (i > 0 && j > 0 && dir[i][j] == 0) {
-                if (emitted[i - 1] == flat[j - 1]) matched[j - 1] = true
-                else wrong[j - 1] = true
+                if (emitted[i - 1] == flat[j - 1]) {
+                    matched[j - 1] = true
+                    unitsMatched++
+                } else {
+                    wrong[j - 1] = true
+                }
                 emitWord[i - 1] = wordOf[j - 1]
                 i--
                 j--
@@ -149,8 +253,6 @@ object PhonemeMapper {
         }
         val wordProb = FloatArray(m) { -1f }
         if (probs != null) {
-            // Mean chosen-token probability per expected word from emissions
-            // mapped to it (matched or substituted); insertions ignored.
             val sum = FloatArray(m)
             val cnt = IntArray(m)
             for (k in emitted.indices) {
@@ -164,7 +266,7 @@ object PhonemeMapper {
                 if (cnt[wi] > 0) wordProb[wi] = sum[wi] / cnt[wi]
             }
         }
-        return Alignment(statuses, emitWord, wordProb)
+        return Alignment(statuses, emitWord, wordProb, unitsMatched, len)
     }
 
     /** Word holding the most recent emission within [recencySec] of now. */
@@ -188,17 +290,25 @@ object PhonemeMapper {
         return if (audioSec - bestTs <= recencySec) best else null
     }
 
-    /** Closed-vocab nearest-ayah retrieval over canonical phoneme strings. */
-    fun matchAyah(
-        emittedJoined: String,
-        candidates: List<Pair<Int, String>>,
-    ): Pair<Int, Double>? {
-        if (emittedJoined.isBlank() || candidates.isEmpty()) return null
-        var best: Pair<Int, Double>? = null
-        for ((ayah, ref) in candidates) {
-            if (ref.isBlank()) continue
-            val score = Levenshtein.ratio(emittedJoined, ref)
-            if (best == null || score > best.second) best = ayah to score
+    /**
+     * Rank candidate ayat by how much of each ayah's phoneme inventory the
+     * emission accounts for.
+     *
+     * The previous scorer was Levenshtein.ratio(emission, wholeAyah) gated at
+     * 0.60, which is unreachable: the score DECREASES as the user recites
+     * (measured 0.48 -> 0.15 across Al-Fatiha) because a growing slice is
+     * length-penalised against one short ayah. Coverage is monotone in
+     * progress and ignores leading noise such as istiaadha/basmala.
+     */
+    fun bestByCoverage(
+        emitted: List<String>,
+        candidates: List<Pair<Int, Expected>>,
+    ): Pair<Int, Float>? {
+        if (emitted.isEmpty() || candidates.isEmpty()) return null
+        var best: Pair<Int, Float>? = null
+        for ((ayah, exp) in candidates) {
+            val cov = align(emitted, exp).coverage
+            if (best == null || cov > best.second) best = ayah to cov
         }
         return best
     }

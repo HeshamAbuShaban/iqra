@@ -497,6 +497,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             }
             val ok = SherpaZipformer.ensure(app) &&
                 PhonemeMapper.ensureTable(File(app.filesDir, "zipformer/ordered_quran_phonemes.json")) &&
+                // The expected side must be expressed in the MODEL's unit
+                // inventory, otherwise coverage is identically zero.
+                PhonemeMapper.ensureUnits(File(app.filesDir, "zipformer/tokens.txt")) &&
                 SherpaZipformer.startStream()
             zipformerOn = ok
             if (ok) {
@@ -665,22 +668,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val obsProbs = res.probs.drop(base)
             val obsTs = res.timestamps.drop(base)
             val audioSec = streamBaseSec + fedTotal / 16000f
-            val emitted = obs.joinToString(" ")
 
             // Handoff: last ayah + next surah head matches phonetically.
             val lastAyah = verseWords.keys.maxOrNull() ?: lockedAyah
             if (lockedAyah >= lastAyah && activeSurah < 114) {
-                val npw = PhonemeMapper.phonemeWords(activeSurah + 1, 1)
-                if (npw.isNotEmpty()) {
-                    val ns = PhonemeMapper.matchAyah(emitted, listOf(1 to npw.joinToString(" ")))
-                    if (ns != null && ns.second >= 0.60) {
+                val next = PhonemeMapper.expected(activeSurah + 1, 1)
+                if (next != null) {
+                    val cov = PhonemeMapper.align(obs, next).coverage
+                    if (cov >= HANDOFF_COVERAGE) {
                         loadSurah(activeSurah + 1)
                         lockedAyah = 1
                         rebaseSlice = true
                         lastAdvanceAt = System.currentTimeMillis()
                         resetAudioPipeline()
                         refreshWindow()
-                        diag("handoff → s=${activeSurah}:1 score=${"%.2f".format(ns.second)}")
+                        diag("handoff → s=${activeSurah}:1 coverage=${"%.2f".format(cov)}")
                         return
                     }
                 }
@@ -690,22 +692,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 verseWords.keys.filter { it < lockedAyah }.takeLast(3) +
                 verseWords.keys.filter { it > lockedAyah }.take(3)).distinct().sorted()
             val cands = scopeAyahs.mapNotNull { a ->
-                val pw = PhonemeMapper.phonemeWords(activeSurah, a)
-                if (pw.isEmpty()) null else a to pw.joinToString(" ")
+                PhonemeMapper.expected(activeSurah, a)?.let { a to it }
             }
             if (cands.isEmpty()) return
-            val found = PhonemeMapper.matchAyah(emitted, cands) ?: return
+            val found = PhonemeMapper.bestByCoverage(obs, cands) ?: return
             val matchAyah = found.first
             val score = found.second
-            _lastMatch.value = matchAyah to score
+            _lastMatch.value = matchAyah to score.toDouble()
             val matchPage = versePage[matchAyah]
             val inView = matchPage == null || matchPage in (pageNumber - 1..pageNumber + 1)
             val step = matchAyah - lockedAyah
             val needFrames = if (wpmEma < 50) 3 else 2
             val candidate: Int? =
-                if (step in 1..3 && score >= 0.60 && inView) minOf(matchAyah, lockedAyah + 1) else null
+                if (step in 1..3 && score >= ADVANCE_COVERAGE && inView) minOf(matchAyah, lockedAyah + 1) else null
             if (candidate != null) {
-                val strong = candidate == lockedAyah + 1 && score >= 0.78
+                val strong = candidate == lockedAyah + 1 && score >= STRONG_COVERAGE
                 if (strong) {
                     advanceLockTo(candidate)
                 } else if (pendingNextAyah == candidate) {
@@ -717,7 +718,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     pendingNextAyah = candidate
                     pendingNextFrames = 1
                 }
-            } else if (score < 0.35) {
+            } else if (score < WEAK_COVERAGE) {
                 // Weak frame: leaky counter instead of a hard reset, so one
                 // bad frame can't erase accumulated confidence.
                 if (pendingNextFrames > 0) pendingNextFrames--
@@ -725,14 +726,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 pendingNextAyah = null; pendingNextFrames = 0
         pendingBackAyah = null; pendingBackFrames = 0
             }
-            if (step > 3 && score >= 0.95 && inView) {
+            if (step > 3 && score >= JUMP_COVERAGE && inView) {
                 advanceLockTo(matchAyah, measureSpeed = false)
             }
             // Backward recovery: the lock overshoots (swipe reseat, fuzzy
             // relocation, blind probe). Strong multi-frame evidence that the
             // reciter is on an ayah BEHIND the lock reseats it — a lock that
             // cannot return to the recited ayah is definitionally broken.
-            if (step in -2..-1 && score >= 0.85 && inView) {
+            if (step in -2..-1 && score >= BACK_COVERAGE && inView) {
                 if (pendingBackAyah == matchAyah) {
                     pendingBackFrames++
                     if (pendingBackFrames >= 2) {
@@ -779,9 +780,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             for (a in window) {
                 val ws = verseWords[a] ?: emptyList()
                 if (ws.isEmpty()) continue
-                val pw = PhonemeMapper.phonemeWords(activeSurah, a)
-                if (pw.isEmpty() || pw.size != ws.size) continue
-                val al = PhonemeMapper.alignToWords(obs, pw, obsProbs.toFloatArray())
+                val pw = PhonemeMapper.expected(activeSurah, a) ?: continue
+                if (pw.wordCount != ws.size) continue
+                val al = PhonemeMapper.align(obs, pw, obsProbs.toFloatArray())
                 for (i in ws.indices) {
                     val key = keyOf(ws[i])
                     var s = al.statuses.getOrElse(i) { WordStatus.SKIPPED }
@@ -962,6 +963,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         private const val CAP = 3 * 16000
         // Below this RMS the rolling window is effectively silence -> skip decoding.
         private const val SILENCE_RMS = 0.0025f
+
+        // Lock thresholds are COVERAGE: the fraction of a candidate ayah's
+        // phoneme units that the emission slice accounts for. Calibrated by
+        // replaying engine/audio/001.raw (Al-Fatiha, Husary) through the real
+        // pipeline - see engine/replay/. On that clip the lock advanced 7/7
+        // ayat sequentially at 0.60, with per-advance coverage 0.64-0.78.
+        private const val ADVANCE_COVERAGE = 0.60f
+        private const val STRONG_COVERAGE = 0.85f
+        private const val WEAK_COVERAGE = 0.40f
+        private const val JUMP_COVERAGE = 0.92f
+        private const val BACK_COVERAGE = 0.80f
+        private const val HANDOFF_COVERAGE = 0.60f
     }
 }
 
