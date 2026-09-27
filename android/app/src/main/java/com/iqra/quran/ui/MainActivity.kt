@@ -81,6 +81,17 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.MonitorHeart
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
@@ -321,7 +332,9 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         Screen.Data -> DataSetupScreen { screen = Screen.Picker }
         Screen.Picker -> HomeScreen(vm, lastRead,
             onOpen = { surah, page -> screen = Screen.Reader(surah, page) },
+            onOpenAyah = { surah, page, ayah -> screen = Screen.Reader(surah, page, ayah) },
             onDiag = { screen = Screen.Diag },
+            onData = { screen = Screen.Data },
         )
         is Screen.Diag -> DiagScreen(vm) { screen = Screen.Picker }
         is Screen.Reader -> {
@@ -357,46 +370,169 @@ fun HomeScreen(
     vm: PracticeViewModel,
     lastRead: Pair<Int, Int>?,
     onOpen: (Int, Int) -> Unit,
+    onOpenAyah: (Int, Int, Int) -> Unit = { _, _, _ -> },
     onDiag: () -> Unit = {},
+    onData: () -> Unit = {},
 ) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
-    val buildTag = remember { vm.buildTag }
     var tab by remember { mutableStateOf(HomeTab.Surahs) }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Box(
-            Modifier.fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(goldColor.copy(alpha = 0.14f), Color.Transparent)))
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+    val surahs = remember { data.surahList() }
+    val cs = MaterialTheme.colorScheme
+
+    Column(Modifier.fillMaxSize().background(cs.background)) {
+        // Deliberately quiet: no gradient slab, no tagline stack, no 9sp
+        // disclaimer. One wordmark, one search field, one tab underline.
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding()
+                .padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Iqra", fontFamily = quranFont, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = goldColor)
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text(
-                        "Memorize with live recitation feedback",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    )
-                    Text(
-                        "build $buildTag · auto feedback can err — a teacher's ear is the authority",
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                    )
-                }
+            Text(
+                "Iqra",
+                fontFamily = quranFont,
+                fontSize = 24.sp,
+                color = cs.onSurface,
+            )
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onData) {
+                Icon(Icons.Outlined.FolderOpen, "Data files", tint = cs.onSurface.copy(alpha = 0.55f))
+            }
+            IconButton(onClick = onDiag) {
+                Icon(Icons.Outlined.MonitorHeart, "Engine check", tint = cs.onSurface.copy(alpha = 0.55f))
             }
         }
-        HomeTabRow(tab) { tab = it }
-        TextButton(onClick = onDiag, modifier = Modifier.align(Alignment.End).padding(end = 12.dp)) {
-            Text(
-                "Engine check",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
+
+        // One search field for both surah names and ayah text.
+        var q by remember { mutableStateOf("") }
+        val focus = LocalFocusManager.current
+        OutlinedTextField(
+            value = q,
+            onValueChange = { q = it },
+            placeholder = {
+                Text(
+                    "Search a surah, or a word from a verse",
+                    fontSize = 14.sp,
+                    color = cs.onSurface.copy(alpha = 0.45f),
+                )
+            },
+            singleLine = true,
+            shape = Pill,
+            leadingIcon = { Icon(Icons.Outlined.Search, null, tint = cs.onSurface.copy(alpha = 0.5f)) },
+            trailingIcon = {
+                if (q.isNotEmpty()) {
+                    IconButton(onClick = { q = "" }) {
+                        Icon(Icons.Outlined.Close, "Clear", tint = cs.onSurface.copy(alpha = 0.5f))
+                    }
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = accentColor,
+                unfocusedBorderColor = cs.onSurface.copy(alpha = 0.18f),
+            ),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+
+        val trimmed = q.trim()
+        val surahHits = remember(trimmed, surahs) {
+            if (trimmed.isBlank()) emptyList() else surahs.filter {
+                it.number.toString() == trimmed ||
+                    it.name.contains(trimmed) ||
+                    it.nameEn.contains(trimmed, ignoreCase = true) ||
+                    it.nameEn.startsWith(trimmed, ignoreCase = true)
+            }
         }
+        val ayahHits = remember(trimmed) { if (trimmed.isBlank()) emptyList() else vm.searchAyat(trimmed) }
+
+        if (trimmed.isNotBlank()) {
+            SearchResults(
+                surahHits = surahHits,
+                ayahHits = ayahHits,
+                data = data,
+                onOpen = onOpen,
+                onOpenAyah = onOpenAyah,
+            )
+            return@Column
+        }
+
+        HomeTabRow(tab) { tab = it }
         when (tab) {
             HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen)
             HomeTab.Juz -> JuzList(vm, data, onOpen)
             HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen)
+        }
+    }
+}
+
+@Composable
+private fun SearchResults(
+    surahHits: List<com.iqra.quran.data.SurahInfo>,
+    ayahHits: List<com.iqra.quran.data.AyahSearch.Hit>,
+    data: com.iqra.quran.data.QuranData,
+    onOpen: (Int, Int) -> Unit,
+    onOpenAyah: (Int, Int, Int) -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val lazy = rememberLazyListState()
+    LaunchedEffect(surahHits.size, ayahHits.size) { lazy.scrollToItem(0) }
+    LazyColumn(
+        state = lazy,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+    ) {
+        if (surahHits.isNotEmpty()) {
+            item { SectionHeader("Surahs", surahHits.size, false) }
+            items(surahHits, key = { "s${it.number}" }) { s ->
+                SurahRow(s) { onOpen(s.number, s.startPage) }
+            }
+        }
+        if (ayahHits.isNotEmpty()) {
+            item { SectionHeader("Verses", ayahHits.size, false) }
+            items(ayahHits, key = { "a${it.surah}:${it.ayah}" }) { h ->
+                val v = data.getVerse(h.surah, h.ayah)
+                val surah = data.surahInfo(h.surah)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val p = surah?.let { if (h.ayah in it.startPage..it.endPage) it.startPage else 1 }
+                                ?: 1
+                            onOpenAyah(h.surah, p, h.ayah)
+                        }
+                        .padding(horizontal = 18.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${h.surah}:${h.ayah}",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = goldColor,
+                        modifier = Modifier.width(52.dp),
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            v?.textUthmani?.take(90) ?: "",
+                            fontFamily = quranFont,
+                            fontSize = 17.sp,
+                            color = cs.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            surah?.nameEn ?: "",
+                            fontSize = 10.sp,
+                            color = cs.onSurface.copy(alpha = 0.5f),
+                        )
+                    }
+                }
+                HorizontalDivider(color = cs.onSurface.copy(alpha = 0.07f))
+            }
+        }
+        if (surahHits.isEmpty() && ayahHits.isEmpty()) {
+            item { EmptyHint("Nothing matched.") }
         }
     }
 }

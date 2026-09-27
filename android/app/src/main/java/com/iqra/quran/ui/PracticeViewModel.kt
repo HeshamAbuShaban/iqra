@@ -66,6 +66,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _recognized = MutableStateFlow("")
     val recognizedText: StateFlow<String> = _recognized
 
+    /** Ayah search index, built once off the main thread. */
+    @Volatile private var searchIndex: com.iqra.quran.data.AyahSearch? = null
+
+    fun searchAyat(q: String): List<com.iqra.quran.data.AyahSearch.Hit> =
+        searchIndex?.query(q) ?: emptyList()
+
+    fun ensureSearchIndex(d: com.iqra.quran.data.QuranData) {
+        if (searchIndex != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            searchIndex = com.iqra.quran.data.AyahSearch.build(d.verses)
+        }
+    }
+
     private val _engineLabel = MutableStateFlow("")
     val engineLabel: StateFlow<String> = _engineLabel
 
@@ -487,6 +500,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch(Dispatchers.IO) {
             val d = QuranData.load(getApplication())
+            com.iqra.quran.data.AyahSearch.build(d.verses).also { searchIndex = it }
             withContext(Dispatchers.Main) {
                 _data.value = d
                 _loading.value = false
