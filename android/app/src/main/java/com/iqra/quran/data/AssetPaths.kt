@@ -238,6 +238,9 @@ object AssetPaths {
             File(shared, name),
             File(File(fallbackRoot(context), "pages"), name),
             File(fallbackRoot(context), name),
+            // dev/staging path: private storage is always traversable, and
+            // `run-as ... cp` is the only way to populate it
+            File(File(context.filesDir, "pages"), name),
         )
         for (c in candidates) if (c.isFile) return c
         return candidates.first()
@@ -249,6 +252,7 @@ object AssetPaths {
         sharedRoot(),
         File(fallbackRoot(context), "pages"),
         fallbackRoot(context),
+        File(context.filesDir, "pages"),
     )
 
     /**
