@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Open mushaf, head-on. Authored on a 108 grid; all ink sits inside the
+     66dp adaptive safe zone (21..87). Geometry mirrors tools/icon/iqra.svg,
+     which is the master copy rendered and reviewed at 48/96/192/432px. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- left page -->
+    <path android:pathData="M21.5,33 Q37,26.5 52,32.5 L52,82.5 Q37,76.5 21.5,83 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="21.5" android:startY="33"
+                android:endX="52" android:endY="43">
+                <item android:offset="0" android:color="#FBF6E9" />
+                <item android:offset="1" android:color="#E9DDC3" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- right page, mirrored about the spine -->
+    <path android:pathData="M86.5,33 Q71,26.5 56,32.5 L56,82.5 Q71,76.5 86.5,83 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear"
+                android:startX="86.5" android:startY="33"
+                android:endX="56" android:endY="43">
+                <item android:offset="0" android:color="#FBF6E9" />
+                <item android:offset="1" android:color="#E9DDC3" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- gold spine: the fold, the one saturated accent -->
+    <path android:pathData="M52,32.5h4v50h-4z" android:fillColor="#D9B36B" />
+    <path android:pathData="M52,32.5h1.5v50h-1.5z" android:fillColor="#E8C98F" android:fillAlpha="0.7" />
+
+    <!-- three rules per page: identical length and inset, so the rhythm is
+         deliberate and still resolves at 48px -->
+    <path android:pathData="M28,46H46" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
+    <path android:pathData="M28,57H46" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
+    <path android:pathData="M28,68H46" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
+    <path android:pathData="M62,46H80" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
+    <path android:pathData="M62,57H80" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
+    <path android:pathData="M62,68H80" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
+</vector>

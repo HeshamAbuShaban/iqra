@@ -43,3 +43,6 @@ __pycache__/
 
 # Locally staged heavy data for adb/USB push (never committed)
 /.iqra-stage/
+
+# Rendered icon previews (regenerate: see tools/icon/iqra.svg)
+/tools/icon/preview/
