@@ -213,17 +213,44 @@ object AssetPaths {
     fun allStatuses(context: Context): List<Status> = specs().map { status(context, it) }
 
     /**
+     * Locate one page image.
+     *
+     * Several roots are tried because a shared-storage directory created by
+     * `adb push` ends up root-owned with no traversal bit for other users, and
+     * the app then cannot enter it even with All Files Access granted. A
+     * folder copied in through the file manager or MTP is readable, and the
+     * app's own external dir always is - so whichever the device permits wins.
+     */
+    fun pageFile(context: Context, page: Int): File {
+        val name = "%03d.png".format(page)
+        val shared = sharedRoot()
+        val candidates = listOf(
+            File(File(shared, "pages"), name),
+            File(shared, name),
+            File(File(fallbackRoot(context), "pages"), name),
+            File(fallbackRoot(context), name),
+        )
+        for (c in candidates) if (c.isFile) return c
+        return candidates.first()
+    }
+
+    /** Directories that could hold the page set, in preference order. */
+    private fun pageRoots(context: Context): List<File> = listOf(
+        File(sharedRoot(), "pages"),
+        sharedRoot(),
+        File(fallbackRoot(context), "pages"),
+        fallbackRoot(context),
+    )
+
+    /**
      * Pages are present when specific known files are readable - NOT by counting
-     * directory entries. On Android 11+ with scoped storage the app can open
-     * /sdcard/Iqra/pages/042.png but listFiles() on that directory returns only
-     * a partial view (measured: 5 entries vs 604 real files), so an entry count
-     * reports "missing" for a folder that is completely present.
+     * directory entries. On Android 11+ the app can open a page file but
+     * listFiles() on that directory returns only a partial view, so an entry
+     * count reports "missing" for a folder that is completely present.
      */
     fun pagesPresent(context: Context): Boolean {
-        val roots = listOf(writableRoot(context), sharedRoot())
         val probes = intArrayOf(1, 2, 3, 155, 302, 450, 603, 604)
-        for (root in roots) {
-            val dir = File(root, "pages")
+        for (dir in pageRoots(context)) {
             if (probes.all { File(dir, "%03d.png".format(it)).isFile }) return true
         }
         // legacy: still-bundled pages
