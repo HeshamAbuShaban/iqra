@@ -61,7 +61,8 @@ object AssetPaths {
         add(Spec("ordered_quran_phonemes.json", 5_106_711L, Kind.FETCHABLE))
         add(Spec("silero_vad.onnx", 643_854L, Kind.FETCHABLE))
         add(Spec("ayahinfo_1024.db", 6_348_800L, Kind.FETCHABLE))
-        add(Spec("pages", (1..PAGE_COUNT).sumOf { 0L }, Kind.FETCHABLE))
+        // 604 Madinah PNGs, ~56.5 MB in total
+        add(Spec("pages", 59_249_472L, Kind.FETCHABLE))
     }
 
     // ---- location resolution -------------------------------------------------
@@ -211,17 +212,25 @@ object AssetPaths {
 
     fun allStatuses(context: Context): List<Status> = specs().map { status(context, it) }
 
+    /**
+     * Pages are present when specific known files are readable - NOT by counting
+     * directory entries. On Android 11+ with scoped storage the app can open
+     * /sdcard/Iqra/pages/042.png but listFiles() on that directory returns only
+     * a partial view (measured: 5 entries vs 604 real files), so an entry count
+     * reports "missing" for a folder that is completely present.
+     */
     fun pagesPresent(context: Context): Boolean {
-        for (root in listOf(writableRoot(context), sharedRoot())) {
+        val roots = listOf(writableRoot(context), sharedRoot())
+        val probes = intArrayOf(1, 2, 3, 155, 302, 450, 603, 604)
+        for (root in roots) {
             val dir = File(root, "pages")
-            if (dir.isDirectory) {
-                val have = dir.listFiles { f -> f.name.endsWith(".png") }?.size ?: 0
-                if (have >= PAGE_COUNT) return true
-            }
+            if (probes.all { File(dir, "%03d.png".format(it)).isFile }) return true
         }
-        // legacy: bundled assets
+        // legacy: still-bundled pages
         return try {
-            context.assets.open("pages/001.png").close(); true
+            context.assets.open("pages/001.png").close()
+            context.assets.open("pages/604.png").close()
+            true
         } catch (t: Throwable) {
             false
         }
