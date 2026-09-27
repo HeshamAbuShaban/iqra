@@ -147,7 +147,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private val quranFont = FontFamily(Font(R.font.amiri))
-private val accentColor = Color(0xFF2BB6A0)
+internal val accentColor = Color(0xFF2BB6A0)
 
 /**
  * Minimum glyph box edge, in the DB's 1024-wide page space, for a box to
@@ -155,8 +155,8 @@ private val accentColor = Color(0xFF2BB6A0)
  * own glyph rows and are far smaller (median height 21px vs 70px).
  */
 private const val MIN_WORD_BOX = 20f
-private val wrongColor = Color(0xFFE0625A)
-private val goldColor = Color(0xFFD9B36B)
+internal val wrongColor = Color(0xFFE0625A)
+internal val goldColor = Color(0xFFD9B36B)
 private val reciteBlue = Color(0xFF4A9EFF)
 private val PAGE_MASK = Color(0xFFF3ECD9) // parchment, used to hide words on light page images
 private val ParchmentScaffold = Color(0xFFE6DDC4) // warm dim parchment that frames the page
@@ -967,6 +967,8 @@ fun ReaderScreen(
     LaunchedEffect(pagerState.currentPage) {
         vm.setCurrentPage(pagerState.currentPage + 1)
     }
+
+    val density = LocalDensity.current
 
     // A deep link from search can pin the opening ayah.
     LaunchedEffect(initialAnchorAyah) {
