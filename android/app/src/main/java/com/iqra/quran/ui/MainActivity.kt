@@ -614,7 +614,7 @@ fun SurahIndex(
                         items(madani, key = { it.number }) { SurahRow(it, onOpen) }
                     }
                     if (filtered.isEmpty()) {
-                        item { EmptyHint("No surah matches \"$query\"") }
+                        item { EmptyHint("No surah matches") }
                     }
                 }
             } else {
