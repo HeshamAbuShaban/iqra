@@ -39,8 +39,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _recording = MutableStateFlow(false)
     val recording: StateFlow<Boolean> = _recording
 
-    private val _status = MutableStateFlow("")
-    val status: StateFlow<String> = _status
 
     private val _preparing = MutableStateFlow(false)
     val preparing: StateFlow<Boolean> = _preparing
@@ -63,303 +61,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _activeVerse = MutableStateFlow<Int?>(null)
     val activeVerse: StateFlow<Int?> = _activeVerse
 
-    private val _recognized = MutableStateFlow("")
-    val recognizedText: StateFlow<String> = _recognized
 
-    /** Ayah search index, built once off the main thread. */
-    @Volatile private var searchIndex: com.iqra.quran.data.AyahSearch? = null
-
-    fun searchAyat(q: String): List<com.iqra.quran.data.AyahSearch.Hit> =
-        searchIndex?.query(q) ?: emptyList()
-
-    fun ensureSearchIndex(d: com.iqra.quran.data.QuranData) {
-        if (searchIndex != null) return
-        viewModelScope.launch(Dispatchers.IO) {
-            searchIndex = com.iqra.quran.data.AyahSearch.build(d.verses)
-        }
-    }
-
-    private val _engineLabel = MutableStateFlow("")
-    val engineLabel: StateFlow<String> = _engineLabel
-
-    private val _lastMatch = MutableStateFlow<Pair<Int, Double>?>(null)
-    val lastMatch: StateFlow<Pair<Int, Double>?> = _lastMatch
-    private val _wpmFlow = MutableStateFlow(70.0)
-    val wpmFlow: StateFlow<Double> = _wpmFlow
-    private val _gateReason = MutableStateFlow("")
-    val gateReason: StateFlow<String> = _gateReason
-
-    private val diagBuffer = ArrayDeque<Pair<Long, String>>()
-    private val _diagLog = MutableStateFlow<List<String>>(emptyList())
-    val diagLog: StateFlow<List<String>> = _diagLog
-
-    /** Ring-buffer diagnostic event: state changes + errors only, never
-     *  per-frame spam. Powers the diagnostics screen; no logcat needed. */
-    fun diag(msg: String) {
-        val t = (System.currentTimeMillis() / 1000) % 100000
-        diagBuffer.addLast(t to msg)
-        while (diagBuffer.size > 200) diagBuffer.removeFirst()
-        _diagLog.value = diagBuffer.map { (tt, m) -> "$tt $m" }
-        appendDiagFile(t, msg)
-    }
-
-    /**
-     * Mirror the event ring buffer to disk. The in-memory copy is lost on
-     * process death, which is exactly when you most want to read why a
-     * session went wrong - force-stopping the app used to erase the evidence.
-     */
-    private fun appendDiagFile(t: Long, msg: String) {
-        try {
-            val f = File(getApplication<Application>().filesDir, "diag.log")
-            if (f.length() > 512 * 1024) f.writeText("")
-            f.appendText("$t $msg\n")
-        } catch (t2: Throwable) {
-            // diagnostics must never break recognition
-        }
-    }
-
-    /** Previous session's events, newest last, for the diagnostics screen. */
-    fun persistedDiag(): List<String> = try {
-        val f = File(getApplication<Application>().filesDir, "diag.log")
-        if (f.isFile) f.readLines().takeLast(200) else emptyList()
-    } catch (t: Throwable) {
-        emptyList()
-    }
-
-    fun clearPersistedDiag() {
-        try {
-            File(getApplication<Application>().filesDir, "diag.log").writeText("")
-        } catch (t: Throwable) {
-        }
-    }
-
-    data class EngineFileInfo(val name: String, val present: Boolean, val detail: String, val fix: String?)
-
-    /** Snapshot for the diagnostics screen: every gated file + engine state. */
-    fun engineFilesInfo(): List<EngineFileInfo> {
-        val app = getApplication<Application>()
-        fun info(name: String, f: File, fix: String): EngineFileInfo {
-            val ok = f.exists() && f.length() > 0
-            val detail = if (!ok) "missing"
-            else if (f.length() < 1048576) "${f.length() / 1024} KB"
-            else "%.1f MB".format(f.length() / 1048576.0)
-            return EngineFileInfo(name, ok, detail, if (ok) null else fix)
-        }
-        return listOf(
-            info("model.int8.onnx", com.iqra.quran.data.AssetPaths.file(app, "model.int8.onnx"), "copy model.int8.onnx → /sdcard/Iqra/"),
-            info("tokens.txt", com.iqra.quran.data.AssetPaths.file(app, "tokens.txt"), "copy tokens.txt → /sdcard/Iqra/"),
-            info("ordered_quran_phonemes.json", com.iqra.quran.data.AssetPaths.file(app, "ordered_quran_phonemes.json"), "fetched automatically, or copy → /sdcard/Iqra/"),
-            info("silero_vad.onnx", com.iqra.quran.data.AssetPaths.file(app, "silero_vad.onnx"), "fetched automatically, or copy → /sdcard/Iqra/"),
-        )
-    }
-
-    fun micLevel(): Float {
-        val s = recorder.currentSamples()
-        if (s.isEmpty()) return 0f
-        var sum = 0.0
-        for (v in s.takeLast(8000)) sum += v * v
-        return kotlin.math.sqrt(sum / 8000).toFloat()
-    }
-
-    fun micSampleCount(): Int = recorder.sampleCount()
-
-    /** One-line streaming counters for the diagnostics screen. */
-    fun streamStats(): String =
-        "fed=${SherpaZipformer.acceptedSamples} toks=$lastEmitCount decodes=${SherpaZipformer.decodeCalls}" +
-            (SherpaZipformer.lastOpError?.let { " ERR=$it" } ?: "")
-    fun clearDiag() {
-        diagBuffer.clear()
-        _diagLog.value = emptyList()
-    }
-
-    private val _engineHint = MutableStateFlow<String?>(null)
-    val engineHint: StateFlow<String?> = _engineHint
-
-    /** Installed build tag (CI run number) so builds are verifiable on-device. */
-    val buildTag: String by lazy {
-        try {
-            val app = getApplication<Application>()
-            val code = if (android.os.Build.VERSION.SDK_INT >= 33) {
-                app.packageManager.getPackageInfo(
-                    app.packageName,
-                    android.content.pm.PackageManager.PackageInfoFlags.of(0),
-                ).versionCode
-            } else {
-                @Suppress("DEPRECATION") app.packageManager.getPackageInfo(app.packageName, 0).versionCode
-            }
-            "#$code"
-        } catch (_: Exception) {
-            ""
-        }
-    }
-
-    private val prefs = app.getSharedPreferences("iqra", Context.MODE_PRIVATE)
-    private val _lastRead = MutableStateFlow(loadLast())
-    val lastRead: StateFlow<Pair<Int, Int>?> = _lastRead
-
-    private fun loadLast(): Pair<Int, Int>? {
-        val s = prefs.getInt("last_surah", -1)
-        val p = prefs.getInt("last_page", -1)
-        return if (s > 0 && p > 0) s to p else null
-    }
-
-    /**
-     * Records the last page read. The surah is derived FROM the page, not
-     * passed in: the reader screen's surah parameter is frozen at open time, so
-     * passing it stored nonsense like (Al-Fatiha, page 6) after swiping into
-     * Al-Baqarah.
-     */
-    fun saveLastRead(page: Int) {
-        val (s, _) = anchorForPage(page) ?: return
-        prefs.edit().putInt("last_surah", s).putInt("last_page", page).apply()
-        _lastRead.value = s to page
-    }
-
-    fun lastReadPage(): Int? = _lastRead.value?.second
-
-    /** Explicitly go back to where the reader was last left. */
-    fun resumeLastRead(): Boolean {
-        val p = _lastRead.value?.second ?: return false
-        jumpToPage(p)
-        diag("resume → p=$p")
-        return true
-    }
-
-    private val _bookmarks = MutableStateFlow(loadBookmarks())
-    val bookmarks: StateFlow<Set<Int>> = _bookmarks
-
-    private fun loadBookmarks(): Set<Int> {
-        val raw = prefs.getStringSet("bookmarks", emptySet()) ?: emptySet()
-        return raw.mapNotNull { it.toIntOrNull() }.toSet()
-    }
-
-    fun isBookmarked(page: Int) = _bookmarks.value.contains(page)
-
-    fun toggleBookmark(page: Int) {
-        val cur = _bookmarks.value.toMutableSet()
-        if (!cur.add(page)) cur.remove(page)
-        prefs.edit().putStringSet("bookmarks", cur.map { it.toString() }.toSet()).apply()
-        _bookmarks.value = cur
-    }
-
-    private val recorder = AudioRecorder(16000)
-    private var activeSurah: Int = 1
-    private var lockedAyah: Int = 1
-    @Volatile private var pageNumber: Int = 1
-    private var verseWords: Map<Int, List<MushafWord>> = emptyMap()
-    private var versePage: Map<Int, Int> = emptyMap()
-    private var pendingNextAyah: Int? = null
-    private var pendingBackAyah: Int? = null
-    private var pendingBackFrames: Int = 0
-    private var pendingNextFrames: Int = 0
-    private var zipformerOn = false
-    private var fedPosition = 0
-    private val _decoderState = MutableStateFlow("idle")
-    val decoderState: StateFlow<String> = _decoderState
-    private var noiseFloor = SILENCE_RMS
-    private var lastTokenTime = 0L
-    private var lastRecoveryTime = 0L
-    private var lastFrameError: String? = null
-    // Streaming clock + tail replay: bounds emission history without losing
-    // rolling context on advance. fedTotal counts every fed sample;
-    // streamBaseSec carries pre-reset audio time for word timing.
-    private var fedTotal = 0L
-    private var streamBaseSec = 0f
-    private var tailBuf = FloatArray(0)
-    private var speechFrames = 0L
-    private var lastEmitCount = 0
-    private var nullFrames = 0
-    // Per-ayah emission slice: window ayat align against emissions heard
-    // since the lock last moved — never against other ayat's history.
-    // Kills cross-ayah ghost matches (partial reveals of unrecited text).
-    private var sliceStart = 0
-    private var rebaseSlice = false
-
-    private val _activeWindow = MutableStateFlow<List<Int>>(emptyList())
-    val activeWindow: StateFlow<List<Int>> = _activeWindow
-
-    /** Narrow 2–3 ayah active window (locked±1) that matching, statuses and
-     *  the hide overlay all consume, so attention stays on what the reciter
-     *  is actually saying instead of the whole surah. */
-    private fun computeWindow(): List<Int> {
-        if (verseWords.isEmpty()) return emptyList()
-        val keys = verseWords.keys
-        val w = listOf(lockedAyah - 1, lockedAyah, lockedAyah + 1).filter { keys.contains(it) }
-        if (w.isNotEmpty()) return w
-        val nearest = keys.minOrNull() ?: return emptyList()
-        return listOf(nearest)
-    }
-
-    private fun refreshWindow() {
-        _activeWindow.value = computeWindow()
-    }
-
-    // ---- Recognition state ----
-    private var wpmEma = 70.0
-    private var lastAdvanceAt = 0L
-    private val wrongStreak = mutableMapOf<String, Int>()
-    /** Session verdicts per word key, retained when ayahs leave the active
-     *  window so completed recitation stays visible (and stays revealed in
-     *  hide mode) instead of reverting to untouched. Cleared on surah load,
-     *  jump, anchor and new recitation sessions. */
-    private val sessionStatuses = LinkedHashMap<String, WordStatus>()
-
-    /** Advance the lock, measuring reciter speed from SPEECH-ACTIVE time on
-     *  the finished ayah (wall silence excluded) so frame patience adapts
-     *  to slow/fast reciters instead of fixed counts. */
-    private fun advanceLockTo(next: Int, measureSpeed: Boolean = true) {
-        val prev = lockedAyah
-        val now = System.currentTimeMillis()
-        if (measureSpeed) {
-            val dtSec = speechFramesSinceAdvance * 0.25
-            val prevWords = verseWords[prev]?.size ?: 0
-            if (dtSec in 2.0..180.0 && prevWords > 0) {
-                val inst = prevWords / dtSec * 60.0
-                wpmEma = (0.7 * wpmEma + 0.3 * inst).coerceIn(25.0, 160.0)
-            }
-        }
-        lastAdvanceAt = now
-        speechFramesSinceAdvance = 0
-        lockedAyah = next
-        _wpmFlow.value = wpmEma
-        diag("lock $prev → $next")
-        pendingNextAyah = null; pendingNextFrames = 0
-        pendingBackAyah = null; pendingBackFrames = 0
-        rebaseSlice = true
-        // Recycle the stream with tail replay: bounds emission history
-        // (flat per-frame cost forever) while keeping rolling context, so
-        // there is no dead zone after an advance.
-        streamBaseSec += fedTotal / 16000f
-        fedTotal = 0
-        SherpaZipformer.resetStream()
-        if (tailBuf.isNotEmpty()) {
-            SherpaZipformer.accept(tailBuf)
-            fedTotal = tailBuf.size.toLong()
-        }
-    }
-
-    /** Frames a WRONG flag must persist before it latches, scaled by measured
-     *  words-per-minute so slow reciters' mid-word frames don't flash red. */
-    private fun wrongLatchFrames(): Int =
-        (1.2 * (60.0 / wpmEma) / 0.25).roundToInt().coerceIn(2, 8)
-
-    private var speechFramesSinceAdvance = 0L
-
-    /**
-     * Replays the recent audio tail into a FRESH stream after the lock moves,
-     * preserving rolling context while bounding emission history (flat
-     * per-frame cost no matter how long the session runs). Stream clock
-     * continuity is kept via streamBaseSec.
-     */
-    private fun recycleStreamForAdvance() {
-        streamBaseSec += fedTotal / 16000f
-        fedTotal = 0
-        SherpaZipformer.resetStream()
-        if (tailBuf.isNotEmpty()) {
-            SherpaZipformer.accept(tailBuf)
-            fedTotal = tailBuf.size.toLong()
-        }
-    }
 
     /**
      * Full audio pipeline reset: recorder buffer + stream + cursors + tail.
@@ -613,7 +315,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             ok
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
-                _status.value = "Voice error: ${e.message}"
             }
             false
         } finally {
@@ -653,7 +354,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             sessionStatuses.clear()
             _statusMap.value = emptyMap()
         publishAnchor()
-        _recognized.value = ""
         _engineHint.value = null
         _currentPage.value = page
         _activeVerse.value = lockedAyah
@@ -669,12 +369,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             diag("session start s=$activeSurah lock=$lockedAyah engine=${_engineLabel.value}")
             var micOk = true
             withContext(Dispatchers.Main) {
-                _status.value = "Listening…"
                 try {
                     recorder.start()
                     _recording.value = true
                 } catch (e: Exception) {
-                    _status.value = "Mic error: ${e.message}"
                     micOk = false
                 }
             }
@@ -703,7 +401,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val vadSilent = if (vadReady) SherpaVad.speechInWindow(used)?.not() else null
                 if (quiet && vadSilent != false) {
                     _gateReason.value = "silence"
-                    withContext(Dispatchers.Main) { _status.value = "Listening… (silence)" }
+                    diag("listening (silence)")
                     continue
                 }
                 _gateReason.value = "decoding"
@@ -987,7 +685,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 _currentKey.value = currentKey
                 _currentPage.value = page
                 _activeVerse.value = lockedAyah
-                _recognized.value = (verseWords[lockedAyah] ?: emptyList()).joinToString(" ") { it.text }
             }
         } catch (_: Exception) {
         }
@@ -999,9 +696,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         cancelRepeat()
         SherpaZipformer.closeStream()
         recorder.stop()
-        _status.value = "Done — review your recitation below"
         _activeVerse.value = null
-        _recognized.value = ""
     }
 
     // ---- Reference recitation audio (stream-on-tap, nothing bundled) ----

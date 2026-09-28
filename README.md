@@ -2,169 +2,161 @@
 
 <p align="center">
 <b>Free · Offline · No account · No cost</b><br/>
-A Quran memorization app for Android that gives you Tarteel-style
-<b>live, word-level mistake detection</b> — entirely on your device.
+Recite, and the app follows you word by word — highlighting what you got
+right, what you missed, and what you mispronounced. Entirely on-device.
 </p>
 
-Iqra listens while you recite, recognizes which verse you are reading, and
-highlights every word you got **right** (green), **skipped** (red, struck
-through), or **mispronounced** (orange). It needs no internet, no sign-up, and
-no subscription. The acoustic model runs locally via ONNX Runtime.
+Iqra listens while you recite, recognises which verse you are reading, and
+marks every word **correct**, **skipped** or **wrong**. It also hides whole
+verses for memorisation, on the authentic standard Madinah mushaf pages.
 
-> Inspired by Tarteel's feature set, built cleanly on the open-source
-> **[Tilawa](https://github.com/yazinsai/tilawa)** engine (MIT). See
-> [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) for the study that
-> informed the design, and [NOTICE](NOTICE) for attribution. This project is not
-> affiliated with Tarteel.
+No account, no subscription, no network at runtime.
+
+> This project is not affiliated with Tarteel. It was informed by studying
+> the behaviour of open-source apps — see [docs/](docs/) and [NOTICE](NOTICE).
 
 ---
 
-## Features
-
-- **Mistake detection (offline).** Recite any verse; get per-word feedback.
-- **Verse detection.** Recite freely and Iqra tells you the `surah:ayah` it
-  heard (with a confidence score).
-- **Follow-along reader.** Browse all 114 surahs and verses with the Uthmani
-  text; pick a verse and practice it.
-- **Offline after first launch.** The 85 MB acoustic model is fetched once from
-  the public Tilawa release and cached on device; afterwards recognition needs
-  no network. The Quran text/token tables are bundled.
-- **Privacy-first.** No account, no network calls for recognition, local storage
-  only (the one-time model download is the only network use).
-
-*Roadmap (not yet implemented):* reciter playback with word timings,
-goals/streaks, FSRS spaced repetition, JSON backup/restore, F-Droid
-distribution. See [Roadmap](#roadmap).
-
----
-
-## How it works
+## How recognition works
 
 ```
  microphone (16 kHz mono)
         │  float32 PCM
         ▼
-┌──────────────────────────┐
-│  Tilawa ONNX model        │  fastconformer CTC, mel baked in
-│  (bundled, on-device)    │
-└──────────────────────────┘
-        │  log-probs [T, 1025]
+┌──────────────────────────────┐
+│  sherpa-onnx streaming       │  zipformer2 CTC, phoneme output
+│  zipformer_p-arabic-v3       │  (int8, 72 MB, user-supplied)
+└──────────────────────────────┘
+        │  phoneme units
         ▼
-┌──────────────────────────┐
-│  Greedy CTC decode       │  → Arabic transcript + token ids
-│  + verse matcher         │  → best surah:ayah (Levenshtein score)
-│  + word alignment        │  → per-word correct/skipped/wrong
-└──────────────────────────┘
+┌──────────────────────────────┐
+│  expected side, EXPLODED     │  the mushaf's phoneme table is per-WORD;
+│  into the model's own units  │  words are split into the 250-unit model
+│  (greedy longest match)      │  inventory, keeping a unit→word map
+└──────────────────────────────┘
+        │
         ▼
-   Compose UI (highlighted verse)
+  coverage = matched units / expected units, per candidate ayah
+        │
+        ▼
+  lock advances on coverage of lock+1, in order, scoped to the page
+        │
+        ▼
+  per-word CORRECT / WRONG / SKIPPED → Compose highlights
 ```
 
-All three stages run on-device. The matcher and aligner are direct, documented
-ports of `@tilawa/core`'s algorithm (`ArabicNormalizer`, `Levenshtein`,
-`TextCtcDecoder`, `VerseMatcher`, `WordAligner` under
-`android/app/src/main/java/com/iqra/quran/ml/`).
+The step that matters is the second one. Comparing the model's **phoneme
+units** against the table's **word strings** cannot ever match — coverage is
+identically `0.00` and nothing is ever detected. See
+[docs/RECOGNITION_ROOT_CAUSE.md](docs/RECOGNITION_ROOT_CAUSE.md).
 
 ---
 
-## Project structure
+## Data on the device
+
+Heavy data is not in the APK. It lives in a shared folder so the app stays
+small and updates are cheap.
 
 ```
-iqra/
-├── android/                     # The Android app (Kotlin + Jetpack Compose)
-│   ├── app/src/main/java/com/iqra/quran/
-│   │   ├── data/               # QuranData loader + Verse model
-│   │   ├── ml/                 # TilawaEngine, decoder, matcher, aligner, normalizer
-│   │   ├── audio/              # AudioRecorder (16 kHz capture)
-│   │   ├── ui/                 # Compose UI + PracticeViewModel
-│   │   └── QuranApplication.kt
-│   ├── app/src/main/assets/    # model.onnx + *.json  (fetched, see below)
-│   └── build.gradle.kts, settings.gradle.kts, gradle.properties, ...
-├── docs/
-│   └── REVERSE_ENGINEERING.md  # How Tarteel was studied (transparency)
-├── scripts/
-│   └── fetch_assets.sh          # Downloads the open model + token tables
-├── reference/
-│   └── node-proof.mjs           # Node validation of the recognition pipeline
-├── LICENSE                      # MIT
-├── NOTICE                       # Attribution (Tilawa MIT, concept note)
-└── README.md
+/sdcard/Iqra/
+  manifest.json               name → sha256 → bytes
+  pages/001.png … 604.png     standard Madinah mushaf, 1024 × 1656
+  ayahinfo_1024.db            88,246 per-word glyph boxes
+  model.int8.onnx             acoustic model   (gated upstream)
+  tokens.txt                  model unit inventory
+  ordered_quran_phonemes.json canonical phoneme table
+  silero_vad.onnx             voice activity detector
 ```
+
+On first run, a **Data setup** screen lists every file with its size and
+integrity, and offers to download whatever is missing straight from the
+original sources. The acoustic model is gated by its authors and cannot be
+fetched automatically, so that one file is the user's to copy in — via USB or
+a file manager. It only has to be done once.
+
+Copying the folder with `adb push` will **not** work: Android creates those
+directories root-owned with no traversal permission, and the app is denied
+access. Use the file manager or a USB cable.
 
 ---
 
-## Build it
+## Building
 
-### Prerequisites
-- **JDK 17** (the build sets `jvmTarget = 17`).
-- **Android SDK** with platform **35** and a matching **build-tools** (any
-  recent one). If you use Android Studio, it provides everything.
-- *(Optional)* `gradle` 8.13+ — or just use the Gradle wrapper (`./gradlew`),
-  which downloads the right Gradle version automatically.
-- An Android device or emulator (minSdk 24 / Android 7).
-
-### 1. Fetch the open model + token tables
-These are **not** committed to the repo (they are ~100 MB). Download them once
-with the provided script — they are then bundled into the APK so the app is
-fully offline at runtime:
-
-```bash
-./scripts/fetch_assets.sh
-```
-
-This pulls from the Tilawa v0.2.0 release (MIT):
-`fastconformer_full_mixed.onnx → model.onnx`, `vocab.json`, `quran.json`,
-`quran_ctc_tokens.json` into `android/app/src/main/assets/`.
-
-### 2. Build & install
+Requires JDK 17+ and the Android SDK (platform 36, build-tools 35).
 
 ```bash
 cd android
-./gradlew assembleDebug          # or: gradlew assembleRelease
+./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-If you build from **Android Studio**, just open the `android/` folder; Studio
-generates the Gradle wrapper (the `gradlew` jar) and resolves the SDK for you.
-If you prefer the command line and `./gradlew` reports a missing wrapper jar,
-run `gradle wrapper --gradle-version 8.13` once (or let Android Studio open the
-project). Point the SDK at your install (e.g. on Windows set
-`ANDROID_SDK_ROOT` to your `AndroidSdk` directory).
+The debug build is signed with a committed debug keystore so successive
+builds install over one another instead of demanding an uninstall. Debug
+signing only; release signing is unaffected.
 
-> The first build downloads Gradle, the Android Gradle Plugin, Kotlin,
-> Jetpack Compose, and ONNX Runtime from Google Maven / Maven Central. After
-> that, everything (including recognition) works with no network.
+`scripts/fetch_assets.sh` populates `android/app/src/main/assets` with the
+text tables. Page images and the glyph database are **not** bundled — they
+are staged to `.iqra-stage/` for copying to the phone.
 
 ---
 
-## Using the app
+## Project layout
 
-1. Grant the microphone permission when prompted.
-2. Pick a surah → pick a verse → tap **● Recite**.
-3. Recite the verse out loud, then tap **■ Stop & check**.
-4. Iqra shows the verse with each word colored by correctness, plus the
-   detected `surah:ayah` and a confidence percentage.
-
----
-
-## Attribution & License
-
-- **Engine & model:** [Tilawa](https://github.com/yazinsai/tilawa) (MIT),
-  Copyright yazinsai — `fastconformer_full_mixed.onnx` and the CTC token tables.
-- **App code:** MIT — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-- The app is **not** affiliated with Tarteel. See
-  [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) for the
-  interoperability study that shaped the feature set; no Tarteel code, cloud
-  model, proprietary databases, or branding are used.
+```
+android/app/src/main/java/com/iqra/quran/
+  data/     QuranData, AyahSearch, AssetPaths, DataFetcher,
+            GlyphCoords, Mushaf, Verse
+  ml/       SherpaZipformer, SherpaVad, PhonemeMapper, Levenshtein
+  audio/    AudioRecorder (16 kHz capture)
+  ui/       MainActivity (reader + home), PracticeViewModel, DataSetupScreen
+engine/
+  replay/   offline measurement harness (see below)
+  shootout/ acoustic backbone comparison + gated weights
+docs/       RECOGNITION_ROOT_CAUSE.md, REVERSE_ENGINEERING.md
+```
 
 ---
 
-## Roadmap
+## Measuring changes
 
-- [ ] Hidden / Peek verse mode (memorization practice)
-- [ ] Reciter audio playback + offline word-timings (generated by the engine)
-- [ ] Goals, streaks, FSRS spaced repetition, mistake history
-- [ ] JSON backup / restore (no account)
-- [ ] F-Droid + GitHub Releases distribution
-- [ ] Larger "enhanced" model as an optional on-device download
+Recognition is only trustworthy if it is measured. `engine/replay/` replays
+real audio through the real `sherpa-onnx` recognizer and scores the matching
+policy, with no device and no download:
 
-Contributions welcome — this is a free, open project for everyone.
+```bash
+cd engine
+uv venv .venv-replay --python 3.12
+uv pip install --python .venv-replay/bin/python sherpa-onnx numpy
+
+.venv-replay/bin/python replay/dump_tokens.py audio/001.raw \
+    --frame-ms 250 --label fatiha --out replay/out/fatiha.json
+.venv-replay/bin/python replay/lock_policy.py replay/out/fatiha.json 1 7 0.60 2
+```
+
+Current result across six surahs / 269 s of recitation: **28/28 ayat locked
+in order**. `word_verdicts.py` separately checks per-word CORRECT / WRONG /
+SKIPPED on labelled mutations (64 cases).
+
+This harness is what found the alphabet mismatch, and it is why the
+recognition code is not tuned by feel.
+
+---
+
+## Still unmeasured
+
+Honest list, so nothing here reads as more finished than it is:
+
+- deliberate mispronunciation under live microphone conditions
+- hesitation and reciting from memory
+- ambiguous repeated words (e.g. الرحمٰن الرحيم in 1:3 and 1:4)
+- background noise and far-field audio
+
+Auto feedback is a study aid. A teacher's ear is the authority.
+
+---
+
+## Licence
+
+App code MIT — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Page images and
+glyph data originate from the quran_android Madinah data set; see
+[reference/README.md](reference/README.md).
