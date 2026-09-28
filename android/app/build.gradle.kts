@@ -19,7 +19,22 @@ android {
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = "0.1.0"
     }
+    signingConfigs {
+        // A committed debug key so every CI build shares one signature.
+        // Without it each run generates a fresh debug key, every update fails
+        // with INSTALL_FAILED_UPDATE_INCOMPATIBLE, and the only remedy is an
+        // uninstall - which wipes app data and the user's settings.
+        // DEBUG ONLY: this says nothing about, and does not affect, release
+        // signing.
+        create("sharedDebug") {
+            storeFile = rootProject.file("iqra-debug.keystore")
+            storePassword = "iqradbg"
+            keyAlias = "iqra"
+            keyPassword = "iqradbg"
+        }
+    }
     buildTypes {
+        debug { signingConfig = signingConfigs.getByName("sharedDebug") }
         release { isMinifyEnabled = false }
     }
     compileOptions {

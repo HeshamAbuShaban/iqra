@@ -92,6 +92,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
@@ -156,6 +159,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+/** Day mat: the reference's tiled paper gradient; night: flat grey. */
+private fun pageMat(ctx: android.content.Context, night: Boolean): Color =
+    if (night) NightPalette.mat(ctx) else Color(0xFFF6F1E3)
 
 private val quranFont = FontFamily(Font(R.font.amiri))
 internal val accentColor = Color(0xFF2BB6A0)
@@ -1061,7 +1068,7 @@ fun ReaderScreen(
         if (target != pagerState.currentPage) {
             pagerState.animateScrollToPage(target)
         }
-        vm.saveLastRead(surah, currentPage ?: (startIdx + 1))
+        vm.saveLastRead(currentPage ?: (startIdx + 1))
     }
     LaunchedEffect(pagerState.currentPage) {
         vm.setCurrentPage(pagerState.currentPage + 1)
@@ -1086,7 +1093,7 @@ fun ReaderScreen(
         label = "chrome",
     )
     var night by remember { mutableStateOf(ReaderPrefs.nightMode(ctx)) }
-    val mat = remember(night) { NightPalette.mat(ctx) }
+    val mat = remember(night) { pageMat(ctx, night) }
     val pageInk = remember(night) { NightPalette.pageInk(ctx) }
     val chromeInk = remember(night) { NightPalette.chrome(ctx) }
 
@@ -1105,7 +1112,19 @@ fun ReaderScreen(
         MaterialTheme(colorScheme = remember(night, mat, chromeInk) {
             lightReaderScheme(night, mat, pageInk, chromeInk)
         }) {
-        Box(Modifier.fillMaxSize().background(mat)) {
+        val matBrush = remember(night) {
+            if (night) null
+            else Brush.horizontalGradient(
+                NightPalette.pageGradient().map { it.second },
+                startX = 0f,
+                endX = 4000f,
+            )
+        }
+        Box(
+            Modifier.fillMaxSize().background(
+                matBrush ?: androidx.compose.ui.graphics.SolidColor(mat)
+            )
+        ) {
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { idx ->
                 MushafPageView(
                     mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead,
@@ -1126,6 +1145,7 @@ fun ReaderScreen(
                 onToggleBookmark = { vm.toggleBookmark(currentPage ?: (startIdx + 1)) },
                 onBack = onBack,
                 onToggleNight = { night = !night; ReaderPrefs.setNightMode(ctx, night) },
+                onResume = { vm.resumeLastRead(); showChrome() },
                 night = night,
                 offset = chromeOffset,
             )
@@ -1390,6 +1410,7 @@ fun ReaderHeader(
     onToggleBookmark: () -> Unit,
     onBack: () -> Unit,
     onToggleNight: () -> Unit = {},
+    onResume: () -> Unit = {},
     night: Boolean = false,
     offset: Float = 0f,
 ) {
@@ -1411,7 +1432,32 @@ fun ReaderHeader(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Chrome.OnChrome)
         }
         Row(Modifier.align(Alignment.TopEnd)) {
-            IconButton(onClick = onToggleNight) {
+            // Tapping a surah in the list opens its first page; going back to
+            // where you were reading is a deliberate action, so it gets its
+            // own button rather than being automatic.
+            IconButton(onClick = onResume) {
+                Icon(Icons.Outlined.History, "Back to last read", tint = Chrome.OnChrome)
+            }
+            // tap toggles night mode; long-press opens the brightness
+            // controls, which are a separate concern from the toggle
+            var tune by remember { mutableStateOf(false) }
+            if (tune) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Chrome.Bar,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 56.dp, end = 6.dp)
+                        .width(296.dp),
+                ) { NightTuningPanel() }
+            }
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .combinedClickable(onClick = onToggleNight, onLongClick = { tune = !tune })
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(
                     if (night) Icons.Filled.LightMode else Icons.Filled.DarkMode,
                     if (night) "Day mode" else "Night mode",
@@ -1700,8 +1746,40 @@ fun MushafPageView(
         ) {
             val pageW = minOf(maxWidth, maxHeight * 1024f / 1656f)
             val imgH = pageW * 1656f / 1024f
+                // Reference page chrome: 7dp + 11dp margins, 13dp side
+                // borders, and a 1px centre fold on alternate pages
+                // (QuranPageLayout.onMeasure / updateView). The fold marks
+                // which half of a two-page spread this is.
+                val isLeftHalf = page.page % 2 == 0
+                // Reference chrome (QuranPageLayout): 13dp side borders, with
+                // the fold line on the leading edge so the two halves of a
+                // spread read as a book rather than two loose sheets.
+                val fold = NightPalette.foldColor(night)
                 Box(
                     Modifier.width(pageW).height(imgH)
+                        .drawBehind {
+                            val bw = 13.dp.toPx()
+                            val line = 1.dp.toPx()
+                            val side = if (isLeftHalf) 1 else 0
+                            drawRect(
+                                color = fold,
+                                topLeft = androidx.compose.ui.geometry.Offset(0f, 0f),
+                                size = androidx.compose.ui.geometry.Size(line, size.height),
+                            )
+                            if (side == 0) {
+                                drawRect(
+                                    color = fold,
+                                    topLeft = androidx.compose.ui.geometry.Offset(size.width - line, 0f),
+                                    size = androidx.compose.ui.geometry.Size(line, size.height),
+                                )
+                            }
+                            drawRect(
+                                color = fold.copy(alpha = 0.10f),
+                                topLeft = androidx.compose.ui.geometry.Offset(bw, 0f),
+                                size = androidx.compose.ui.geometry.Size(size.width - bw * 2, size.height),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = line),
+                            )
+                        }
                         .shadow(elevation = 6.dp, shape = RoundedCornerShape(6.dp), clip = false)
                         .pointerInput(page.page, lineGroups) {
                             fun hit(px: Float, py: Float): Pair<Int, Int>? {

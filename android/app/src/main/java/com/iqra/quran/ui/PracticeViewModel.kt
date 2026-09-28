@@ -203,9 +203,26 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         return if (s > 0 && p > 0) s to p else null
     }
 
-    fun saveLastRead(surah: Int, page: Int) {
-        prefs.edit().putInt("last_surah", surah).putInt("last_page", page).apply()
-        _lastRead.value = surah to page
+    /**
+     * Records the last page read. The surah is derived FROM the page, not
+     * passed in: the reader screen's surah parameter is frozen at open time, so
+     * passing it stored nonsense like (Al-Fatiha, page 6) after swiping into
+     * Al-Baqarah.
+     */
+    fun saveLastRead(page: Int) {
+        val (s, _) = anchorForPage(page) ?: return
+        prefs.edit().putInt("last_surah", s).putInt("last_page", page).apply()
+        _lastRead.value = s to page
+    }
+
+    fun lastReadPage(): Int? = _lastRead.value?.second
+
+    /** Explicitly go back to where the reader was last left. */
+    fun resumeLastRead(): Boolean {
+        val p = _lastRead.value?.second ?: return false
+        jumpToPage(p)
+        diag("resume → p=$p")
+        return true
     }
 
     private val _bookmarks = MutableStateFlow(loadBookmarks())

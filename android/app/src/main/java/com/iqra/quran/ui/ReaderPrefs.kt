@@ -42,6 +42,25 @@ object NightPalette {
     }
 
     /**
+     * The mat actually painted. Day mode uses the reference's tiled paper
+     * gradient (QuranDisplayHelper.getShaderFactory):
+     *   DCDAD5 -> FDFDF4 -> FFFFFF -> FDFBEF  at stops 0 / 0.18 / 0.48 / 1
+     * tiled across the screen width, which is what gives the reference its
+     * subtle sheen instead of a flat slab. Night mode stays flat, because a
+     * gradient behind an inverted page just looks dirty.
+     */
+    fun pageGradient(): List<Pair<Float, Color>> = listOf(
+        0f to Color(0xFFDCDAD5),
+        0.18f to Color(0xFFFDFDF4),
+        0.48f to Color(0xFFFFFFFF.toInt()),
+        1f to Color(0xFFFDFBEF),
+    )
+
+    /** 1px fold line colour, matching the reference's alternate-page rule. */
+    fun foldColor(night: Boolean): Color =
+        if (night) Color(0x33FFFFFF) else Color(0x22000000)
+
+    /**
      * Ink colour for text drawn ON the page (header/footer overlay, ayah
      * markers). The page's own black becomes `adjusted` after inversion, so
      * this must be the same value or the page stops reading as one image.
