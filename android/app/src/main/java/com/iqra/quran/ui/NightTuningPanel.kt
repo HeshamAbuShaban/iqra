@@ -80,12 +80,12 @@ fun NightTuningPanel() {
         }
 
         Spacer(Modifier.height(12.dp))
-        LabelledSlider("Text brightness", text, 0f, 255f) { v ->
+        LabelledSlider("Text brightness", text, 0f..255f) { v ->
             text = v
             ReaderPrefs.setTextBrightness(ctx, v.roundToInt())
         }
         Spacer(Modifier.height(6.dp))
-        LabelledSlider("Background brightness", bg, 0f, 64f) { v ->
+        LabelledSlider("Background brightness", bg, 0f..64f) { v ->
             bg = v
             ReaderPrefs.setBackgroundBrightness(ctx, v.roundToInt())
         }

@@ -164,7 +164,7 @@ class MainActivity : ComponentActivity() {
 private fun pageMat(ctx: android.content.Context, night: Boolean): Color =
     if (night) NightPalette.mat(ctx) else Color(0xFFF6F1E3)
 
-private val quranFont = FontFamily(Font(R.font.amiri))
+internal val quranFont = FontFamily(Font(R.font.amiri))
 internal val accentColor = Color(0xFF2BB6A0)
 
 /**
@@ -1417,6 +1417,7 @@ fun ReaderHeader(
     // quran_android slides the whole bar off the top over 250ms; offset 1 = hidden.
     val density = LocalDensity.current
     val shift = with(density) { (offset * -160.dp.toPx()).toDp() }
+    var tuneNight by remember { mutableStateOf(false) }
     Box(
         Modifier.fillMaxWidth()
             .offset(y = shift)
@@ -1440,21 +1441,10 @@ fun ReaderHeader(
             }
             // tap toggles night mode; long-press opens the brightness
             // controls, which are a separate concern from the toggle
-            var tune by remember { mutableStateOf(false) }
-            if (tune) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Chrome.Bar,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 56.dp, end = 6.dp)
-                        .width(296.dp),
-                ) { NightTuningPanel() }
-            }
             Box(
                 Modifier
                     .size(48.dp)
-                    .combinedClickable(onClick = onToggleNight, onLongClick = { tune = !tune })
+                    .combinedClickable(onClick = onToggleNight, onLongClick = { tuneNight = !tuneNight })
                     .padding(12.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -1478,6 +1468,18 @@ fun ReaderHeader(
                     tint = if (playing) accentColor else Chrome.OnChrome,
                 )
             }
+        }
+        // Sibling of the action Row: align() is a BoxScope modifier and has no
+        // receiver inside a Row.
+        if (tuneNight) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Chrome.Bar,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 56.dp, end = 6.dp)
+                    .width(296.dp),
+            ) { NightTuningPanel() }
         }
         Column(
             Modifier.align(Alignment.TopCenter).padding(top = 6.dp, start = 56.dp, end = 56.dp),
