@@ -649,7 +649,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             tailBuf = FloatArray(0)
             speechFramesSinceAdvance = 0
             _engineLabel.value = "zipformer/" + (if (vadReady) "VAD" else "RMS")
-            diag("session start s=$surah lock=$lockedAyah engine=${_engineLabel.value}")
+            diag("session start s=$activeSurah lock=$lockedAyah engine=${_engineLabel.value}")
             var micOk = true
             withContext(Dispatchers.Main) {
                 _status.value = "Listening…"
