@@ -1488,12 +1488,18 @@ fun ReaderHeader(
             Modifier.align(Alignment.TopCenter).padding(top = 6.dp, start = 104.dp, end = 104.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // The full "سُورَةُ X" form is long enough to run under the
+            // action buttons even with clearance, so show the surah name on its
+            // own, single line, and let it ellipsise rather than overlap.
             Text(
-                info?.name ?: "",
+                info?.name?.removePrefix("سُورَةُ")?.trim() ?: "",
                 fontFamily = quranFont,
-                fontSize = 22.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = goldColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
             Text(
                 buildString {
