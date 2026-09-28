@@ -1176,7 +1176,7 @@ fun ReaderScreen(
                     Button(
                         onClick = {
                             if (recording) vm.stopRecite()
-                            else onRequestMic { vm.startRecite(surah, currentPage ?: (startIdx + 1)) }
+                            else onRequestMic { vm.startRecite(currentPage ?: (startIdx + 1)) }
                         },
                         shape = Pill,
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
@@ -1306,7 +1306,12 @@ fun ReaderScreen(
                         SheetAction(Icons.Filled.Mic, "Practice from here") {
                             vm.clearSelection()
                             vm.anchorToVerse(selSurah, selAyah)
-                            onRequestMic { vm.startRecite(selSurah, selPage ?: (currentPage ?: (startIdx + 1))) }
+                            onRequestMic {
+                                vm.startRecite(
+                                    selPage ?: (currentPage ?: (startIdx + 1)),
+                                    selSurah to selAyah,
+                                )
+                            }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             Text("Repeat", fontSize = 16.sp, modifier = Modifier.weight(1f))

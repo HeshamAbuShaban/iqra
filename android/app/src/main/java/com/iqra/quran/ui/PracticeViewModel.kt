@@ -304,7 +304,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         lastAdvanceAt = now
         speechFramesSinceAdvance = 0
         lockedAyah = next
-        sessionAnchor = activeSurah to next
         _wpmFlow.value = wpmEma
         diag("lock $prev → $next")
         pendingNextAyah = null; pendingNextFrames = 0
@@ -374,26 +373,62 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         versePage = byAyah.mapValues { (_, ws) -> ws.minOf { it.page } }
     }
 
-    private fun ayahOnPage(page: Int): Int {
-        val exact = versePage.entries.firstOrNull { it.value == page }?.key
-        if (exact != null) return exact
-        return versePage.entries.filter { it.value <= page }.maxByOrNull { it.value }?.key ?: lockedAyah
-    }
-
-    /** Jump to an arbitrary Mushaf page and resync the tracker to its first verse. */
-    fun jumpToPage(page: Int) {
-        val pages = _mushaf.value ?: return
-        if (page < 1 || page > pages.size) return
-        if (_recording.value) stopRecite()
-        val pg = pages[page - 1]
-        val firstWord = pg.lines
+    /**
+     * The anchor for a Mushaf page: the first ayah that BEGINS on it, as
+     * (surah, ayah).
+     *
+     * "Begins on" is the important part. An ayah that continues from the
+     * previous page has its opening words already scrolled past, so anchoring
+     * there caps that ayah's achievable coverage below 1.0 and the lock could
+     * never advance off it. If a page somehow starts no new ayah, fall back to
+     * the last ayah that overlaps it.
+     *
+     * This is the single source of truth for "where is the reader". jumpToPage
+     * and startRecite both call it, so the two can never drift apart again -
+     * they did once, which is how a session could anchor to 1:1 while the
+     * screen showed page 50 of another surah.
+     */
+    fun anchorForPage(page: Int): Pair<Int, Int>? {
+        val pages = _mushaf.value ?: return null
+        if (page < 1 || page > pages.size) return null
+        val words = pages[page - 1].lines
             .filter { it.type == "text" }
             .flatMap { it.words ?: emptyList() }
-            .firstOrNull() ?: return
-        loadSurah(firstWord.surah)
-        lockedAyah = firstWord.verse
+        if (words.isEmpty()) return null
+        // first ayah whose FIRST word is on this page
+        words.firstOrNull { it.wordInVerse == 1 }
+            ?.let { return it.surah to it.verse }
+        // otherwise the last ayah that has any presence here
+        return words.lastOrNull()?.let { it.surah to it.verse }
+    }
+
+    /**
+     * Last ayah in scope for the current session: the last ayah present on the
+     * page the reader is showing. Bounds the session to the screen, so a page
+     * that ends mid-surah hands off to the next surah instead of wandering
+     * through hundreds of ayat the user never asked about.
+     */
+    private fun scopeEndAyah(): Int? {
+        val pages = _mushaf.value ?: return null
+        val page = pageNumber
+        if (page < 1 || page > pages.size) return null
+        val words = pages[page - 1].lines
+            .filter { it.type == "text" }
+            .flatMap { it.words ?: emptyList() }
+        if (words.isEmpty()) return null
+        val here = words.map { it.surah to it.verse }
+        // Only ayat of the surah we are on bound the session.
+        return here.filter { it.first == activeSurah }.maxOfOrNull { it.second }
+    }
+
+    /** Jump to an arbitrary Mushaf page and resync the tracker to its anchor. */
+    fun jumpToPage(page: Int) {
+        if (_recording.value) stopRecite()
+        val (s, a) = anchorForPage(page) ?: return
+        loadSurah(s)
+        lockedAyah = a
         rebaseSlice = true
-        diag("jump → s=${firstWord.surah}:${firstWord.verse} p=$page")
+        diag("jump → s=$s:$a p=$page")
         wrongStreak.clear()
         sessionStatuses.clear()
         pendingAnchor = null
@@ -416,14 +451,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var repeatLeftCount = 0
     private var pendingAnchor: Int? = null
 
-    /**
-     * Where the reciter actually is, as (surah, ayah). Navigation used to
-     * re-anchor a resumed session to the FIRST ayah of the page, so leaving
-     * the reader and coming back silently threw away the reciter's place.
-     * Only genuine recitation positions write here - a page jump deliberately
-     * does not.
-     */
-    @Volatile private var sessionAnchor: Pair<Int, Int>? = null
 
     fun selectAyah(surah: Int, ayah: Int) {
         if (surah in 1..114 && ayah >= 1) _selectedAyah.value = "$surah:$ayah"
@@ -488,7 +515,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             _currentPage.value = targetPage
         }
         lockedAyah = ayah
-        sessionAnchor = surah to ayah
         rebaseSlice = true
         _activeVerse.value = ayah
         refreshWindow()
@@ -578,24 +604,34 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun startRecite(surah: Int, page: Int) {
+    /**
+     * Start a session on the page the reader is actually showing.
+     *
+     * `page` is the truth. The surah used to be passed in from the reader
+     * screen's entry parameter, which is frozen at open time - so swiping
+     * ahead and starting a session loaded the ORIGINAL surah and anchored to
+     * its first ayah while a different surah was on screen. The surah now comes
+     * from the page.
+     */
+    fun startRecite(page: Int, explicitAnchor: Pair<Int, Int>? = null) {
         if (_recording.value || _preparing.value) return
         val pages = _mushaf.value ?: return
-        if (Mushaf.wordsForSurah(pages, surah).isEmpty()) return
-        loadSurah(surah)
+        // An explicit selection (the ayah sheet's Practice action) wins; the
+        // page is the default truth for the Recite button.
+        val (s, anchor) = explicitAnchor ?: anchorForPage(page) ?: return
+        if (Mushaf.wordsForSurah(pages, s).isEmpty()) return
+        loadSurah(s)
         if (verseWords.isEmpty()) return
-        lockedAyah = pendingAnchor
-            ?: sessionAnchor?.takeIf { it.first == surah }?.second
-            ?: ayahOnPage(page)
-        sessionAnchor = surah to lockedAyah
+        lockedAyah = pendingAnchor ?: anchor
+        diag("session starts p=$page → s=$s:${lockedAyah}")
         rebaseSlice = true
         pendingAnchor = null
         pageNumber = page
         refreshWindow()
-            pendingNextAyah = null
-            pendingNextFrames = 0
-            wpmEma = 70.0
-            lastAdvanceAt = System.currentTimeMillis()
+        pendingNextAyah = null
+        pendingNextFrames = 0
+        wpmEma = 70.0
+        lastAdvanceAt = System.currentTimeMillis()
             wrongStreak.clear()
             sessionStatuses.clear()
             _statusMap.value = emptyMap()
@@ -727,8 +763,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val obsTs = res.timestamps.drop(base)
             val audioSec = streamBaseSec + fedTotal / 16000f
 
-            // Handoff: last ayah + next surah head matches phonetically.
-            val lastAyah = verseWords.keys.maxOrNull() ?: lockedAyah
+            // Handoff: at the end of what is IN SCOPE, check whether the next
+            // thing is the next surah's opening.
+            //
+            // The scope is the visible page, not the whole surah: the user may
+            // start on page 50 of Al-Baqarah, and the session must not run on
+            // to 2:286 before it will ever consider a surah change. So the
+            // boundary is the last ayah that is present on the current page.
+            val lastAyah = scopeEndAyah() ?: (verseWords.keys.maxOrNull() ?: lockedAyah)
             if (lockedAyah >= lastAyah && activeSurah < 114) {
                 val next = PhonemeMapper.expected(activeSurah + 1, 1)
                 if (next != null) {
@@ -736,7 +778,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     if (cov >= HANDOFF_COVERAGE) {
                         loadSurah(activeSurah + 1)
                         lockedAyah = 1
-                        sessionAnchor = activeSurah to 1
                         rebaseSlice = true
                         lastAdvanceAt = System.currentTimeMillis()
                         resetAudioPipeline()
