@@ -1481,8 +1481,11 @@ fun ReaderHeader(
                     .width(296.dp),
             ) { NightTuningPanel() }
         }
+        // Clearance for the action Row: it is painted BEFORE this Column, so a
+        // wide enough Row would slide under the centred title and be hidden.
+        // Four buttons is ~192dp, so the title needs >96dp of padding each side.
         Column(
-            Modifier.align(Alignment.TopCenter).padding(top = 6.dp, start = 56.dp, end = 56.dp),
+            Modifier.align(Alignment.TopCenter).padding(top = 6.dp, start = 104.dp, end = 104.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
