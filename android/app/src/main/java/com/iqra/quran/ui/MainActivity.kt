@@ -1429,16 +1429,17 @@ fun ReaderHeader(
             .statusBarsPadding()
             .padding(top = 6.dp, bottom = 18.dp),
     ) {
-        IconButton(onClick = onBack, Modifier.align(Alignment.TopStart).padding(4.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Chrome.OnChrome)
-        }
-        Row(Modifier.align(Alignment.TopEnd)) {
-            // Tapping a surah in the list opens its first page; going back to
-            // where you were reading is a deliberate action, so it gets its
-            // own button rather than being automatic.
+        // Start side: back + resume. Splitting the controls across both sides
+        // is what leaves room for a centred title; four on one side does not.
+        Row(Modifier.align(Alignment.TopStart).padding(4.dp)) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Chrome.OnChrome)
+            }
             IconButton(onClick = onResume) {
                 Icon(Icons.Outlined.History, "Back to last read", tint = Chrome.OnChrome)
             }
+        }
+        Row(Modifier.align(Alignment.TopEnd)) {
             // tap toggles night mode; long-press opens the brightness
             // controls, which are a separate concern from the toggle
             Box(
@@ -1481,11 +1482,14 @@ fun ReaderHeader(
                     .width(296.dp),
             ) { NightTuningPanel() }
         }
-        // Clearance for the action Row: it is painted BEFORE this Column, so a
-        // wide enough Row would slide under the centred title and be hidden.
-        // Four buttons is ~192dp, so the title needs >96dp of padding each side.
+        // The title is painted after the icon rows, so anything wider than the
+        // gap between them would slide underneath and be hidden. Cap it
+        // explicitly rather than relying on padding around wrap-content text.
         Column(
-            Modifier.align(Alignment.TopCenter).padding(top = 6.dp, start = 104.dp, end = 104.dp),
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 6.dp)
+                .width(150.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // The full "سُورَةُ X" form is long enough to run under the
