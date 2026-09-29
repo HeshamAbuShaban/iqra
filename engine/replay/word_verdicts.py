@@ -172,11 +172,15 @@ def align_affine(query, ref, unit_word):
 
 def align(query, ref, unit_word):
     """Same DP as PhonemeMapper.align.
-    Returns (statuses_by_word, ref_to_query, emitWord, hits, nwords)."""
+    Returns (matched, wrong, ref_to_query, emit_word, hits, nwords)."""
     n, m = len(ref), len(query)
     nwords = (max(unit_word) + 1) if unit_word else 0
     if not n or not m:
-        return {}, [], [-1] * m, 0, nwords
+        # Must match the normal return's arity AND element types. This used to
+        # return a stale 5-tuple, so any mutation that emptied the query raised
+        # "not enough values to unpack" and aborted the whole run - silently
+        # leaving the rest of the surah unevaluated.
+        return [False] * n, [False] * n, [-1] * n, [-1] * m, 0, nwords
     prev = list(range(m + 1))
     dirs = []
     for i in range(1, n + 1):
@@ -236,14 +240,16 @@ def statuses_from(matched, wrong, unit_word, nwords):
                 bad += 1
         if tot == 0:
             v = "SKIPPED"
-        elif bad > 0:
-            v = "WRONG"
         elif ok == tot:
             v = "CORRECT"
-        elif ok == 0:
-            v = "SKIPPED"
-        else:
+        elif ok * 2 < tot:
+            v = "SKIPPED"          # barely covered: not said
+        elif bad > 0:
             v = "WRONG"
+        else:
+            # Partly covered with nothing contradicted: no verdict. This used to
+            # be WRONG, which made a skipped word paint its neighbour red.
+            v = "UNKNOWN"
         out[wi] = v
     return out
 
@@ -351,7 +357,11 @@ def main():
             mut = window[:lo] + window[hi:]
             m, wr, _r2q, _e, _h, _n = ALIGN(mut, ref, unit_word)
             st = statuses_from(m, wr, unit_word, nwords)
-            others = [w for w, v in st.items() if w != wi and v != "CORRECT"]
+            # Collateral means another word being ACCUSED - WRONG or SKIPPED.
+            # UNKNOWN is the neutral reading and resolves to CORRECT as more
+            # audio arrives, so demanding every other word be CORRECT here
+            # failed the very case this rule was written to fix.
+            others = [w for w, v in st.items() if w != wi and v in ("WRONG", "SKIPPED")]
             total += 1
             if st.get(wi) == "SKIPPED" and not others:
                 detected += 1
@@ -365,6 +375,10 @@ def main():
         tested = 0
         for wi in range(nwords):
             donor = (wi + 1) % nwords
+            # A one-word ayah makes the donor the word itself, so the mutation
+            # is a no-op and "not flagged" is vacuous rather than a failure.
+            if donor == wi:
+                continue
             if wi not in spans or donor not in spans:
                 continue
             lo, hi = spans[wi]

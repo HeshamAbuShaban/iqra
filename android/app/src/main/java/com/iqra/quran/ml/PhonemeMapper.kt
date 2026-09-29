@@ -245,10 +245,20 @@ object PhonemeMapper {
             }
             when {
                 total == 0 -> WordStatus.SKIPPED
-                bad > 0 -> WordStatus.WRONG
                 ok == total -> WordStatus.CORRECT
-                ok == 0 -> WordStatus.SKIPPED
-                else -> WordStatus.WRONG
+                // Barely covered means it was not said. Coverage, not mismatch
+                // count, is what separates a genuinely skipped word from the
+                // innocent neighbour the alignment shifts onto: on Al-Asr 3:3,
+                // skipping word 1 leaves word 0 at 1 of 2 units and word 1 at 1
+                // of 4, and only the ratio tells them apart.
+                ok * 2 < total -> WordStatus.SKIPPED
+                // Some units landed on the wrong phonemes. The caller still
+                // gates this on model confidence and a frame streak.
+                bad > 0 -> WordStatus.WRONG
+                // Partly covered, nothing contradicted: no verdict. This used
+                // to be WRONG, which is what made a skipped word paint its
+                // neighbour red.
+                else -> WordStatus.UNKNOWN
             }
         }
         val wordProb = FloatArray(m) { -1f }

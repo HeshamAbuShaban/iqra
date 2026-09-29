@@ -32,7 +32,16 @@ data class WordResult(
     val status: WordStatus,
 )
 
-enum class WordStatus { CORRECT, SKIPPED, WRONG, EXTRA }
+/**
+ * Per-word recitation verdict.
+ *
+ * UNKNOWN is the state the matcher had to grow: a word can be partly covered
+ * with no disagreement at all, which is NOT evidence of an error. Calling that
+ * WRONG (as an earlier rule did) turned a word red whenever a NEIGHBOUR was
+ * skipped, because the alignment shifts and the neighbour absorbs the deletion
+ * as substitutions. UNKNOWN is the neutral reading: not accused, not revealed.
+ */
+enum class WordStatus { CORRECT, SKIPPED, WRONG, EXTRA, UNKNOWN }
 
 /**
  * Typed highlight layers, borrowed in adapted form from quran_android's

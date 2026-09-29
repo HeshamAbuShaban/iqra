@@ -995,8 +995,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     if (a < lockedAyah && s == WordStatus.CORRECT) {
                         sessionStatuses[key] = s
                     } else if (a == lockedAyah) {
-                        if (s != WordStatus.SKIPPED) sessionStatuses[key] = s
-                        else sessionStatuses.remove(key)
+                        // UNKNOWN is a non-verdict, so there is nothing worth
+                        // retaining: it would otherwise stick around as a
+                        // permanent "not quite done" mark.
+                        if (s != WordStatus.SKIPPED && s != WordStatus.UNKNOWN) {
+                            sessionStatuses[key] = s
+                        } else {
+                            sessionStatuses.remove(key)
+                        }
                     } else {
                         sessionStatuses.remove(key)
                     }
@@ -1023,8 +1029,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 var seen = false
                 for (w in ws) {
                     val st = newMap[keyOf(w)] ?: WordStatus.SKIPPED
-                    if (st != WordStatus.SKIPPED) seen = true
-                    if (st == WordStatus.SKIPPED && seen) {
+                    // Only a real verdict counts as "this word is behind us".
+                    // UNKNOWN is unfinished, so it must stay a candidate for the
+                    // current-word pointer instead of being walked past.
+                    if (st == WordStatus.CORRECT || st == WordStatus.WRONG) seen = true
+                    if (st != WordStatus.CORRECT && seen) {
                         currentKey = keyOf(w)
                         break
                     }
