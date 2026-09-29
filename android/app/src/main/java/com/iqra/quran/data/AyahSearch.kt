@@ -63,6 +63,7 @@ class AyahSearch private constructor(
             for (c in 0x0610..0x061A) STRIP[c] = 0   // honourifics
             for (c in 0x2066..0x2069) STRIP[c] = 0   // bidi isolates
 
+            FOLDS[0x0670] = 0x0627                    // superscript alef -> alef
             FOLDS[0x0671] = 0x0627                    // wasla alef
             FOLDS[0x0622] = 0x0627                    // alef madda
             FOLDS[0x0623] = 0x0627                    // alef hamza above
