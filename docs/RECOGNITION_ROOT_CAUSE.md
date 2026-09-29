@@ -1,7 +1,14 @@
 # Recognition root cause — the expected side was in the wrong alphabet
 
 **Status:** fixed in `fb99122`'s successor (see "The fix" below).
-**Impact:** this single defect explains the entire "detection does nothing" saga.
+**Impact:** this defect explains why the matcher scored a constant `0.00`.
+
+> **Correction.** An earlier version of this document claimed this single defect
+> explained the entire "detection does nothing" saga. That was wrong, and the
+> replay harness could not have caught it: the harness calls the recogniser
+> directly, so it never exercises the app's audio path or its session lifecycle.
+> Two further defects, both invisible offline, are recorded at the end. Every one
+> of them presented as "audio is flowing but the model is silent".
 
 ## Symptom
 
@@ -118,3 +125,45 @@ This is clean, studio-grade recitation with no mistakes. Not yet measured:
 deliberate mispronunciation (must flag exactly one word), skipped ayat, a user
 reciting from memory with hesitation, and live microphone conditions. Those clips
 do not exist yet and are the next thing to record.
+
+## Two more defects, both device-only
+
+Both appeared only in the app, never in `engine/replay/`, because the harness
+feeds the recogniser directly and drives no session lifecycle.
+
+### 1. The recogniser heard 5% of the session (`d7c0e8a`)
+
+The delta fed each poll was computed against a 3-second **sliding** window using
+a cursor that was itself window-relative. Once the captured buffer passed three
+seconds, the window was always exactly three seconds long, the cursor sat at its
+end, and the delta was permanently empty. The model received audio for the first
+three seconds of a session and then starved.
+
+`feed_starvation.py` measured it directly: **48,000 of 909,056 samples fed, 5.3%**
+of a 56.8-second session. The absolute cursor fixed it. This was also the real
+meaning of the `decoder starved 50s/92s` lines quoted at the top of this
+document — not a tuning problem.
+
+### 2. Only the first Recite of a process ever got a stream (`e94f5cb`)
+
+With the audio flowing, the first session in a log reached Fatiha 1:1→1:7, handed
+off to Al-Baqarah, and locked 1→25. Every session after that produced `toks=0`
+forever.
+
+`stopRecite()` releases the native stream, and `jumpToPage()` calls
+`stopRecite()` — so any Stop, "Go to page", or Resume destroyed it. But
+`ensureVoice()` opened with `if (zipformerOn) return true`, and `zipformerOn` was
+never cleared. From the second session onwards the app reported itself ready for
+a stream that no longer existed. `accept()` returned silently, `fedTotal` was
+incremented anyway, and the watchdog reset a null stream every ten seconds
+indefinitely.
+
+**The diagnostics disguised it.** The log read `fed=161792 toks=0 opErr=-` — audio
+apparently flowing, model mysteriously mute. Not one sample had reached the
+model. `accept()` now reports whether it took the audio and `fedTotal` only counts
+what it really accepted, so that particular misreading cannot recur.
+
+The visible symptom was a correct anchor that could never move: resume would land
+on the right ayah of the right page and then sit there, which looks exactly like
+the page-anchoring bug fixed alongside it, and for a while was misattributed to it.
+
