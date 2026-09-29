@@ -67,6 +67,25 @@ object SherpaVad {
      * @return true if the window contains speech, false if silence,
      *         null when VAD is unavailable (use the RMS gate instead).
      */
+    /**
+     * Feed the next chunk of audio and report whether speech is present.
+     *
+     * Used to reset() and re-analyse a whole 3s window on every 250ms poll,
+     * which re-ran the same audio a dozen times and judged the gate on mostly
+     * already-seen history. Feeding the delta keeps the detector's own state
+     * continuous and the judgement local to what is being fed.
+     */
+    fun feedAndDetect(samples: FloatArray): Boolean? {
+        val v = vad as? com.k2fsa.sherpa.onnx.Vad ?: return null
+        return try {
+            v.acceptWaveform(samples)
+            v.isSpeechDetected()
+        } catch (t: Throwable) {
+            Log.w(TAG, "VAD probe failed", t)
+            null
+        }
+    }
+
     fun speechInWindow(samples: FloatArray): Boolean? {
         val v = vad as? com.k2fsa.sherpa.onnx.Vad ?: return null
         return try {

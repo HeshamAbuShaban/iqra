@@ -243,7 +243,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingBackFrames: Int = 0
     private var pendingNextFrames: Int = 0
     private var zipformerOn = false
-    private var fedPosition = 0
+    /** Absolute samples consumed from the recorder's cumulative buffer. */
+    private var fedAbs = 0
     private val _decoderState = MutableStateFlow("idle")
     val decoderState: StateFlow<String> = _decoderState
     private var noiseFloor = SILENCE_RMS
@@ -347,7 +348,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private fun resetAudioPipeline() {
         recorder.reset()
         SherpaZipformer.resetStream()
-        fedPosition = 0
+        fedAbs = 0
         fedTotal = 0
         streamBaseSec = 0f
         tailBuf = FloatArray(0)
@@ -578,7 +579,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 SherpaZipformer.startStream()
             zipformerOn = ok
             if (ok) {
-                fedPosition = 0
+                fedAbs = 0
                 fedTotal = 0
                 streamBaseSec = 0f
                 tailBuf = FloatArray(0)
@@ -635,7 +636,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val vadReady = SherpaVad.ensure(getApplication())
             if (!ensureVoice()) return@launch
-            fedPosition = 0
+            fedAbs = 0
             fedTotal = 0
             streamBaseSec = 0f
             tailBuf = FloatArray(0)
@@ -667,13 +668,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 delay(250)
                 val audio = recorder.currentSamples()
                 if (audio.size < 4800) continue
-                val used = if (audio.size > CAP) audio.copyOfRange(audio.size - CAP, audio.size) else audio
-                // Silence gate: skip only when RMS is quiet AND silero VAD (when
-                // available) also hears silence. Either one hearing speech keeps
-                // the frame, so soft reciters are never cut and loud speech is
-                // never missed — VAD can only reduce garbage, never nuke audio.
-                val quiet = rms(used) < noiseFloor
-                val vadSilent = if (vadReady) SherpaVad.speechInWindow(used)?.not() else null
+                // The delta is computed against the CUMULATIVE buffer, using an
+                // absolute cursor. It used to be computed against a 3s SLIDING
+                // window with a cursor that was itself window-relative: once the
+                // recorder passed CAP the window was always exactly CAP long, so
+                // the cursor sat at CAP and the delta was permanently empty.
+                // The model therefore received audio only for the first 3 seconds
+                // of a session and then starved - which is what the "decoder
+                // starved 50s/92s" reports actually were.
+                val start = maxOf(fedAbs, audio.size - CAP)
+                val fresh = if (audio.size > start) audio.copyOfRange(start, audio.size) else FloatArray(0)
+                fedAbs = audio.size
+                if (fresh.isEmpty()) continue
+                // Gate the audio actually being fed, not a window that is mostly
+                // already-seen audio. Diluting 0.25s of speech into 3s of
+                // history dropped it below the noise floor and closed the gate on
+                // speech the user was still making.
+                val quiet = rms(fresh) < noiseFloor
+                val vadSilent = if (vadReady) SherpaVad.feedAndDetect(fresh)?.not() else null
                 if (quiet && vadSilent != false) {
                     _gateReason.value = "silence"
                     continue
@@ -681,7 +693,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 _gateReason.value = "decoding"
                 speechFramesSinceAdvance++
                 try {
-                    runZipformerFrame(used)
+                    runZipformerFrame(fresh)
                 } catch (e: Exception) {
                     val m = e.message ?: e::class.simpleName ?: "frame error"
                     if (m != lastFrameError) {
@@ -701,15 +713,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      *  - stream-relative clock for word timing (never recorder-cumulative);
      *  - WRONG requires confident model disagreement (mean chosen-prob),
      *    low-confidence positions stay neutral — the lab's own doctrine. */
-    private suspend fun runZipformerFrame(used: FloatArray) {
+    private suspend fun runZipformerFrame(fresh: FloatArray) {
         try {
-            if (used.size < fedPosition) {
-                // Recorder buffer was reset elsewhere: pair it with a full
-                // pipeline reset so heard audio is never re-fed as new.
-                resetAudioPipeline()
-            }
-            val fresh = if (used.size > fedPosition) used.copyOfRange(fedPosition, used.size) else FloatArray(0)
-            fedPosition = used.size
             val fedThisFrame = fresh.isNotEmpty()
             if (fedThisFrame) {
                 SherpaZipformer.accept(fresh)

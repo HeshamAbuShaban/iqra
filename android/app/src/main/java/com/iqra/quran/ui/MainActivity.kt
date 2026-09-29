@@ -342,6 +342,12 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onOpenAyah = { surah, page, ayah -> screen = Screen.Reader(surah, page, ayah) },
             onDiag = { screen = Screen.Diag },
             onData = { screen = Screen.Data },
+            onResume = {
+                lastRead?.let { (s, p) ->
+                    vm.resumeLastRead()
+                    screen = Screen.Reader(s, p)
+                }
+            },
         )
         is Screen.Diag -> DiagScreen(vm) { screen = Screen.Picker }
         is Screen.Reader -> {
@@ -380,6 +386,7 @@ fun HomeScreen(
     onOpenAyah: (Int, Int, Int) -> Unit = { _, _, _ -> },
     onDiag: () -> Unit = {},
     onData: () -> Unit = {},
+    onResume: () -> Unit = {},
 ) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
     var tab by remember { mutableStateOf(HomeTab.Surahs) }
@@ -401,6 +408,13 @@ fun HomeScreen(
                 color = cs.onSurface,
             )
             Spacer(Modifier.weight(1f))
+            if (lastRead != null) {
+                // Resuming is a navigation decision, so it lives here - on
+                // home - rather than inside the reading surface.
+                IconButton(onClick = onResume) {
+                    Icon(Icons.Outlined.History, "Back to last read", tint = cs.onSurface.copy(alpha = 0.55f))
+                }
+            }
             IconButton(onClick = onData) {
                 Icon(Icons.Outlined.FolderOpen, "Data files", tint = cs.onSurface.copy(alpha = 0.55f))
             }
@@ -1145,7 +1159,6 @@ fun ReaderScreen(
                 onToggleBookmark = { vm.toggleBookmark(currentPage ?: (startIdx + 1)) },
                 onBack = onBack,
                 onToggleNight = { night = !night; ReaderPrefs.setNightMode(ctx, night) },
-                onResume = { vm.resumeLastRead(); showChrome() },
                 night = night,
                 offset = chromeOffset,
             )
@@ -1410,7 +1423,6 @@ fun ReaderHeader(
     onToggleBookmark: () -> Unit,
     onBack: () -> Unit,
     onToggleNight: () -> Unit = {},
-    onResume: () -> Unit = {},
     night: Boolean = false,
     offset: Float = 0f,
 ) {
@@ -1429,15 +1441,8 @@ fun ReaderHeader(
             .statusBarsPadding()
             .padding(top = 6.dp, bottom = 18.dp),
     ) {
-        // Start side: back + resume. Splitting the controls across both sides
-        // is what leaves room for a centred title; four on one side does not.
-        Row(Modifier.align(Alignment.TopStart).padding(4.dp)) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Chrome.OnChrome)
-            }
-            IconButton(onClick = onResume) {
-                Icon(Icons.Outlined.History, "Back to last read", tint = Chrome.OnChrome)
-            }
+        IconButton(onClick = onBack, Modifier.align(Alignment.TopStart).padding(4.dp)) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Chrome.OnChrome)
         }
         Row(Modifier.align(Alignment.TopEnd)) {
             // tap toggles night mode; long-press opens the brightness
