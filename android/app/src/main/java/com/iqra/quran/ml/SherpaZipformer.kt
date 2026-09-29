@@ -44,6 +44,11 @@ object SherpaZipformer {
         return model.exists() && model.length() > 0 && tokens.exists() && tokens.length() > 0
     }
 
+    /** Which root each engine file resolved from, and where it did not. */
+    fun fileReport(context: Context): String =
+        "$MODEL_FILE[${com.iqra.quran.data.AssetPaths.resolveReport(context, MODEL_FILE)}] " +
+            "$TOKENS_FILE[${com.iqra.quran.data.AssetPaths.resolveReport(context, TOKENS_FILE)}]"
+
     fun modelDir(context: Context): File =
         com.iqra.quran.data.AssetPaths.engineDir(context)
 
@@ -78,14 +83,30 @@ object SherpaZipformer {
         }
     }
 
+    /** True when a live native stream exists.
+     *
+     *  "The recognizer is loaded" is NOT the same question. stopRecite()
+     *  releases the stream, and jumpToPage() calls stopRecite(), so any page
+     *  swipe mid-session destroys the stream. A readiness check that only asks
+     *  whether the recognizer is up will happily report ready for a stream that
+     *  no longer exists, and every accept() then fails silently. */
+    fun hasStream(): Boolean = stream != null
+
+    // Native stream access is serialised: the session coroutine feeds and
+    // decodes while the UI thread can stop/close. Without this, closeStream()
+    // could free the stream underneath an in-flight acceptWaveform/decode.
+    @Synchronized
     fun startStream(): Boolean {
         val rec = recognizer ?: return false
         return try {
-            stream?.let { runCatching { rec.reset(it) } }
+            // Release, do not just reset: reset() leaves the native buffers
+            // allocated, so resetting here leaked one OnlineStream per session.
+            stream?.let { runCatching { it.release() } }
             stream = rec.createStream()
             true
         } catch (t: Throwable) {
             Log.w(TAG, "stream start failed", t)
+            stream = null
             false
         }
     }
@@ -102,18 +123,35 @@ object SherpaZipformer {
         Log.w(TAG, lastOpError, t)
     }
 
-    fun accept(samples: FloatArray) {
+    /**
+     * Feed audio to the recogniser. Returns whether it was actually accepted.
+     *
+     *  This used to return Unit and swallow the "no stream" case, while the
+     *  caller unconditionally counted the samples as fed. The diagnostics then
+     *  reported tens of thousands of "fed" samples for a stream that had been
+     *  released - which is exactly why the dead-stream bug read as "audio was
+     *  flowing fine, the model just produced no tokens".
+     */
+    @Synchronized
+    fun accept(samples: FloatArray): Boolean {
         val rec = recognizer
         val s = stream
-        if (rec == null || s == null || samples.isEmpty()) return
-        try {
+        if (rec == null || s == null) {
+            if (samples.isNotEmpty()) lastOpError = "accept: no live stream"
+            return false
+        }
+        if (samples.isEmpty()) return false
+        return try {
             s.acceptWaveform(samples, 16000)
             acceptedSamples += samples.size
+            true
         } catch (t: Throwable) {
             noteOpError("accept", t)
+            false
         }
     }
 
+    @Synchronized
     fun decodeIfReady(): PhonemeResult? {
         val rec = recognizer
         val s = stream
@@ -131,8 +169,7 @@ object SherpaZipformer {
         }
     }
 
-
-
+    @Synchronized
     fun resetStream() {
         val rec = recognizer
         val s = stream
@@ -144,11 +181,16 @@ object SherpaZipformer {
         }
     }
 
+    @Synchronized
     fun closeStream() {
+        val s = stream
         stream = null
+        s?.let { runCatching { it.release() } }
     }
 
+    @Synchronized
     fun close() {
+        runCatching { stream?.release() }
         try {
             recognizer?.release()
         } catch (_: Throwable) {

@@ -32,6 +32,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.filled.Refresh
@@ -276,14 +278,25 @@ private fun ExpectedWordsLine(
 }
 
 @Composable
-private fun PulseDot(color: Color = wrongColor) {
+private fun PulseDot(color: Color = wrongColor, label: String? = null) {
     val t = rememberInfiniteTransition(label = "pulse")
     val a by t.animateFloat(
         0.35f, 1f,
         infiniteRepeatable(tween(750), RepeatMode.Reverse),
         label = "a",
     )
-    Box(Modifier.size(10.dp).background(color.copy(alpha = a), CircleShape))
+    Box(
+        Modifier
+            .size(10.dp)
+            .background(color.copy(alpha = a), CircleShape)
+            .then(
+                if (label != null) {
+                    Modifier.semantics { contentDescription = label }
+                } else {
+                    Modifier
+                },
+            ),
+    )
 }
 
 @Composable
@@ -1044,7 +1057,6 @@ fun ReaderScreen(
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
     val preparing by vm.preparing.collectAsStateWithLifecycle()
-    val modelProgress by vm.modelProgress.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val activeWindow by vm.activeWindow.collectAsStateWithLifecycle()
     val selectedAyah by vm.selectedAyah.collectAsStateWithLifecycle()
@@ -1197,12 +1209,23 @@ fun ReaderScreen(
                     }
                     if (recording && standWords.isEmpty()) {
                         Spacer(Modifier.width(6.dp))
-                        PulseDot()
+                        // The engine label is diagnostic, not reader-facing: it
+                        // belongs in Diagnostics. Rendering it here made the row
+                        // long enough to wrap, which grew the bar's height and
+                        // squashed the Recite button into a vertical block.
+                        PulseDot(
+                            label = "Listening" +
+                                if (engineLabel.isNotEmpty()) ", $engineLabel" else "",
+                        )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            if (engineLabel.isNotEmpty()) "Listening… · $engineLabel" else "Listening…",
+                            "Listening…",
                             fontSize = 12.sp,
                             color = Chrome.OnChromeMuted,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                     }
                     Spacer(Modifier.width(4.dp))
@@ -1216,15 +1239,15 @@ fun ReaderScreen(
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
                     ) {
                         if (preparing) {
+                            // Spinner only. A bare "N%" used to render here
+                            // from _modelProgress, which is never assigned (it
+                            // stays -1), so it could only ever show a stale
+                            // number that looked like an unexplained glitch.
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
                                 strokeWidth = 2.dp,
                                 color = MaterialTheme.colorScheme.onPrimary,
                             )
-                            if (modelProgress in 0..99) {
-                                Spacer(Modifier.width(6.dp))
-                                Text("$modelProgress%", fontSize = 12.sp)
-                            }
                         } else {
                             Icon(if (recording) Icons.Filled.Close else Icons.Filled.Mic, null)
                             Spacer(Modifier.width(6.dp))

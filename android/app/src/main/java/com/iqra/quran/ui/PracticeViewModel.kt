@@ -43,9 +43,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _preparing = MutableStateFlow(false)
     val preparing: StateFlow<Boolean> = _preparing
 
-    private val _modelProgress = MutableStateFlow(-1)
-    val modelProgress: StateFlow<Int> = _modelProgress
-
     private val _hideVerse = MutableStateFlow(false)
     val hideVerse: StateFlow<Boolean> = _hideVerse
 
@@ -243,6 +240,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingBackFrames: Int = 0
     private var pendingNextFrames: Int = 0
     private var zipformerOn = false
+    /**
+     * Bumped whenever a session starts or is torn down. The polling loop
+     * captures the value it started with and exits if it changes, so a loop
+     * left over from a previous session can never feed the stream that a newer
+     * session just created.
+     */
+    private var sessionGen = 0
     /** Absolute samples consumed from the recorder's cumulative buffer. */
     private var fedAbs = 0
     private val _decoderState = MutableStateFlow("idle")
@@ -250,6 +254,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var noiseFloor = SILENCE_RMS
     private var lastTokenTime = 0L
     private var lastRecoveryTime = 0L
+    /** Consecutive zero-token recovery attempts; escalates to a real error
+     *  instead of looping a reset that can never succeed. */
+    private var starvedRecoveries = 0
     private var lastFrameError: String? = null
     // Streaming clock + tail replay: bounds emission history without losing
     // rolling context on advance. fedTotal counts every fed sample;
@@ -321,8 +328,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         streamBaseSec += fedTotal / 16000f
         fedTotal = 0
         SherpaZipformer.resetStream()
-        if (tailBuf.isNotEmpty()) {
-            SherpaZipformer.accept(tailBuf)
+        if (tailBuf.isNotEmpty() && SherpaZipformer.accept(tailBuf)) {
             fedTotal = tailBuf.size.toLong()
         }
     }
@@ -353,6 +359,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         streamBaseSec = 0f
         tailBuf = FloatArray(0)
         lastEmitCount = 0
+        // The watchdog measures idle time from lastTokenTime. Without this the
+        // clock kept running across resets, so idleSec grew without bound and
+        // "starved 101s" was really "starved 1s after the fourth reset".
+        lastTokenTime = System.currentTimeMillis()
+        lastRecoveryTime = lastTokenTime
+        // NOTE: starvedRecoveries is deliberately NOT cleared here. This
+        // function is itself one of the recovery attempts, so clearing the
+        // counter inside it would restart the escalation every time and restore
+        // the endless reset loop. It is cleared when tokens actually arrive, and
+        // at session start.
         diag("audio pipeline reset")
     }
 
@@ -418,7 +434,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Jump to an arbitrary Mushaf page and resync the tracker to its anchor. */
     fun jumpToPage(page: Int) {
-        if (_recording.value) stopRecite()
+        // Unconditional: navigating away must also cancel a session that is
+        // still preparing, not just one that is already recording.
+        stopRecite()
         val (s, a) = anchorForPage(page) ?: return
         loadSurah(s)
         lockedAyah = a
@@ -562,13 +580,20 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      *  never downloaded); when absent we refuse to start rather than
      *  silently running nothing. */
     private suspend fun ensureVoice(): Boolean {
-        if (zipformerOn) return true
+        // Short-circuit ONLY when a live stream exists. Asking merely "is the
+        // recognizer loaded" was the bug: stopRecite() releases the stream (and
+        // any page swipe calls stopRecite), so from the second session onwards
+        // this returned true for a stream that no longer existed. accept() then
+        // failed silently, fedTotal was incremented anyway, and every session
+        // after the first produced zero tokens forever.
+        if (zipformerOn && SherpaZipformer.hasStream()) return true
         return try {
             withContext(Dispatchers.Main) { _preparing.value = true }
             val app = getApplication<Application>()
             val okFiles = SherpaZipformer.filesPresent(app)
             if (!okFiles) {
-                _engineHint.value = "Voice engine files missing — push model.int8.onnx, tokens.txt and ordered_quran_phonemes.json into files/zipformer via adb."
+                _engineHint.value = "Voice engine files not found. Copy model.int8.onnx, tokens.txt and ordered_quran_phonemes.json into /sdcard/Iqra — use the file manager or a USB copy, because a folder created by adb push is not readable by the app. See the log for the paths tried."
+                diag("engine files missing: ${SherpaZipformer.fileReport(app)}")
                 return false
             }
             val ok = SherpaZipformer.ensure(app) &&
@@ -633,13 +658,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _engineHint.value = null
         _currentPage.value = page
         _activeVerse.value = lockedAyah
+        // A new session invalidates any loop still winding down from the last
+        // one, so it cannot feed the stream this session is about to create.
+        val gen = ++sessionGen
         viewModelScope.launch(Dispatchers.IO) {
             val vadReady = SherpaVad.ensure(getApplication())
             if (!ensureVoice()) return@launch
+            if (gen != sessionGen) return@launch
             fedAbs = 0
             fedTotal = 0
             streamBaseSec = 0f
             tailBuf = FloatArray(0)
+            starvedRecoveries = 0
             speechFramesSinceAdvance = 0
             _engineLabel.value = "zipformer/" + (if (vadReady) "VAD" else "RMS")
             diag("session start s=$activeSurah lock=$lockedAyah engine=${_engineLabel.value}")
@@ -664,22 +694,33 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             lastTokenTime = System.currentTimeMillis()
             lastRecoveryTime = System.currentTimeMillis()
             diag("mic floor calibrated: ${"%.4f".format(noiseFloor)}")
-            while (_recording.value) {
+            while (_recording.value && gen == sessionGen) {
                 delay(250)
-                val audio = recorder.currentSamples()
-                if (audio.size < 4800) continue
-                // The delta is computed against the CUMULATIVE buffer, using an
-                // absolute cursor. It used to be computed against a 3s SLIDING
-                // window with a cursor that was itself window-relative: once the
-                // recorder passed CAP the window was always exactly CAP long, so
-                // the cursor sat at CAP and the delta was permanently empty.
-                // The model therefore received audio only for the first 3 seconds
-                // of a session and then starved - which is what the "decoder
-                // starved 50s/92s" reports actually were.
-                val start = maxOf(fedAbs, audio.size - CAP)
-                val fresh = if (audio.size > start) audio.copyOfRange(start, audio.size) else FloatArray(0)
-                fedAbs = audio.size
+                // Warm-up: let ~0.3s accumulate before feeding anything, as
+                // before. This used to be tested against the size of the whole
+                // captured buffer; with a delta-based read that would compare
+                // ~4000 samples per poll against 4800 and skip every frame.
+                if (recorder.totalCount() < 4800) continue
+                // Read only what has not been fed yet, by absolute index.
+                //
+                // The delta used to be computed against a 3s SLIDING window
+                // whose cursor was itself window-relative: once the captured
+                // buffer passed 3s the window was always exactly 3s long, so
+                // the cursor sat at the end and the delta was permanently
+                // empty. The model then received audio only for the first 3
+                // seconds of a session and starved - which is what the
+                // "decoder starved 50s/92s" reports actually were.
+                val fresh = recorder.readSince(fedAbs)
+                if (fresh == null) {
+                    // Ring overwrote audio we never consumed (a pause longer
+                    // than the ring). Resync to now rather than feed a gap of
+                    // unrelated audio as if it were contiguous speech.
+                    fedAbs = recorder.totalCount()
+                    diag("recorder ring overflow — resynced to sample $fedAbs")
+                    continue
+                }
                 if (fresh.isEmpty()) continue
+                fedAbs += fresh.size
                 // Gate the audio actually being fed, not a window that is mostly
                 // already-seen audio. Diluting 0.25s of speech into 3s of
                 // history dropped it below the noise floor and closed the gate on
@@ -715,11 +756,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      *    low-confidence positions stay neutral — the lab's own doctrine. */
     private suspend fun runZipformerFrame(fresh: FloatArray) {
         try {
-            val fedThisFrame = fresh.isNotEmpty()
+            // Count only audio the recogniser really took. accept() reports
+            // whether it succeeded, because a released stream used to drop
+            // every sample silently while fedTotal still climbed - the log
+            // then claimed 10s of audio was flowing to a model that had
+            // received nothing at all.
+            val fedThisFrame = SherpaZipformer.accept(fresh)
             if (fedThisFrame) {
-                SherpaZipformer.accept(fresh)
                 fedTotal += fresh.size
-                tailBuf = (tailBuf + fresh).takeLast(24000).toFloatArray()
+                tailBuf = (tailBuf + fresh).takeLast(TAIL_SAMPLES).toFloatArray()
             }
             // Decode ONLY when sherpa reports ready: forcing decode with
             // insufficient buffered frames trips a native CHECK abort
@@ -727,22 +772,49 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val res = SherpaZipformer.decodeIfReady()
             if (res == null || res.symbols.isEmpty() || res.symbols.size == lastEmitCount) {
                 // Starvation watch: audio flows but tokens never grow. Recover
-                // with ONE stream reset per 10s (lock untouched); report it.
+                // with ONE attempt per 10s (lock untouched); report it.
                 val idleSec = (System.currentTimeMillis() - lastTokenTime) / 1000
                 _decoderState.value = "starved ${idleSec}s"
                 if (fedThisFrame && idleSec >= 4 && fedTotal > 0 &&
                     System.currentTimeMillis() - lastRecoveryTime > 10000
                 ) {
                     lastRecoveryTime = System.currentTimeMillis()
-                    diag("decoder starved ${idleSec}s: fed=${fedTotal} toks=${lastEmitCount} " +
-                        "opErr=${SherpaZipformer.lastOpError ?: "-"} — resetting stream (lock untouched)")
-                    resetAudioPipeline()
+                    val live = SherpaZipformer.hasStream()
+                    starvedRecoveries++
+                    diag("decoder starved ${idleSec}s: fed=$fedTotal toks=$lastEmitCount " +
+                        "stream=${if (live) "live" else "MISSING"} " +
+                        "try=$starvedRecoveries " +
+                        "opErr=${SherpaZipformer.lastOpError ?: "-"} — " +
+                        if (live) "resetting stream (lock untouched)" else "recreating stream (lock untouched)")
+                    if (starvedRecoveries >= MAX_STARVATION_RECOVERIES) {
+                        // Looping a recovery that cannot succeed just hides the
+                        // fault: the old build reset the stream every 10s for
+                        // minutes and the session looked like a silent model.
+                        // Say what is actually wrong and stop.
+                        _decoderState.value = "failed"
+                        _engineHint.value = "Voice decoder stopped responding after $starvedRecoveries attempts. Tap Recite to start a new session."
+                        diag("decoder gave up: no tokens after $starvedRecoveries recoveries, " +
+                            "stream=${if (live) "live" else "MISSING"}")
+                        return
+                    }
+                    if (!live) {
+                        // resetStream() on a released stream is a no-op, so the
+                        // old recovery path could never fix this case - it only
+                        // ever re-ran reset() on null and spun. Rebuild it.
+                        resetAudioPipeline()
+                        if (!SherpaZipformer.startStream()) {
+                            diag("stream recreate failed")
+                        }
+                    } else {
+                        resetAudioPipeline()
+                    }
                 }
                 return
             }
             lastEmitCount = res.symbols.size
             lastTokenTime = System.currentTimeMillis()
             _decoderState.value = "active"
+            starvedRecoveries = 0
             // Per-ayah emission slice: after any lock move, window ayat align
             // against emissions heard SINCE the move — never against other
             // ayat's history. Kills cross-ayah ghost matches.
@@ -970,10 +1042,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopRecite() {
-        if (!_recording.value) return
-        _recording.value = false
+        // Retire the session even if it never reached the recording state: a
+        // session that is still preparing would otherwise carry on and start
+        // recording after the user had already moved on.
+        sessionGen++
         cancelRepeat()
         SherpaZipformer.closeStream()
+        if (!_recording.value) return
+        _recording.value = false
         recorder.stop()
         _activeVerse.value = null
     }
@@ -1066,7 +1142,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
-        private const val CAP = 3 * 16000
+        /** Rolling context replayed after a lock move: 1.5s at 16kHz. */
+        private const val TAIL_SAMPLES = 24000
+        /** Consecutive zero-token recoveries before we stop and report failure
+         *  rather than looping a recovery that cannot succeed. */
+        private const val MAX_STARVATION_RECOVERIES = 3
         // Below this RMS the rolling window is effectively silence -> skip decoding.
         private const val SILENCE_RMS = 0.0025f
 

@@ -119,6 +119,38 @@ object AssetPaths {
     fun engineDir(context: Context): File =
         file(context, "model.int8.onnx").parentFile ?: writableRoot(context)
 
+    /**
+     * Why [name] did (not) resolve, for diagnostics.
+     *
+     * file() walks the candidate roots silently, and File.isFile is ALSO false
+     * when the path exists but cannot be traversed - which is exactly what a
+     * root-owned adb-pushed directory on FUSE looks like. So a file that is
+     * genuinely on the device used to be reported as "missing". This names each
+     * candidate and its state so the log says which root was tried and why it
+     * lost, instead of blaming the user for a permission problem.
+     */
+    fun resolveReport(context: Context, name: String): String {
+        val shared = sharedRoot()
+        val candidates = listOf(
+            File(shared, name),
+            File(File(context.filesDir, "zipformer"), name),
+            File(context.filesDir, name),
+            File(fallbackRoot(context), name),
+        )
+        return candidates.joinToString("; ") { f ->
+            val parent = f.parentFile
+            val state = when {
+                f.isFile -> "ok(${f.length()}B)"
+                // exists() is also false when we cannot traverse, so check the
+                // directory to tell "not there" from "not allowed in".
+                f.exists() -> "present-unreadable"
+                parent != null && parent.isDirectory && !parent.canRead() -> "parent-not-readable"
+                else -> "absent"
+            }
+            "${f.absolutePath}=$state"
+        }
+    }
+
 
     // ---- manifest ------------------------------------------------------------
 
