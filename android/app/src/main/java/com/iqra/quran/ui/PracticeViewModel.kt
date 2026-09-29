@@ -247,8 +247,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * session just created.
      */
     private var sessionGen = 0
-    /** Absolute samples consumed from the recorder's cumulative buffer. */
-    private var fedAbs = 0
+    /** Absolute samples consumed from the recorder's cumulative buffer. Long,
+     *  because that counter is Long and it keeps climbing for the life of the
+     *  session. */
+    private var fedAbs = 0L
     private val _decoderState = MutableStateFlow("idle")
     val decoderState: StateFlow<String> = _decoderState
     private var noiseFloor = SILENCE_RMS
