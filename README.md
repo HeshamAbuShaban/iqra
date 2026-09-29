@@ -7,8 +7,9 @@ right, what you missed, and what you mispronounced. Entirely on-device.
 </p>
 
 Iqra listens while you recite, recognises which verse you are reading, and
-marks every word **correct**, **skipped** or **wrong**. It also hides whole
-verses for memorisation, on the authentic standard Madinah mushaf pages.
+marks every word **correct**, **skipped** or **wrong**, and leaves it unjudged
+when the evidence is genuinely partial. It also hides whole verses for
+memorisation, on the authentic standard Madinah mushaf pages.
 
 No account, no subscription, no network at runtime.
 
@@ -42,7 +43,7 @@ No account, no subscription, no network at runtime.
   lock advances on coverage of lock+1, in order, scoped to the page
         │
         ▼
-  per-word CORRECT / WRONG / SKIPPED → Compose highlights
+  per-word CORRECT / WRONG / SKIPPED / UNKNOWN → Compose highlights
 ```
 
 The step that matters is the second one. Comparing the model's **phoneme
@@ -135,7 +136,14 @@ uv pip install --python .venv-replay/bin/python sherpa-onnx numpy
 
 Current result across six surahs / 269 s of recitation: **28/28 ayat locked
 in order**. `word_verdicts.py` separately checks per-word CORRECT / WRONG /
-SKIPPED on labelled mutations (64 cases).
+SKIPPED on labelled mutations (231 cases across the six clips).
+
+A word that is only partly covered, with nothing contradicted, is **UNKNOWN** -
+not WRONG. The previous rule called it WRONG, which made a skipped word paint
+its neighbour red, because a global alignment absorbs the deletion as
+substitutions in the words around it. `word_rule_sweep.py` measures the rule
+over 154 real word observations: collateral false-WRONG goes to zero while every
+skipped word is still found and nothing correctly recited loses its verdict.
 
 This harness is what found the alphabet mismatch, and it is why the
 recognition code is not tuned by feel.
