@@ -589,6 +589,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // short fresh stream never matches one - but it is a real collision
         // waiting for the right utterance length.
         lastEmitCount = 0
+        // And restart the idle clock. The starvation watchdog measures silence
+        // from lastTokenTime, which a move does not touch - so a move late in a
+        // pause inherited the pre-move idle count and could trip the recovery on
+        // its very next frame. resetAudioPipeline() refreshes it; a plain move
+        // recycles the stream just as surely and has to as well.
+        lastTokenTime = now
         // Recycle the stream with tail replay: bounds emission history
         // (flat per-frame cost forever) while keeping rolling context, so
         // there is no dead zone after an advance.
