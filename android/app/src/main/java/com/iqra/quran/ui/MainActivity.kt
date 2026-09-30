@@ -1526,8 +1526,16 @@ fun ReaderHeader(
         Modifier.fillMaxWidth()
             .offset(y = shift)
             .background(
+                // Three stops faded the scrim to nothing by the time it reached
+                // the header's last text line, so that line sat on the page's own
+                // paper with the page's top border striking through it. The
+                // extra stop holds the scrim through the text and only then
+                // fades, so the reference fade survives and the line is legible.
                 Brush.verticalGradient(
-                    listOf(Chrome.HeaderTop, Chrome.HeaderMid, Color.Transparent)
+                    0f to Chrome.HeaderTop,
+                    0.55f to Chrome.HeaderMid,
+                    0.80f to Chrome.HeaderMid.copy(alpha = 0.72f),
+                    1f to Color.Transparent,
                 )
             )
             .statusBarsPadding()

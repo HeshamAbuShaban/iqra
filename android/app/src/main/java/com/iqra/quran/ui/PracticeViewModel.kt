@@ -132,10 +132,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      *  could not be ordered and could not be split into sessions; the
      *  monotonic component can. `g<sessionGen>` groups lines by session
      *  across a restart.
+     *
+     *  `gen` overrides the stamp for the one line that cannot use the live
+     *  counter: `session end`. stopRecite bumps sessionGen to retire the
+     *  polling loop BEFORE tearing down, so the live value there is the NEXT
+     *  session's, and every end line was filed under the session that followed
+     *  it. The end line is what a reader groups a session by.
      */
-    fun diag(msg: String) {
+    fun diag(msg: String, gen: Int = sessionGen) {
         val line = "${(System.currentTimeMillis() / 1000) % 100000}" +
-            ".${SystemClock.elapsedRealtime()} g$sessionGen $msg"
+            ".${SystemClock.elapsedRealtime()} g$gen $msg"
         diagBuffer.addLast(line)
         while (diagBuffer.size > DIAG_RING) diagBuffer.pollFirst()
         _diagLog.value = ArrayList(diagBuffer)
@@ -248,9 +254,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     fun micLevel(): Float {
         val s = recorder.currentSamples()
         if (s.isEmpty()) return 0f
+        // Mean over the samples actually present. Dividing by a fixed 8000
+        // under-reported the level by the ratio of missing samples, so a
+        // "near-silence" hint could fire on a perfectly healthy mic during the
+        // first half-second of a session.
+        val tail = s.takeLast(8000)
         var sum = 0.0
-        for (v in s.takeLast(8000)) sum += v * v
-        return kotlin.math.sqrt(sum / 8000).toFloat()
+        for (v in tail) sum += v * v
+        return kotlin.math.sqrt(sum / tail.size).toFloat()
     }
 
     fun micSampleCount(): Int = recorder.sampleCount()
@@ -542,6 +553,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         pendingNextAyah = null; pendingNextFrames = 0
         pendingBackAyah = null; pendingBackFrames = 0
         rebaseSlice = true
+        // The stream is recycled below, so its token count restarts from zero
+        // while the growth test compares against the PRE-move count. A fresh
+        // stream that happened to reach exactly the old count was therefore
+        // read as "no new tokens" and treated as starvation. Harmless on the
+        // recorded clips - the pre-move counts are 145/75/55/59/85/83 and a
+        // short fresh stream never matches one - but it is a real collision
+        // waiting for the right utterance length.
+        lastEmitCount = 0
         // Recycle the stream with tail replay: bounds emission history
         // (flat per-frame cost forever) while keeping rolling context, so
         // there is no dead zone after an advance.
@@ -632,7 +651,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      *  identical logs. `ran=no` is what tells the two apart, and `reason`
      *  is always one of: user stop, jump, preparing-cancelled.
      */
-    private fun endSession(reason: String, via: String) {
+    private fun endSession(reason: String, via: String, ranGen: Int) {
         val dur = if (sessionRan) SystemClock.elapsedRealtime() - sessionStartMono else 0L
         diag(
             "session end reason=$reason via=$via ran=${if (sessionRan) "yes" else "no"}" +
@@ -641,7 +660,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 " lock=${activeSurah}:${lockedAyah}" +
                 " fed=$sessionFed fedStream=$fedTotal" +
                 " gateClosed=$gateClosedFrames frames=${frameRing.rowCount()}" +
-                " diagDropped=${diagDropped.get()}"
+                " diagDropped=${diagDropped.get()}",
+            gen = ranGen,
         )
         sessionRan = false
         resetSessionCounters()
@@ -1241,7 +1261,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     pendingNextFrames = 1
                 }
             } else if (nextCov < WEAK_COVERAGE) {
+                // Decay, but the key goes with it. The counter alone was left
+                // armed against the old ayah, so if coverage climbed back into
+                // the middling band the hard reset below cleared the counter but
+                // a later band-1 frame re-armed it against a stale target.
                 if (pendingNextFrames > 0) pendingNextFrames--
+                if (pendingNextFrames == 0) pendingNextAyah = null
             } else {
                 pendingNextAyah = null; pendingNextFrames = 0
             }
@@ -1490,19 +1515,20 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // Retire the session even if it never reached the recording state: a
         // session that is still preparing would otherwise carry on and start
         // recording after the user had already moved on.
+        val endedGen = sessionGen
         sessionGen++
         cancelRepeat()
         SherpaZipformer.closeStream()
         if (!_recording.value) {
             resetSessionUi()
-            endSession("preparing-cancelled", reason)
+            endSession("preparing-cancelled", reason, endedGen)
             return
         }
         _recording.value = false
         recorder.stop()
         _activeVerse.value = null
         resetSessionUi()
-        endSession(reason, "recite")
+        endSession(reason, "recite", endedGen)
     }
 
     // ---- Reference recitation audio (stream-on-tap, nothing bundled) ----
