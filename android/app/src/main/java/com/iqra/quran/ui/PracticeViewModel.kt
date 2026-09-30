@@ -822,7 +822,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // Reader pages + glyph copy finish in background after first
             // frame. Home is already up. No recognition index anymore.
             val m = Mushaf.load(getApplication())
-            GlyphCoords.ensure(getApplication())
+            // The glyph DB is heavy data the user may not have copied yet. It
+            // used to be loaded unguarded, so a fresh install with nothing
+            // staged died with an unhandled FileNotFoundException on an IO
+            // dispatcher before the UI could offer to fetch it. Word boxes only
+            // affect highlighting and hide mode, so the reader is still useful
+            // without them.
+            val glyphs = runCatching { GlyphCoords.ensure(getApplication()) }
+                .onFailure { _engineHint.value = "Word boxes unavailable — copy ayahinfo_1024.db into /sdcard/Iqra. Reading and searching still work." }
+                .isSuccess
             withContext(Dispatchers.Main) {
                 _mushaf.value = m
             }

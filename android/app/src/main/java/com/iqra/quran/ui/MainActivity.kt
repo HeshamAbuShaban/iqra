@@ -180,6 +180,19 @@ internal val accentColor = Color(0xFF2BB6A0)
 private const val MIN_WORD_BOX = 20f
 
 /**
+ * How far hide mode's mask is grown beyond a word's own box, in the DB's
+ * 1024-wide page space.
+ *
+ * Word diacritics overhang their glyph box by a few px: measured on page 14,
+ * 855 px of ink sat outside all 121 word rects, in clusters of 3-7px strokes,
+ * which stayed visible as specks of a word the user was trying to memorise.
+ * 3px covers the observed overhang and is far below the gap between adjacent
+ * word bodies, so no neighbour is clipped. Applied to the paper fill and the
+ * clip identically - if they disagreed the fill would no longer match its hole.
+ */
+private const val HIDDEN_OUTSET_PX = 3f
+
+/**
  * Minimum glyph box HEIGHT for the same test, and the reason it is separate
  * from the width. Measured over all 88,246 rows of ayahinfo_1024.db the height
  * is cleanly bimodal: 4,359 rows are 23px tall or less (the marks), NO row is
@@ -1330,11 +1343,16 @@ fun ReaderScreen(
                     }
                 }
                 AlertDialog(
-                    onDismissRequest = { showGoto = false },
+                    // Every exit clears the field: it used to be cleared only
+                    // inside `go`, so cancelling or dismissing left the last
+                    // page number sitting there for the next time.
+                    onDismissRequest = { gotoText = ""; showGoto = false },
                     confirmButton = {
                         TextButton(onClick = go) { Text("Go") }
                     },
-                    dismissButton = { TextButton(onClick = { showGoto = false }) { Text("Cancel") } },
+                    dismissButton = {
+                        TextButton(onClick = { gotoText = ""; showGoto = false }) { Text("Cancel") }
+                    },
                     title = { Text("Go to page") },
                     text = {
                         Column {
@@ -2177,13 +2195,27 @@ fun MushafPageView(
                         // Modifier's drawBehind laid down (the 1dp fold line and
                         // the border stroke) lives in the page margins and has
                         // to stay visible.
+                        // A word's diacritics can overhang its own DB box by a
+                        // few px, and clipping the rect verbatim leaves those
+                        // strokes behind: visible specks of a word the user is
+                        // trying to memorise. Outset by HIDDEN_OUTSET_PX in the
+                        // DB's 1024-wide page space - far smaller than the gap
+                        // between adjacent word bodies, so no neighbour is
+                        // touched. The fill and the clip must outset identically,
+                        // or the fill no longer matches its own hole.
                         for (d in draws) {
                             if (!d.style.hidden) continue
                             val r = d.rect
                             drawRect(
                                 color = paper,
-                                topLeft = Offset(r.left * sx, r.top * sy),
-                                size = Size(r.width() * sx, r.height() * sy),
+                                topLeft = Offset(
+                                    (r.left - HIDDEN_OUTSET_PX) * sx,
+                                    (r.top - HIDDEN_OUTSET_PX) * sy,
+                                ),
+                                size = Size(
+                                    (r.width() + HIDDEN_OUTSET_PX * 2) * sx,
+                                    (r.height() + HIDDEN_OUTSET_PX * 2) * sy,
+                                ),
                             )
                         }
                         // Then the page itself, minus the holes, then overlays
@@ -2193,7 +2225,13 @@ fun MushafPageView(
                             for (d in draws) {
                                 if (!d.style.hidden) continue
                                 val r = d.rect
-                                clipRect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy, ClipOp.Difference)
+                                clipRect(
+                                    (r.left - HIDDEN_OUTSET_PX) * sx,
+                                    (r.top - HIDDEN_OUTSET_PX) * sy,
+                                    (r.right + HIDDEN_OUTSET_PX) * sx,
+                                    (r.bottom + HIDDEN_OUTSET_PX) * sy,
+                                    ClipOp.Difference,
+                                )
                             }
                         }) {
                             drawImage(bmp, dstSize = dst, filterQuality = FilterQuality.High, colorFilter = inkF)
