@@ -49,7 +49,7 @@ No account, no subscription, no network at runtime.
 The step that matters is the second one. Comparing the model's **phoneme
 units** against the table's **word strings** cannot ever match — coverage is
 identically `0.00` and nothing is ever detected. See
-[docs/RECOGNITION_ROOT_CAUSE.md](docs/RECOGNITION_ROOT_CAUSE.md).
+[docs/RECOGNITION_ROOT_CAUSE.md](docs/RECOGNITION_ROOT_CAUSE.md), and [docs/DEFECTS_AND_METHOD.md](docs/DEFECTS_AND_METHOD.md) for the full catalogue of what went wrong, how each was caught, and the traps that cost the most time.
 
 ---
 
@@ -113,7 +113,7 @@ android/app/src/main/java/com/iqra/quran/
 engine/
   replay/   offline measurement harness (see below)
   shootout/ acoustic backbone comparison + gated weights
-docs/       RECOGNITION_ROOT_CAUSE.md, REVERSE_ENGINEERING.md
+docs/       DEFECTS_AND_METHOD.md, RECOGNITION_ROOT_CAUSE.md, REVERSE_ENGINEERING.md
 ```
 
 ---

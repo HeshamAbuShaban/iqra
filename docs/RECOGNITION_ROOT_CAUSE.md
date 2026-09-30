@@ -3,6 +3,10 @@
 **Status:** fixed in `fb99122`'s successor (see "The fix" below).
 **Impact:** this defect explains why the matcher scored a constant `0.00`.
 
+> **See also [DEFECTS_AND_METHOD.md](DEFECTS_AND_METHOD.md)** for the full
+> catalogue, the four instruments used to find these, and the traps that cost
+> the most time.
+
 > **Correction.** An earlier version of this document claimed this single defect
 > explained the entire "detection does nothing" saga. That was wrong, and the
 > replay harness could not have caught it: the harness calls the recogniser
