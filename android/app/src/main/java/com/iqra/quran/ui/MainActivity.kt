@@ -923,6 +923,8 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
     val log by remember {
         derivedStateOf { vm.diagLog.value.ifEmpty { vm.persistedDiag() } }
     }
+    val live by vm.policyLive.collectAsStateWithLifecycle()
+    val needs = vm.policyNeeds()
     var snap by remember { mutableStateOf(vm.engineFilesInfo()) }
     var micDb by remember { mutableStateOf(0f) }
     var micN by remember { mutableStateOf(0) }
@@ -1024,13 +1026,34 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                     // its own StateFlow (it is consumed inline at
                     // PracticeViewModel.kt:996 and discarded), and that file is
                     // owned elsewhere.
-                    DiagRow("Endpointing", engineLabel.ifEmpty { "—" })
+                    // The per-frame VAD verdict, published from the gate itself
+                    // rather than a session-level label. The old comment here
+                    // said the verdict "is consumed inline and discarded" and
+                    // that the file owning it was unavailable; it is not any
+                    // more, so this is a real readout rather than a stopgap.
+                    DiagRow(
+                        "Endpointing",
+                        when (live.vadSpeech) {
+                            null -> engineLabel.ifEmpty { "—" }
+                            true -> "VAD: speech"
+                            false -> "VAD: silence"
+                        },
+                    )
                 }
             }
             item {
                 DiagSection("Matcher") {
                     DiagRow("Lock", activeVerse?.toString() ?: "—")
                     DiagRow("Last match", lastMatch?.let { "${it.first} @ ${"%.2f".format(it.second)}" } ?: "—")
+                    if (live.next >= 0f) {
+                        DiagRow("Next (need ${"%.2f".format(needs.first)})", "%.2f".format(live.next))
+                        DiagRow("Here (need < ${"%.2f".format(needs.second)})", "%.2f".format(live.here))
+                        DiagRow("Back (need ${"%.2f".format(needs.third)})", "%.2f".format(live.back))
+                        if (live.held.isNotEmpty()) DiagRow("Holding", live.held)
+                    }
+                    if (live.gateClosed > 0) {
+                        DiagRow("Gate closed", "${live.gateClosed} frames, none reached the decoder")
+                    }
                     DiagRow("WPM", "%.0f".format(wpm))
                     DiagRow("Gate", gate.ifEmpty { "—" })
                     DiagRow("Decoder", decoder.ifEmpty { "—" })

@@ -90,6 +90,34 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     val gateReason: StateFlow<String> = _gateReason
 
     /**
+     * What the lock is actually deciding on, this frame.
+     *
+     *  The Diagnostics screen used to show only an ARGMAX over the locked ayah
+     *  and the next one. That is close to useless for the question it is asked:
+     *  "why did it not follow?" A value of `1 @ 0.95` can only mean the lock is
+     *  on ayah 1 and is scoring it well - which says nothing about the number
+     *  the policy actually advances on. So the three coverages are published
+     *  alongside the thresholds they are compared against, and "held" is
+     *  derived: the single most useful thing to see is that the gate was closed
+     *  and nothing reached the decoder at all.
+     */
+    data class PolicyLive(
+        val next: Float = -1f,
+        val here: Float = -1f,
+        val back: Float = -1f,
+        val gateClosed: Long = 0,
+        val held: String = "",
+        val vadSpeech: Boolean? = null,
+    )
+
+    private val _policyLive = MutableStateFlow(PolicyLive())
+    val policyLive: StateFlow<PolicyLive> = _policyLive
+
+    /** The thresholds, as text, so a readout never disagrees with the policy. */
+    fun policyNeeds(): Triple<Float, Float, Float> =
+        Triple(ADVANCE_COVERAGE, STUCK_COVERAGE, BACK_COVERAGE)
+
+    /**
      * The event ring, written by the recognition coroutine (IO) and by the
      *  main thread (jump/anchor/resume).
      *
@@ -626,6 +654,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _lastMatch.value = null
         _decoderState.value = "idle"
         _gateReason.value = ""
+        _policyLive.value = PolicyLive()
         _wpmFlow.value = SEED_WPM
     }
 
@@ -1055,6 +1084,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     // spent 90s feeding a decoder produced the same log.
                     gateClosedFrames++
                     _gateReason.value = "silence"
+                    _policyLive.value = _policyLive.value.copy(
+                        gateClosed = gateClosedFrames,
+                        held = "gate closed: nothing reached the decoder",
+                        vadSpeech = vadSilent,
+                    )
                     continue
                 }
                 _gateReason.value = "decoding"
@@ -1354,6 +1388,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 nextCov, hereCov, backCov,
                 jumpAyah, jumpCov,
                 res.symbols.size, obs.size, sessionGen, TAG_DECIDED,
+            )
+            // Published beside the ring, from the same values, so what the screen
+            // shows and what a dump contains cannot disagree.
+            _policyLive.value = PolicyLive(
+                next = nextCov,
+                here = hereCov,
+                back = backCov,
+                gateClosed = gateClosedFrames,
+                held = when {
+                    nextCov >= STRONG_COVERAGE -> "next covers it outright"
+                    nextCov >= ADVANCE_COVERAGE -> "next qualifies, waiting for a 2nd frame"
+                    nextCov >= WEAK_COVERAGE -> "next is close but not yet"
+                    else -> "next is nowhere near it"
+                },
+                vadSpeech = null,
             )
 
             // Repeat practice hook.
