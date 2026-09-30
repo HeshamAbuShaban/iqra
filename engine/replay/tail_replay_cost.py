@@ -7,9 +7,15 @@ land at the START of the next slice, ahead of the ayah the reciter is now
 starting - so each slice opens with ~4 stale symbols from the ayah just
 finished.
 
-engine/replay/lock_policy.py models NO such replay, so its 28/28 was
-measured on a policy the app does not actually run. This measures the
-replay's cost.
+`lock_policy.py` models NO such replay, so its 28/28 was measured on a
+policy the app does not actually run. `lock_trace.py` now models it properly
+(backlog polls, per-poll evaluation, all seven thresholds) - use that for
+anything you intend to believe. This script stays as the narrow, cheap A/B
+that isolates the replay's cost and nothing else.
+
+Its symbol-level DP is no longer duplicated here: `coverage` comes from
+`lock_trace` (which is `word_verdicts.align`), the same copy used by
+`lock_policy.py` and `phoneme_explode.py`.
 
 Replays are sized from real timestamps: how many emitted tokens fall in
 the final 1.5 s of the previous slice.
@@ -18,76 +24,23 @@ import json
 import os
 import sys
 
+import lock_trace
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 W = os.path.join(HERE, "..", "shootout", "weights", "zipformer")
 REPLAY_SECONDS = 1.5
 
 
-def load_units():
-    units = {}
-    with open(os.path.join(W, "tokens.txt")) as f:
-        for line in f:
-            line = line.rstrip("\n")
-            if not line:
-                continue
-            sym, _i = line.rsplit(" ", 1)
-            units[sym] = int(_i)
-    return units
-
-
-def make_tokenizer(units):
-    ordered = sorted(units.keys(), key=len, reverse=True)
-
-    def tok(s):
-        out, i = [], 0
-        while i < len(s):
-            for u in ordered:
-                if s.startswith(u, i):
-                    out.append(u)
-                    i += len(u)
-                    break
-            else:
-                i += 1
-        return out
-
-    return tok
+# the shared DP (word_verdicts.align), not a second copy
+_cov = lock_trace.coverage
+load_units = lock_trace.word_verdicts.load_units
+make_tokenizer = lock_trace.word_verdicts.make_tokenizer
 
 
 def coverage(query, ref):
-    n, m = len(ref), len(query)
-    if not n or not m:
-        return 0.0
-    prev = list(range(m + 1))
-    dirs = []
-    for i in range(1, n + 1):
-        cur = [i] + [0] * m
-        row = bytearray(m + 1)
-        for j in range(1, m + 1):
-            sub = prev[j - 1] + (0 if ref[i - 1] == query[j - 1] else 1)
-            dele = prev[j] + 1
-            ins = cur[j - 1] + 1
-            best, d = sub, 0
-            if dele < best:
-                best, d = dele, 1
-            if ins < best:
-                best, d = ins, 2
-            cur[j] = best
-            row[j] = d
-        dirs.append(row)
-        prev = cur
-    hits = 0
-    i, j = n, m
-    while i > 0 and j > 0:
-        if dirs[i - 1][j] == 0:
-            if ref[i - 1] == query[j - 1]:
-                hits += 1
-            i -= 1
-            j -= 1
-        elif dirs[i - 1][j] == 1:
-            i -= 1
-        else:
-            j -= 1
-    return hits / float(n)
+    """Scalar form of the shared DP, kept so this file's own shape - and its
+    output format, which docs/ references - is unchanged."""
+    return _cov(query, ref)[0]
 
 
 def run(syms, times, refs, replay, thresh, need):

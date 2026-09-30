@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Share
 import android.content.Intent
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,9 +72,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ClipOp
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
@@ -98,6 +99,8 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.graphics.drawscope.withTransform
+import kotlin.math.max
+import kotlin.math.min
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -170,11 +173,24 @@ internal val quranFont = FontFamily(Font(R.font.amiri))
 internal val accentColor = Color(0xFF2BB6A0)
 
 /**
- * Minimum glyph box edge, in the DB's 1024-wide page space, for a box to
+ * Minimum glyph box width, in the DB's 1024-wide page space, for a box to
  * count as a word body. Superscript and diacritic marks are stored as their
  * own glyph rows and are far smaller (median height 21px vs 70px).
  */
 private const val MIN_WORD_BOX = 20f
+
+/**
+ * Minimum glyph box HEIGHT for the same test, and the reason it is separate
+ * from the width. Measured over all 88,246 rows of ayahinfo_1024.db the height
+ * is cleanly bimodal: 4,359 rows are 23px tall or less (the marks), NO row is
+ * between 24 and 26, and the word bodies climb back to a mode at 57-58px. So
+ * the height separates the two populations across a real gap rather than a
+ * tuned constant. The width cannot do that job: 4,090 of the mark rows are
+ * 20-23px tall but narrower than [MIN_WORD_BOX], so the width is what used to
+ * reject them - and once the inverted rows are repaired (see [pairAyahBoxes])
+ * 37 more marks are 20-29px WIDE and only the height still rejects them.
+ */
+private const val MIN_WORD_H = 24f
 internal val wrongColor = Color(0xFFE0625A)
 internal val goldColor = Color(0xFFD9B36B)
 private val reciteBlue = Color(0xFF4A9EFF)
@@ -886,7 +902,14 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
     val decoder by vm.decoderState.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
-    val log by vm.diagLog.collectAsStateWithLifecycle()
+    // The live ring is the common case, but it is empty after process death -
+    // which is exactly when the persisted log is the only evidence there is.
+    // derivedStateOf reads from disk only while the live ring stays empty, and
+    // caches the moment this process emits anything, so it does not hit the
+    // filesystem on every recomposition.
+    val log by remember {
+        derivedStateOf { vm.diagLog.value.ifEmpty { vm.persistedDiag() } }
+    }
     var snap by remember { mutableStateOf(vm.engineFilesInfo()) }
     var micDb by remember { mutableStateOf(0f) }
     var micN by remember { mutableStateOf(0) }
@@ -909,7 +932,14 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
         if (snap.any { !it.present }) return "Missing engine files — push them via adb (commands on each row), then restart recitation."
         if (recording && micN > 0 && micDb < 0.005f) return "Mic delivers near-silence — check gain, distance, or another app holding the mic."
         if (micStalled) return "Mic stream frozen — stop and start recitation again."
-        if (recording && gate == "silence") return "Gate hears silence — recite louder or check VAD state above."
+        // The gate is fed by SherpaVad.feedAndDetect() (or the RMS fallback)
+        // and its per-frame verdict is folded straight into gateReason, never
+        // published, so name the gate that is actually running instead of
+        // pointing at a VAD row that does not exist.
+        if (recording && gate == "silence") {
+            val which = if (engineLabel.endsWith("/VAD")) "Silero VAD" else "RMS"
+            return "Gate hears silence — the $which gate is closed, so nothing reaches the decoder. Recite louder."
+        }
         if (recording && lastMatch == null) return "No ayah matched yet — recite the locked ayah clearly."
         return null
     }
@@ -927,6 +957,19 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
             }
             IconButton(onClick = { clipboard.setText(AnnotatedString(log.joinToString("\n"))) }) {
                 Icon(Icons.Filled.ContentCopy, "Copy log")
+            }
+            // The frame ring is what a lock-policy question is actually answered
+            // from: per frame it records the lock plus every coverage the
+            // decision was made on, including the ones that were rejected. Its
+            // header carries the thresholds, so a dump never has to hard-code
+            // the policy it was recorded under.
+            IconButton(onClick = { clipboard.setText(AnnotatedString(vm.frameRingDump())) }) {
+                Icon(Icons.Filled.Receipt, "Copy frame ring")
+            }
+            // Without this the rotated logs accumulate for the life of the
+            // install and "the log" stops meaning one debugging session.
+            IconButton(onClick = { vm.clearPersistedDiag() }) {
+                Icon(Icons.Filled.Delete, "Clear saved log")
             }
         }
         LazyColumn(
@@ -960,6 +1003,15 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                 DiagSection("Mic · ${"%.3f".format(micDb)} · $micN samples") {
                     DiagRow("Recording", if (recording) "yes" else "no")
                     DiagRow("Stalled", if (micStalled) "YES — restart recitation" else "no")
+                    // engineLabel is the only endpointing state the app
+                    // publishes: PracticeViewModel sets it once per session to
+                    // "zipformer/VAD" when SherpaVad.ensure() succeeded and
+                    // "zipformer/RMS" when it fell back. A per-frame VAD
+                    // readout would need feedAndDetect()'s Boolean? exposed as
+                    // its own StateFlow (it is consumed inline at
+                    // PracticeViewModel.kt:996 and discarded), and that file is
+                    // owned elsewhere.
+                    DiagRow("Endpointing", engineLabel.ifEmpty { "—" })
                 }
             }
             item {
@@ -970,7 +1022,6 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                     DiagRow("Gate", gate.ifEmpty { "—" })
                     DiagRow("Decoder", decoder.ifEmpty { "—" })
                     DiagRow("Stream", streamInfo.ifEmpty { "—" })
-                    DiagRow("Decoder", decoder.ifEmpty { "—" })
                     hint()?.let {
                         Spacer(Modifier.height(6.dp))
                         Text(it, fontSize = 13.sp, color = goldColor)
@@ -1572,6 +1623,158 @@ private object PageImageCache {
 
 private data class WordDraw(val rect: RectF, val style: WordStyle)
 
+/**
+ * U+06DE ARABIC START OF RUB EL HIZB (۞) and U+06E9 ARABIC PLACE OF SAJDAH
+ * (۩): the only two signs the layout folds into a word's text that the glyph
+ * DB also gives a full-size box of its own. 199 ayat carry a ۞ (always ahead
+ * of word 1) and 15 carry a ۩ (always behind its word). They are furniture,
+ * like the ayah-end roundel, so they belong to no word: never hidden, never
+ * highlighted.
+ */
+private const val ORNAMENT_RUB_EL_HIZB = 0x06DE
+private const val ORNAMENT_SAJDAH = 0x06E9
+
+/** A printed token ([SLOT_TOKEN]) or a recitation sign, in page reading order. */
+private const val SLOT_TOKEN = 0
+private const val SLOT_ORNAMENT = 1
+private const val SLOT_WAQF = 2
+
+private class PageSlot(val word: Int, val kind: Int)
+
+/**
+ * True when [t] is one of the recitation signs and not a printed token.
+ *
+ * mushaf.json splits a word's text on whitespace, and the nine sign codepoints
+ * U+06D6..U+06E9 only ever appear as a whitespace-separated part of their own
+ * - never inside a printed token (verified across all 77,429 words). So the
+ * whitespace split alone separates tokens from signs, with no guesswork about
+ * which Arabic codepoints are letters. Format characters (RLM, ZWNBSP, ALM)
+ * are ignored: 27:26 word 8 is "ٱلْعَظِيمِ ۩‏", with a trailing RLM glued to
+ * the ۩.
+ */
+private fun isSignToken(t: String): Boolean {
+    var sawSign = false
+    for (c in t) {
+        val v = c.code
+        if (v in 0x200B..0x200F || v == 0xFEFF || v == 0x061C) continue
+        if (v !in 0x06D6..0x06E9) return false
+        sawSign = true
+    }
+    return sawSign
+}
+
+/**
+ * Every printed token and sign of an ayah's words, in reading order.
+ *
+ * A word is not always one printed token: 'إِلْ يَاسِينَ' (37:130) and
+ * 'بَعْدَ مَا' (2:89 w3, 8:6 w4) are single verse words drawn as two, and the
+ * DB gives each its own box, so those words take two slots and their rect is
+ * the union.
+ */
+private fun pageSlots(texts: List<String>): List<PageSlot> {
+    val out = ArrayList<PageSlot>(texts.size)
+    for (wi in texts.indices) {
+        for (part in texts[wi].split(' ', '\t', '\n', '\u00A0', '\u2007', '\u202F')) {
+            if (part.isEmpty()) continue
+            out.add(
+                PageSlot(
+                    wi,
+                    when {
+                        !isSignToken(part) -> SLOT_TOKEN
+                        part.any { it.code == ORNAMENT_RUB_EL_HIZB || it.code == ORNAMENT_SAJDAH } -> SLOT_ORNAMENT
+                        else -> SLOT_WAQF
+                    },
+                ),
+            )
+        }
+    }
+    return out
+}
+
+/**
+ * Pair an ayah's words with the glyph DB boxes for that ayah, using the
+ * printed structure rather than box geometry.
+ *
+ * The DB stores one box per printed token in reading order, and the layout
+ * says what those tokens are, so the pairing is a straight zip. The only
+ * judgement is the count, and each branch below asserts it exactly:
+ *
+ *  - the ayah-end roundel is always the ayah's LAST box, so it is dropped
+ *    unconditionally - that can never remove a word body;
+ *  - `tokens + 1` boxes (the common case, 6,233 of 6,236 ayat): the DB boxed
+ *    exactly the ornaments, which belong to no word, so they are skipped;
+ *  - `tokens + 1 + signs` boxes: the DB also boxed every waqf sign. Measured
+ *    on exactly one ayah, 38:26, whose ۚ U+06DA got a 53x27px box;
+ *  - `tokens` boxes: the layout split a word the DB did not (5:52 w52
+ *    'دَآئِرَ ةٌۭ ۚ' and 13:37 w52), so the count is one short and the plain
+ *    positional zip is exact.
+ *
+ * Any other count means the DB and the layout disagree and nothing can be
+ * proven, so this returns null and the caller leaves the whole ayah unboxed.
+ * A word with no box is never hidden - it leaks, which is the safe direction:
+ * the alternative is guessing, and hide clips rects[i] per word, so one wrong
+ * box erases the word being recited and leaves the previous word lit.
+ *
+ * The area-ranked tiebreak this replaces dropped a real word box on 193 ayat
+ * (181 with a ۞, 12 with a ۩) and shifted 3,975 words.
+ */
+private fun pairAyahBoxes(all: List<RectF>, slots: List<PageSlot>, words: Int): List<RectF?>? {
+    // 2,190 of the DB's 88,246 rows store max_x < min_x, so the width comes
+    // out negative and the size test threw the row away. Repair the box before
+    // testing it. What the repair actually turns up is not lost words: 2,153
+    // of the 2,190 stay under the size test either way, and the 37 that now
+    // pass hold 20px of ink each against 1,111px for a real word body, i.e.
+    // they are diacritics. So the swap is what makes 37 marks newly eligible,
+    // and [MIN_WORD_H] is what keeps them out - without it those 37 leave 37
+    // ayat one box short.
+    val boxes = ArrayList<RectF>(all.size)
+    for (r in all) {
+        val x0 = min(r.left, r.right)
+        val x1 = max(r.left, r.right)
+        val y0 = min(r.top, r.bottom)
+        val y1 = max(r.top, r.bottom)
+        if (x1 - x0 >= MIN_WORD_BOX && y1 - y0 >= MIN_WORD_H) boxes.add(RectF(x0, y0, x1, y1))
+    }
+    if (boxes.isEmpty()) return null
+    val body = boxes.subList(0, boxes.size - 1)
+    var tokens = 0
+    var ornaments = 0
+    var signs = 0
+    for (s in slots) {
+        when (s.kind) {
+            SLOT_TOKEN -> tokens++
+            SLOT_ORNAMENT -> ornaments++
+            else -> signs++
+        }
+    }
+    val extra = body.size - tokens - ornaments
+    val seq = when {
+        extra == 0 -> slots.filter { it.kind != SLOT_WAQF }
+        extra == signs -> slots
+        // The layout split a word the DB did not; body.size == words means the
+        // positional zip is still exact and still drops only the roundel.
+        extra < 0 && body.size == words -> List(words) { PageSlot(it, SLOT_TOKEN) }
+        else -> return null
+    }
+    if (seq.size != body.size) return null
+    val out = arrayOfNulls<RectF>(words)
+    for (i in seq.indices) {
+        val s = seq[i]
+        if (s.kind != SLOT_TOKEN || s.word >= words) continue
+        val r = body[i]
+        val prev = out[s.word]
+        out[s.word] = if (prev == null) {
+            RectF(r)
+        } else {
+            RectF(
+                min(prev.left, r.left), min(prev.top, r.top),
+                max(prev.right, r.right), max(prev.bottom, r.bottom),
+            )
+        }
+    }
+    return out.asList()
+}
+
 private data class WordStyle(
     val fg: Color,
     val bg: Color,
@@ -1584,6 +1787,76 @@ private data class WordStyle(
 )
 
 private val amberColor = Color(0xFFE09112)
+
+/**
+ * The colour a masked word has to be filled with so the hole is invisible.
+ *
+ * Hide mode clips the hidden word rects OUT of the page, so those pixels end
+ * up showing whatever is UNDER the page rather than the page's own paper. A
+ * hardcoded fill cannot be right for both themes, so this samples the page.
+ *
+ * Two things were measured over the 604 runtime PNGs (murtraja images_1024,
+ * which is what AssetPaths.pageUrl fetches): they are palette images whose
+ * background is FULLY TRANSPARENT - on page 005, 1,497,455 of 1,695,744 pixels
+ * have alpha 0 - and their modal opaque colour is the black ink
+ * (0xFF000000), not paper. So "the dominant colour of the bitmap" is ink, and
+ * taking it literally would paint the mask black. What the page actually shows
+ * as paper is whatever its transparent pixels let through, so:
+ *
+ *  - if the page paints no paper of its own (the shipped PNGs), the paper IS
+ *    the page layer's own background, passed in as [under];
+ *  - if it does paint paper (an opaque-render variant of the same images), the
+ *    modal sampled colour is that page's paper, and in night mode it is put
+ *    through the same inversion the ink filter uses so the fill matches the
+ *    page it sits on instead of glowing white in a dark room.
+ */
+private fun pagePaper(bmp: ImageBitmap, under: Color, night: Boolean, ctx: android.content.Context): Color {
+    val grid = 24
+    val b = bmp.asAndroidBitmap()
+    val px = IntArray(grid * grid)
+    var opaque = 0
+    var i = 0
+    for (gy in 0 until grid) {
+        val y = (gy * (b.height - 1)) / (grid - 1)
+        for (gx in 0 until grid) {
+            val x = (gx * (b.width - 1)) / (grid - 1)
+            val p = b.getPixel(x, y)
+            px[i++] = p
+            if ((p ushr 24) >= 128) opaque++
+        }
+    }
+    if (opaque * 2 <= grid * grid) return under
+    // 5 bits per channel: enough to group the paper together while keeping
+    // the ink, which is orders of magnitude darker, in its own bucket.
+    val hist = HashMap<Int, Int>(256)
+    for (p in px) {
+        if ((p ushr 24) < 128) continue
+        hist[((p ushr 18) and 0x1F shl 10) or ((p ushr 10) and 0x1F shl 5) or ((p ushr 2) and 0x1F)] =
+            (hist[((p ushr 18) and 0x1F shl 10) or ((p ushr 10) and 0x1F shl 5) or ((p ushr 2) and 0x1F)] ?: 0) + 1
+    }
+    val key = hist.maxByOrNull { it.value }?.key ?: return under
+    var r = 0
+    var g = 0
+    var bl = 0
+    var n = 0
+    for (p in px) {
+        if ((p ushr 24) < 128) continue
+        val pr = (p ushr 16) and 0xFF
+        val pg = (p ushr 8) and 0xFF
+        val pb = p and 0xFF
+        if (((pr shr 2) shl 10) or ((pg shr 2) shl 5) or (pb shr 2) != key) continue
+        r += pr
+        g += pg
+        bl += pb
+        n++
+    }
+    if (n == 0) return under
+    val a = NightPalette.adjustedTextBrightness(
+        ReaderPrefs.textBrightness(ctx), ReaderPrefs.backgroundBrightness(ctx),
+    )
+    fun ch(v: Int) = (if (night) a - v else v).coerceIn(0, 255)
+    return Color(ch(r / n), ch(g / n), ch(bl / n))
+}
 
 private fun resolveLayer(
     st: WordStatus,
@@ -1717,9 +1990,21 @@ fun MushafPageView(
     }
 
     val allWords = remember(page.page) { page.lines.flatMap { it.words ?: emptyList() } }
+    // Printed tokens per ayah, from the layout text. Keyed on the page alone:
+    // the token list only changes when the page does, so it must not be rebuilt
+    // on every status tick like `draws` below.
+    val slotsByAyah = remember(page.page, allWords) {
+        allWords.groupBy { "${it.surah}:${it.verse}" }
+            .mapValues { (_, ws) -> pageSlots(ws.sortedBy { it.wordInVerse }.map { it.text }) }
+    }
     val cs = MaterialTheme.colorScheme
+    // Colour a masked word has to be filled with, sampled from the page itself
+    // so it is right for all 604 pages and both themes.
+    val paper = remember(page.page, bmp, night, cs.background) {
+        pagePaper(bmp, cs.background, night, ctx)
+    }
     val draws = remember(
-        page.page, statusMap, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow,
+        page.page, statusMap, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, slotsByAyah,
     ) {
         buildList {
             // Join on (sura, ayah, position) — NEVER on line numbers. Mushaf
@@ -1740,31 +2025,19 @@ fun MushafPageView(
                 .mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
             for ((ak, rectsAll) in byAyah) {
                 val words = wordsByAyah[ak] ?: continue
-                // The glyph DB stores superscript/diacritic marks as their own
-                // tiny rows (median height 21px vs 70px for a word body), and
-                // the ayah-end marker as the trailing position. Dropping the
-                // sub-20px marks first makes the word count exact, which is
-                // what makes the trailing-marker exclusion reliable: measured
-                // over all 604 pages, exact words+1 pairing rises from 72.1%
-                // to 96.5% of the 6,236 ayat.
-                val sized = rectsAll.filter { it.width() >= MIN_WORD_BOX && it.height() >= MIN_WORD_BOX }
-                val rects = when {
-                    sized.size == words.size + 1 -> sized.dropLast(1) // exclude marker
-                    sized.size > words.size + 1 -> {
-                        // Still surplus: keep the largest word-sized boxes and
-                        // restore glyph order, so the marker and marks fall off.
-                        val keep = sized.indices
-                            .sortedByDescending { sized[it].width() * sized[it].height() }
-                            .take(words.size + 1)
-                            .sorted()
-                        keep.map { sized[it] }.dropLast(1)
-                    }
-                    else -> sized
-                }
+                // One box per printed token, zipped against the layout's own
+                // token list: the roundel, the ۞ and the ۩ are then excluded
+                // because the layout says they are not words, never because
+                // they looked small. Returns exactly words.size rects, or null
+                // when the counts cannot be reconciled - see pairAyahBoxes.
+                val rects = pairAyahBoxes(rectsAll, slotsByAyah[ak] ?: emptyList(), words.size)
+                    ?: continue
                 for (i in words.indices) {
-                    // Best-effort prefix on count mismatch: map what aligns,
-                    // leave the rest without boxes rather than wrong boxes.
-                    val rect = rects.getOrNull(i) ?: continue
+                    // Null only if a word ended up with no token at all, which
+                    // the count branches rule out; keep the guard so an
+                    // unboxed word leaks rather than being drawn with a
+                    // neighbour's box.
+                    val rect = rects[i] ?: continue
                     val w = words[i]
                     val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
                     val st = statusMap[key]
@@ -1868,11 +2141,13 @@ fun MushafPageView(
                 Canvas(Modifier.fillMaxSize()) {
                     val sx = size.width / 1024f
                     val sy = size.height / 1656f
-                    // Hide mode: two-pass like quran_android's HighlightingImageView.
-                    // Pass 1 clips every hidden word rect OUT, then draws the page,
-                    // so holes show the parchment scaffold = truly invisible text,
-                    // never a white cover. Ayah markers and surah headers are not
-                    // word rects, so they stay printed as indicators.
+                    // Hide mode: like quran_android's HighlightingImageView, the
+                    // page is drawn ONCE with every hidden word rect clipped
+                    // OUT, so the ink is genuinely gone rather than covered -
+                    // which is why the holes then have to be repainted with the
+                    // page's own paper below. Ayah markers, surah headers and
+                    // the ۞/۩ ornaments are not word rects, so they stay
+                    // printed as indicators.
                     val dst = IntSize(size.width.toInt(), size.height.toInt())
                     // quran_android applies a single ColorMatrixColorFilter to the
                     // page: out = adjusted - in per channel, alpha preserved.
@@ -1891,10 +2166,29 @@ fun MushafPageView(
                         ))
                     } else null
                     if (hide) {
-                        // Clip hidden word rects OUT, then draw the page: those
-                        // pixels are never drawn (holes show the parchment),
-                        // then overlays draw unclipped below. Markers/headers
-                        // are not word rects, so they stay printed.
+                        // The Difference clip removes the page from every hidden
+                        // word rect, so those pixels are left showing whatever
+                        // is UNDER the page - which is the window colour, not
+                        // this page's paper, and in day mode that left a cream
+                        // rectangle the exact shape of every masked word. Paint
+                        // the page's own paper into each hole FIRST, outside the
+                        // clip, and the mask becomes invisible. Per rect rather
+                        // than one full-page fill because the page chrome the
+                        // Modifier's drawBehind laid down (the 1dp fold line and
+                        // the border stroke) lives in the page margins and has
+                        // to stay visible.
+                        for (d in draws) {
+                            if (!d.style.hidden) continue
+                            val r = d.rect
+                            drawRect(
+                                color = paper,
+                                topLeft = Offset(r.left * sx, r.top * sy),
+                                size = Size(r.width() * sx, r.height() * sy),
+                            )
+                        }
+                        // Then the page itself, minus the holes, then overlays
+                        // unclipped below. Markers, headers and the ۞/۩ are not
+                        // word rects, so they stay printed.
                         withTransform({
                             for (d in draws) {
                                 if (!d.style.hidden) continue
@@ -1917,10 +2211,18 @@ fun MushafPageView(
                             drawRect(d.style.tint, off, sz, alpha = d.style.tintAlpha)
                         }
                     }
-                    if (!hide) {
-                        playOrder.entries.firstOrNull { it.value == playHead }?.key
-                            ?.let { drawPlayHeadWord(it, allWords, lineGroups, sx, sy) }
-                    }
+                    // The play-head word is already painted by the loop above:
+                    // resolveLayer gives it HighlightLayer.AUDIO_WORD, which
+                    // resolveWordStyle tints gold at 0.70 with an outline in
+                    // both themes. The old drawPlayHeadWord() added a second,
+                    // un-clipped gold rect at 0.55 on top of that, and it could
+                    // never fire anyway: it looked the boxes up as
+                    // "s:q:${w.line}" while w.line is a 0-based text ordinal
+                    // and lineGroups is keyed by the DB's printed line_number
+                    // (min 1, no 0 rows), so the lookup missed on every page.
+                    // Any replacement has to read from `draws`, which carries
+                    // the corrected pairing, not from lineGroups, which would
+                    // reintroduce the box sequence this file just fixed.
                     drawRect(Color.Black.copy(alpha = 0.06f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f))
                 }
             }
@@ -1949,28 +2251,6 @@ fun MushafPageView(
             )
         }
     }
-}
-
-private fun DrawScope.drawPlayHeadWord(
-    key: String,
-    allWords: List<MushafWord>,
-    lineGroups: Map<String, List<RectF>>,
-    sx: Float,
-    sy: Float,
-) {
-    val w = allWords.firstOrNull { "${it.surah}:${it.verse}:${it.wordInVerse}" == key } ?: return
-    val lineKey = "${w.surah}:${w.verse}:${w.line}"
-    val rects = lineGroups[lineKey] ?: return
-    val lineWords = allWords.filter { it.line == w.line && it.surah == w.surah && it.verse == w.verse }
-    val idx = lineWords.indexOf(w)
-    if (idx < 0) return
-    val r = if (idx < rects.size) rects[idx] else rects.last()
-    drawRect(
-        goldColor,
-        Offset(r.left * sx, r.top * sy),
-        Size(r.width() * sx, r.height() * sy),
-        alpha = 0.55f,
-    )
 }
 
 @Composable
@@ -2008,7 +2288,14 @@ fun LineText(
         val style = resolveWordStyle(layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background)
         builder.pushStyle(
             SpanStyle(
-                color = style.fg,
+                // This fallback renders over the reader's tiled paper gradient
+                // (Reader's matBrush), NOT over colorScheme.background, so
+                // painting a hidden word in `background` left a cream block
+                // that stayed faintly legible. style.fg is only ever used for
+                // the glyphs, and hidden means no glyphs: keep the word's slot
+                // so the line stays justified and the word keeps its place in
+                // the recitation order, but draw it transparent.
+                color = if (style.hidden) Color.Transparent else style.fg,
                 background = style.bg,
                 fontWeight = if (style.bold) FontWeight.SemiBold else FontWeight.Normal,
                 textDecoration = if (style.strike) TextDecoration.LineThrough else null,

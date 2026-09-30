@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.iqra.quran.audio.AudioRecorder
@@ -25,6 +26,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
+import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _loading = MutableStateFlow(true)
@@ -82,46 +89,138 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _gateReason = MutableStateFlow("")
     val gateReason: StateFlow<String> = _gateReason
 
-    private val diagBuffer = ArrayDeque<Pair<Long, String>>()
+    /**
+     * The event ring, written by the recognition coroutine (IO) and by the
+     *  main thread (jump/anchor/resume).
+     *
+     *  This was a plain java.util.ArrayDeque, which is not thread-safe: a
+     *  resize during a concurrent add could silently drop or duplicate
+     *  events - the failure mode where the log simply omits the one line that
+     *  mattered. ConcurrentLinkedDeque makes the mutation safe from both
+     *  threads.
+     */
+    private val diagBuffer = ConcurrentLinkedDeque<String>()
     private val _diagLog = MutableStateFlow<List<String>>(emptyList())
     val diagLog: StateFlow<List<String>> = _diagLog
 
-    /** Ring-buffer diagnostic event: state changes + errors only, never
-     *  per-frame spam. Powers the diagnostics screen; no logcat needed. */
-    fun diag(msg: String) {
-        val t = (System.currentTimeMillis() / 1000) % 100000
-        diagBuffer.addLast(t to msg)
-        while (diagBuffer.size > 200) diagBuffer.removeFirst()
-        _diagLog.value = diagBuffer.map { (tt, m) -> "$tt $m" }
-        appendDiagFile(t, msg)
-    }
+    /**
+     * Disk writes run on their own thread with a BOUNDED queue.
+     *
+     *  Every diag() used to open/write/close the file inline, on the same
+     *  thread that feeds and decodes audio - so logging a lock move cost the
+     *  recogniser a file round-trip, worst exactly at the moments worth
+     *  logging. If the writer falls behind, lines are dropped and counted
+     *  (diagDropped, reported in the session summary) rather than allowed to
+     *  block the loop; diagnostics are not worth stalling recognition for.
+     */
+    private val diagDropped = java.util.concurrent.atomic.AtomicLong(0)
+    private val diagIo = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS,
+        LinkedBlockingQueue<Runnable>(256),
+        { r -> Thread(r, "iqra-diag") },
+        { _, _ -> diagDropped.incrementAndGet() },
+    )
 
     /**
-     * Mirror the event ring buffer to disk. The in-memory copy is lost on
-     * process death, which is exactly when you most want to read why a
-     * session went wrong - force-stopping the app used to erase the evidence.
+     * Ring-buffer diagnostic event: state changes + errors only, never
+     * per-frame spam (per-frame evidence lives in [frameRingDump]). Powers
+     * the diagnostics screen; no logcat needed.
+     *
+     *  The stamp keeps the wall-clock second for human reading and adds
+     *  SystemClock.elapsedRealtime(). The old stamp alone was second
+     *  resolution with no date and wrapped every ~27.8h, so a pulled log
+     *  could not be ordered and could not be split into sessions; the
+     *  monotonic component can. `g<sessionGen>` groups lines by session
+     *  across a restart.
      */
-    private fun appendDiagFile(t: Long, msg: String) {
+    fun diag(msg: String) {
+        val line = "${(System.currentTimeMillis() / 1000) % 100000}" +
+            ".${SystemClock.elapsedRealtime()} g$sessionGen $msg"
+        diagBuffer.addLast(line)
+        while (diagBuffer.size > DIAG_RING) diagBuffer.pollFirst()
+        _diagLog.value = ArrayList(diagBuffer)
         try {
-            val f = File(getApplication<Application>().filesDir, "diag.log")
-            if (f.length() > 512 * 1024) f.writeText("")
-            f.appendText("$t $msg\n")
+            diagIo.execute { appendDiagFile(line) }
+        } catch (_: RejectedExecutionException) {
+            // Only reachable after onCleared() shut the writer down.
+            diagDropped.incrementAndGet()
+        }
+    }
+
+    private fun diagFile(name: String) = File(getApplication<Application>().filesDir, name)
+
+    /**
+     * Mirror the event ring to disk. The in-memory copy is lost on process
+     * death, which is exactly when you most want to read why a session went
+     * wrong - force-stopping the app used to erase the evidence.
+     *
+     *  The file used to be WIPED outright once it passed 512 KiB, which
+     *  destroyed every prior session INCLUDING the one being debugged, with
+     *  no marker that anything had been lost. It rotates into numbered
+     *  archives instead, and stamps the build so two logs pulled from two
+     *  builds are not silently compared.
+     */
+    private fun appendDiagFile(line: String) {
+        try {
+            val f = diagFile(DIAG_FILE)
+            if (f.length() > DIAG_MAX_BYTES) rotateDiagFiles()
+            if (!f.exists()) {
+                val stamp = "# iqra-diag v1 build=${buildTag.ifEmpty { "?" }}" +
+                    " start=${System.currentTimeMillis()} kept=${DIAG_KEEP - 1}"
+                f.writeText("$stamp\n")
+            }
+            f.appendText(line + "\n")
         } catch (t2: Throwable) {
             // diagnostics must never break recognition
         }
     }
 
-    /** Previous session's events, newest last, for the diagnostics screen. */
+    /** diag.log -> diag.1.log -> ... -> diag.$DIAG_KEEP.log, oldest archive
+     *  first, so the sessions surrounding the one being debugged survive. */
+    private fun rotateDiagFiles() {
+        val cur = diagFile(DIAG_FILE)
+        if (!cur.exists()) return
+        for (i in DIAG_KEEP downTo 1) {
+            val a = diagFile("diag.$i.log")
+            if (i == DIAG_KEEP) {
+                a.delete()
+                continue
+            }
+            if (a.exists()) a.renameTo(diagFile("diag.${i + 1}.log"))
+        }
+        cur.renameTo(diagFile("diag.1.log"))
+    }
+
+    /**
+     * Earlier sessions' events, oldest first and newest last, for the
+     * diagnostics screen: the current file plus every rotated archive, so a
+     * process death still shows what the session that died was doing. This
+     * had no caller at all - the file was written for exactly the case
+     * (process death) that the screen then refused to show.
+     */
     fun persistedDiag(): List<String> = try {
-        val f = File(getApplication<Application>().filesDir, "diag.log")
-        if (f.isFile) f.readLines().takeLast(200) else emptyList()
+        val out = ArrayList<String>(DIAG_RING)
+        for (i in DIAG_KEEP downTo 1) collectDiagLines(diagFile("diag.$i.log"), out)
+        collectDiagLines(diagFile(DIAG_FILE), out)
+        out.takeLast(DIAG_RING)
     } catch (t: Throwable) {
         emptyList()
     }
 
+    private fun collectDiagLines(f: File, out: ArrayList<String>) {
+        if (!f.isFile) return
+        try {
+            f.forEachLine(Charsets.UTF_8) { out.add(it) }
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Clears the current file AND the archives: the old version emptied
+     *  only diag.log and left the rotated copies looking like live data. */
     fun clearPersistedDiag() {
         try {
-            File(getApplication<Application>().filesDir, "diag.log").writeText("")
+            diagFile(DIAG_FILE).delete()
+            for (i in 1..DIAG_KEEP) diagFile("diag.$i.log").delete()
         } catch (t: Throwable) {
         }
     }
@@ -156,10 +255,75 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun micSampleCount(): Int = recorder.sampleCount()
 
-    /** One-line streaming counters for the diagnostics screen. */
+    /**
+     * One-line streaming counters for the diagnostics screen.
+     *
+     *  SherpaZipformer.acceptedSamples and decodeCalls are process-lifetime
+     *  and never reset anywhere, so they were labelled `fed=` and kept
+     *  climbing across sessions: a dead second session still showed a large
+     *  rising number, which is the same "audio was flowing" illusion that
+     *  hid the dead-stream bug, still live on the screen. The lifetime pair
+     *  is now named `fedProc=` for what it is, and the honest session-scoped
+     *  count `fedSess` leads the line. fedSess is NOT fedTotal: that is
+     *  zeroed by every lock move (it is the clock of the current stream),
+     *  so it can never stand for a session.
+     */
     fun streamStats(): String =
-        "fed=${SherpaZipformer.acceptedSamples} toks=$lastEmitCount decodes=${SherpaZipformer.decodeCalls}" +
+        "fedSess=$sessionFed fedProc=${SherpaZipformer.acceptedSamples}" +
+            " toks=$lastEmitCount decodes=${SherpaZipformer.decodeCalls}" +
+            " fedStream=$fedTotal" +
             (SherpaZipformer.lastOpError?.let { " ERR=$it" } ?: "")
+
+    // ---- Per-frame lock-decision ring (offline replay evidence) ----
+    /**
+     * Every frame's lock-decision inputs, in preallocated fixed storage.
+     *
+     *  These values were computed and discarded every frame, so a session
+     *  could only be reconstructed from the event log - which records what
+     *  happened and never why. `lock` is the lock the decision was taken
+     *  ABOUT (not the post-move value), so nextCov/hereCov/backCov always
+     *  mean coverage of lock+1, lock and lock-1 respectively, whatever the
+     *  decision then did. A coverage of -1 means the column was not
+     *  computed on that frame's path.
+     */
+    private val frameRing = FrameRing(FRAME_RING)
+
+    /**
+     * The whole ring as TSV, oldest frame first, for offline replay. The
+     * header carries the policy that produced it - all seven lock
+     * thresholds BY NAME, the mic floor, the counters - so an analysis
+     * script never has to hard-code the tuning, and a dump from a retuned
+     * build cannot be misread against the previous build's thresholds.
+     */
+    fun frameRingDump(): String {
+        val sb = StringBuilder(FRAME_RING * 64 + 1024)
+        sb.append("#iqra-frame-ring v1")
+            .append(" build=").append(buildTag.ifEmpty { "?" })
+            .append(" surah=").append(activeSurah)
+            .append(" wpmEma=").append(f1(wpmEma))
+            .append(" noiseFloor=").append(f3(noiseFloor))
+            .append(" gateClosedFrames=").append(gateClosedFrames)
+            .append(" fedTotal=").append(fedTotal)
+            .append(" fedSess=").append(sessionFed)
+            .append(" sessionGen=").append(sessionGen)
+            .append(" ADVANCE_COVERAGE=").append(f3(ADVANCE_COVERAGE))
+            .append(" STRONG_COVERAGE=").append(f3(STRONG_COVERAGE))
+            .append(" WEAK_COVERAGE=").append(f3(WEAK_COVERAGE))
+            .append(" JUMP_COVERAGE=").append(f3(JUMP_COVERAGE))
+            .append(" BACK_COVERAGE=").append(f3(BACK_COVERAGE))
+            .append(" HANDOFF_COVERAGE=").append(f3(HANDOFF_COVERAGE))
+            .append(" STUCK_COVERAGE=").append(f3(STUCK_COVERAGE))
+            .append(" tags=0:decided,1:empty_slice,2:handoff")
+            .append(" tag2_nextCov_is=handoff_coverage")
+            .append(" rows=").append(frameRing.rowCount())
+            .append('/').append(FRAME_RING)
+            .append(" oldest_first tRel_ms=since_session_start")
+            .append('\n')
+        sb.append("#tRel\tsurah\tlock\tnextCov\thereCov\tbackCov\tjumpTo\tjumpCov")
+            .append("\tsyms\tobsN\tgen\ttag\n")
+        frameRing.appendRows(sb)
+        return sb.toString()
+    }
 
     private val _engineHint = MutableStateFlow<String?>(null)
     val engineHint: StateFlow<String?> = _engineHint
@@ -246,7 +410,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * left over from a previous session can never feed the stream that a newer
      * session just created.
      */
-    private var sessionGen = 0
+    @Volatile private var sessionGen = 0
+    /**
+     * Session accounting for the end-of-session summary. fedTotal is NOT one
+     * of these: advanceLockTo zeroes it on every move (it is the clock of the
+     * current stream), so a session total needs its own counter fed from the
+     * same place fedTotal is fed. gateClosedFrames is the time the silence
+     * gate rejected, which used to be time the decoder never saw - silent,
+     * and therefore indistinguishable from a decoder that had nothing.
+     */
+    private var sessionStartMono = SystemClock.elapsedRealtime()
+    private var sessionRan = false
+    private var sessionFed = 0L
+    private var gateClosedFrames = 0L
+    private var sessionMoves = 0
+    private var sessionReversals = 0
+    private var sessionBackMoves = 0
+    private var sessionJumps = 0
+    private var lastMoveDir = 0
     /** Absolute samples consumed from the recorder's cumulative buffer. Long,
      *  because that counter is Long and it keeps climbing for the life of the
      *  session. */
@@ -295,6 +476,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Recognition state ----
     private var wpmEma = 70.0
     private var lastAdvanceAt = 0L
+    /** Consecutive backward moves; reset by any forward move. Read by retreatAllowed. */
+    private var consecutiveRetreats = 0
     private val wrongStreak = mutableMapOf<String, Int>()
     /** Session verdicts per word key, retained when ayahs leave the active
      *  window so completed recitation stays visible (and stays revealed in
@@ -304,8 +487,31 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Advance the lock, measuring reciter speed from SPEECH-ACTIVE time on
      *  the finished ayah (wall silence excluded) so frame patience adapts
-     *  to slow/fast reciters instead of fixed counts. */
-    private fun advanceLockTo(next: Int, measureSpeed: Boolean = true) {
+     *  to slow/fast reciters instead of fixed counts.
+     *
+     *  `kind` labels the caller (advance / back / jump) purely for the move
+     *  counters the session summary reports. Every move in this file funnels
+     *  through here - forward, backward recovery and gated long jump alike -
+     *  so counting here is the only way the counters can agree with what the
+     *  lock actually did. */
+    /**
+     * A retreat needs a budget, not just evidence. Two guards: it may not happen
+     * within [MIN_RETREAT_GAP_MS] of the last lock move, and after
+     * [MAX_CONSECUTIVE_RETREATS] in a row the lock must move forward again.
+     *
+     * Without these the lock can shuffle 4 -> 3 -> 4 indefinitely. The replay
+     * harness reproduces exactly that on a real repetition
+     * (engine/replay/hesitation_policy.py, scenario `repeat`), and because each
+     * move rebases the emission slice the post-move `hereCov` is near-guaranteed
+     * to fall below STUCK_COVERAGE - so the gate is at its weakest exactly when
+     * the lock is most able to ping-pong.
+     */
+    private fun retreatAllowed(): Boolean {
+        if (System.currentTimeMillis() - lastAdvanceAt < MIN_RETREAT_GAP_MS) return false
+        return consecutiveRetreats < MAX_CONSECUTIVE_RETREATS
+    }
+
+    private fun advanceLockTo(next: Int, measureSpeed: Boolean = true, kind: String = "advance") {
         val prev = lockedAyah
         val now = System.currentTimeMillis()
         if (measureSpeed) {
@@ -319,6 +525,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         lastAdvanceAt = now
         speechFramesSinceAdvance = 0
         lockedAyah = next
+        // A reversal is a move whose direction differs from the previous
+        // move's: ping-ponging is exactly what the back-coverage gate exists
+        // to prevent, so the count is the evidence for whether it does.
+        val dir = if (next > prev) 1 else if (next < prev) -1 else 0
+        if (dir != 0) {
+            sessionMoves++
+            if (lastMoveDir != 0 && dir != lastMoveDir) sessionReversals++
+            lastMoveDir = dir
+        }
+        consecutiveRetreats = if (dir < 0) consecutiveRetreats + 1 else 0
+        if (kind == "back") sessionBackMoves++
+        if (kind == "jump") sessionJumps++
         _wpmFlow.value = wpmEma
         diag("lock $prev → $next")
         pendingNextAyah = null; pendingNextFrames = 0
@@ -372,6 +590,61 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // the endless reset loop. It is cleared when tokens actually arrive, and
         // at session start.
         diag("audio pipeline reset")
+    }
+
+    /**
+     * Per-session UI state, cleared at both ends of a session.
+     *
+     *  _lastMatch is written in exactly one place and was never cleared, so
+     *  after the first match of the process lifetime the "no ayah matched
+     *  yet" hint could never fire again and a stale pair from an earlier
+     *  session read as current evidence. _decoderState, _gateReason and
+     *  _wpmFlow had the same problem: they kept displaying the previous
+     *  session's "starved 42s" / "silence" / measured speed while a new
+     *  session was just starting.
+     */
+    private fun resetSessionUi() {
+        _lastMatch.value = null
+        _decoderState.value = "idle"
+        _gateReason.value = ""
+        _wpmFlow.value = SEED_WPM
+    }
+
+    /** Zero the per-session counters so a summary can never report a
+     *  previous session's moves. */
+    private fun resetSessionCounters() {
+        sessionFed = 0
+        gateClosedFrames = 0
+        sessionMoves = 0
+        sessionReversals = 0
+        sessionBackMoves = 0
+        sessionJumps = 0
+        lastMoveDir = 0
+    }
+
+    /**
+     * End-of-session summary, emitted from BOTH stopRecite paths.
+     *
+     *  stopRecite used to emit no diag() at all, and returned before
+     *  anything else when the session had not reached the recording state -
+     *  so a session cancelled while still preparing was completely silent,
+     *  and a truncated session and a complete one produced structurally
+     *  identical logs. `ran=no` is what tells the two apart, and `reason`
+     *  is always one of: user stop, jump, preparing-cancelled.
+     */
+    private fun endSession(reason: String, via: String) {
+        val dur = if (sessionRan) SystemClock.elapsedRealtime() - sessionStartMono else 0L
+        diag(
+            "session end reason=$reason via=$via ran=${if (sessionRan) "yes" else "no"}" +
+                " durMs=$dur moves=$sessionMoves reversals=$sessionReversals" +
+                " back=$sessionBackMoves jumps=$sessionJumps" +
+                " lock=${activeSurah}:${lockedAyah}" +
+                " fed=$sessionFed fedStream=$fedTotal" +
+                " gateClosed=$gateClosedFrames frames=${frameRing.rowCount()}" +
+                " diagDropped=${diagDropped.get()}"
+        )
+        sessionRan = false
+        resetSessionCounters()
     }
 
     /** Build per-ayah word + page maps for a surah. The page always follows the
@@ -438,7 +711,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     fun jumpToPage(page: Int) {
         // Unconditional: navigating away must also cancel a session that is
         // still preparing, not just one that is already recording.
-        stopRecite()
+        stopRecite("jump")
         val (s, a) = anchorForPage(page) ?: return
         loadSurah(s)
         lockedAyah = a
@@ -651,8 +924,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         refreshWindow()
         pendingNextAyah = null
         pendingNextFrames = 0
-        wpmEma = 70.0
+        wpmEma = SEED_WPM
         lastAdvanceAt = System.currentTimeMillis()
+        resetSessionUi()
+        resetSessionCounters()
+        // The frame ring is emptied per session: frameRingDump() has no
+        // session argument, so a dump taken after a cancelled session would
+        // otherwise present that session's frames under the NEW
+        // sessionGen in the header - stale evidence wearing a current
+        // header, the exact illusion this work exists to remove.
+        frameRing.clear()
             wrongStreak.clear()
             sessionStatuses.clear()
             _statusMap.value = emptyMap()
@@ -667,6 +948,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val vadReady = SherpaVad.ensure(getApplication())
             if (!ensureVoice()) return@launch
             if (gen != sessionGen) return@launch
+            SherpaZipformer.resetCounters()
+            // The session exists from here on. A failure in the mic, the
+            // floor probe or the loop still has to leave a record, and the
+            // summary from stopRecite says how long it lasted and how much
+            // audio it really fed - a session that died at mic start is
+            // "ran=yes durMs=3 fed=0", not silence.
+            sessionStartMono = SystemClock.elapsedRealtime()
+            sessionRan = true
             fedAbs = 0
             fedTotal = 0
             streamBaseSec = 0f
@@ -674,7 +963,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             starvedRecoveries = 0
             speechFramesSinceAdvance = 0
             _engineLabel.value = "zipformer/" + (if (vadReady) "VAD" else "RMS")
-            diag("session start s=$activeSurah lock=$lockedAyah engine=${_engineLabel.value}")
+            // build= in the first line of every session: a log pulled off a
+            // device is otherwise unattributable to a build.
+            diag("session start s=$activeSurah lock=$lockedAyah build=$buildTag engine=${_engineLabel.value}")
             var micOk = true
             withContext(Dispatchers.Main) {
                 try {
@@ -730,6 +1021,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val quiet = rms(fresh) < noiseFloor
                 val vadSilent = if (vadReady) SherpaVad.feedAndDetect(fresh)?.not() else null
                 if (quiet && vadSilent != false) {
+                    // Time with the gate closed is time the recogniser never
+                    // saw, and it used to leave no trace at all: a session
+                    // that spent 90s in silence-gate rejection and one that
+                    // spent 90s feeding a decoder produced the same log.
+                    gateClosedFrames++
                     _gateReason.value = "silence"
                     continue
                 }
@@ -766,6 +1062,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val fedThisFrame = SherpaZipformer.accept(fresh)
             if (fedThisFrame) {
                 fedTotal += fresh.size
+                // Session-scoped twin of fedTotal. fedTotal is zeroed by every
+                // lock move, so it cannot answer "how much audio did THIS
+                // session feed" - which is the question the diagnostics
+                // screen was really asking while showing fedTotal's stale
+                // process-lifetime number instead.
+                sessionFed += fresh.size
                 tailBuf = (tailBuf + fresh).takeLast(TAIL_SAMPLES).toFloatArray()
             }
             // Decode ONLY when sherpa reports ready: forcing decode with
@@ -826,7 +1128,28 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             }
             val base = sliceStart.coerceAtMost(res.symbols.size)
             val obs = res.symbols.drop(base)
-            if (obs.isEmpty()) return
+            if (obs.isEmpty()) {
+                // The evidence a pending streak was armed on is gone: every
+                // symbol is behind the slice. Leaving the counters armed let a
+                // streak survive the rebase and complete on a later, unrelated
+                // frame - which is how "2 consecutive frames" stopped meaning
+                // 2 consecutive frames.
+                pendingNextAyah = null; pendingNextFrames = 0
+                pendingBackAyah = null; pendingBackFrames = 0
+                // Recorded rather than skipped. The decoder produced
+                // symbols, but every one of them was behind the slice, so
+                // the lock policy never ran. This frame bypasses the
+                // decision block below, and a silent gap would be
+                // indistinguishable in a dump from the policy declining to
+                // move - a different fault with a different fix.
+                frameRing.add(
+                    SystemClock.elapsedRealtime() - sessionStartMono,
+                    activeSurah, lockedAyah,
+                    -1f, -1f, -1f, 0, -1f,
+                    res.symbols.size, 0, sessionGen, TAG_EMPTY_SLICE,
+                )
+                return
+            }
             val obsProbs = res.probs.drop(base)
             val obsTs = res.timestamps.drop(base)
             val audioSec = streamBaseSec + fedTotal / 16000f
@@ -848,9 +1171,27 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         lockedAyah = 1
                         rebaseSlice = true
                         lastAdvanceAt = System.currentTimeMillis()
+                        // The pending counters are keyed on an ayah NUMBER, not
+                        // (surah, ayah), and the handoff changed the surah. A
+                        // stale pendingNextFrames=1 for ayah 2 of the OLD surah
+                        // therefore matched ayah 2 of the NEW one and a single
+                        // qualifying frame advanced the lock.
+                        pendingNextAyah = null; pendingNextFrames = 0
+                        pendingBackAyah = null; pendingBackFrames = 0
                         resetAudioPipeline()
                         refreshWindow()
                         diag("handoff → s=${activeSurah}:1 coverage=${"%.2f".format(cov)}")
+                        // Second early return around the decision block, and
+                        // the one that changes the world. surah and lock in
+                        // this row are already the NEW surah's, and nextCov
+                        // carries the handoff coverage that triggered it (see
+                        // the frameRingDump header).
+                        frameRing.add(
+                            SystemClock.elapsedRealtime() - sessionStartMono,
+                            activeSurah, lockedAyah,
+                            cov, -1f, -1f, 0, -1f,
+                            res.symbols.size, obs.size, sessionGen, TAG_HANDOFF,
+                        )
                         return
                     }
                 }
@@ -874,6 +1215,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             ).maxByOrNull { it.second }
             if (best != null) _lastMatch.value = best.first to best.second.toDouble()
             val needFrames = if (wpmEma < 50) 3 else 2
+            // The lock this frame's coverages were measured against. Captured
+            // before anything can move it, because the forward/back blocks
+            // below do: recording lockedAyah afterwards would file a frame's
+            // coverages under an ayah the policy never saw.
+            val lockAtDecision = lockedAyah
 
             // Forward: the next ayah is sufficiently covered.
             if (nextCov >= ADVANCE_COVERAGE) {
@@ -894,7 +1240,22 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
             // Gated long jump: the reciter skipped ahead. Kept deliberately -
             // only when the evidence is near-total and the target is on screen.
-            if (nextCov < ADVANCE_COVERAGE) {
+            // The candidate is hoisted out of the lambda and the page gate so
+            // the frame ring can record it: without this the jump is invisible
+            // in a dump whenever the page gate REJECTED it, which is precisely
+            // the case worth arguing about.
+            //
+            // The hereCov gate is not decoration. Coverage is
+            // unitsMatched/unitsTotal, so it cannot tell a SKIPPED ayah from a
+            // NESTED one: Al-Fatiha 1:3's units are a subsequence of 1:1's, so
+            // while the reciter is still on 1:1 the candidate 1:3 already scores
+            // 1.00. Without this gate the jump fired on clean audio and skipped
+            // 1:2 outright. Requiring the locked ayah to look un-recited is the
+            // same evidence the backward branch demands, and it is the only
+            // thing that separates the two cases.
+            var jumpAyah = 0
+            var jumpCov = -1f
+            if (nextCov < ADVANCE_COVERAGE && hereCov < STUCK_COVERAGE) {
                 val ahead = verseWords.keys.filter { it > lockedAyah + 1 }
                     .mapNotNull { a ->
                         PhonemeMapper.expected(activeSurah, a)?.let { a to PhonemeMapper.align(obs, it).coverage }
@@ -902,9 +1263,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     .filter { it.second >= JUMP_COVERAGE }
                     .minByOrNull { it.first }
                 if (ahead != null) {
+                    jumpAyah = ahead.first
+                    jumpCov = ahead.second
                     val p = versePage[ahead.first]
                     if (p == null || p in (pageNumber - 1..pageNumber + 1)) {
-                        advanceLockTo(ahead.first, measureSpeed = false)
+                        advanceLockTo(ahead.first, measureSpeed = false, kind = "jump")
                     }
                 }
             }
@@ -916,25 +1279,58 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val backAyah = lockedAyah - 1
             val backExp = PhonemeMapper.expected(activeSurah, backAyah)
             val backCov = if (backExp != null) PhonemeMapper.align(obs, backExp).coverage else 0f
-            if (backCov >= BACK_COVERAGE && hereCov < STUCK_COVERAGE) {
+            // hereCov describes the lock as it stood when the frame began. If the
+            // forward or jump block has already moved it, "is the lock stuck?" is
+            // being asked about an ayah the policy has already left, so the
+            // retreat is not evaluated at all. This also makes a same-frame
+            // reversal structurally impossible.
+            val lockHeld = lockedAyah == lockAtDecision
+            val wantRetreat = lockHeld && backCov >= BACK_COVERAGE && hereCov < STUCK_COVERAGE
+            if (wantRetreat) {
+                // Speed-scaled like the forward path, which asks for more
+                // evidence from a slow reciter rather than a fixed count.
+                val needBack = if (wpmEma < 50) 3 else 2
                 if (pendingBackAyah == backAyah) {
                     pendingBackFrames++
-                    if (pendingBackFrames >= 2) {
-                        advanceLockTo(backAyah, measureSpeed = false)
+                    if (pendingBackFrames >= needBack && retreatAllowed()) {
+                        advanceLockTo(backAyah, measureSpeed = false, kind = "back")
                         pendingBackAyah = null; pendingBackFrames = 0
                     }
                 } else {
                     pendingBackAyah = backAyah
                     pendingBackFrames = 1
                 }
+            } else if (backCov >= BACK_COVERAGE) {
+                // Contradictory: the ayah behind scores well AND so does the
+                // locked one, so nothing is being decided. Hard reset, matching
+                // how the forward path treats middling evidence. A leaky
+                // decrement let a single good frame two polls later complete a
+                // streak that was armed before the slice rebased.
+                pendingBackAyah = null; pendingBackFrames = 0
             } else if (pendingBackFrames > 0) {
                 pendingBackFrames--
             }
 
+            // The lock decision is complete: record its inputs and the state
+            // they produced. Placed after the backward block and before the
+            // repeat hook, the last point at which every column is in scope
+            // and nothing has yet moved the lock for an unrelated reason.
+            frameRing.add(
+                SystemClock.elapsedRealtime() - sessionStartMono,
+                activeSurah, lockAtDecision,
+                nextCov, hereCov, backCov,
+                jumpAyah, jumpCov,
+                res.symbols.size, obs.size, sessionGen, TAG_DECIDED,
+            )
+
             // Repeat practice hook.
             val rep = repeatAyah
             if (rep != null) {
-                if (activeSurah == rep.first && lockedAyah > rep.second && repeatLeftCount > 0) {
+                // `>=` not `>`: the counter used to decrement only once the lock
+                // had already moved PAST the target, so a reciter who could not
+                // get past it - precisely the case repeat practice exists for -
+                // never saw the repeat count fall.
+                if (activeSurah == rep.first && lockedAyah >= rep.second && repeatLeftCount > 0) {
                     repeatLeftCount--
                     _repeatLeft.value = repeatLeftCount
                     lockedAyah = rep.second
@@ -970,12 +1366,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     val key = keyOf(ws[i])
                     var s = al.statuses.getOrElse(i) { WordStatus.SKIPPED }
                     if (s == WordStatus.WRONG) {
-                        // Confident disagreement only: low model confidence
-                        // stays neutral instead of flashing red.
-                        val conf = al.wordProb.getOrElse(i) { 0f }
-                        if (a != lockedAyah || conf < 0.5f) {
-                            s = WordStatus.SKIPPED
-                        }
+                        // WRONG is only claimed for the ayah the lock is on, and
+                        // only for as long as it persists (see the streak below).
+                        //
+                        // There is deliberately no model-confidence test here
+                        // any more. sherpa-onnx returns an EMPTY ys_probs for
+                        // streaming CTC with greedy_search - the beam decoders
+                        // that populate it are unreachable for this model - so
+                        // the old `conf < 0.5f` was permanently true and the
+                        // whole WRONG verdict was silently dead code on device.
+                        // A gate that can never pass is worse than no gate: it
+                        // looks like a safety measure while disabling a
+                        // feature. The replacement is the streak plus an
+                        // alignment that word_rule_sweep.py measures at zero
+                        // collateral over 154 real word observations.
+                        if (a != lockedAyah) s = WordStatus.SKIPPED
                     }
                     if (a == lockedAyah && s == WordStatus.WRONG) {
                         val streak = (wrongStreak[key] ?: 0) + 1
@@ -991,7 +1396,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     // Retain CORRECT only for ayat BEHIND the lock (done work).
                     // WRONG is never retained anywhere: recomputed live every
                     // frame, so stale red can never freeze. Ahead-of-lock
-                    // words are always recomputed live, never kept.
+                    // words are recomputed live, never kept - EXCEPT after a
+                    // retreat, where the reciter is simply going back over
+                    // something they already recited correctly. Dropping those
+                    // marks repainted the whole ayah from an emission slice
+                    // that no longer contained it, i.e. SKIPPED, which draws as
+                    // red strikethrough: a wall of errors for an ayah that was
+                    // said perfectly. Going back is a cursor move, not a
+                    // retraction.
                     if (a < lockedAyah && s == WordStatus.CORRECT) {
                         sessionStatuses[key] = s
                     } else if (a == lockedAyah) {
@@ -1003,6 +1415,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         } else {
                             sessionStatuses.remove(key)
                         }
+                    } else if (lastMoveDir < 0 && s == WordStatus.CORRECT &&
+                        sessionStatuses[key] == WordStatus.CORRECT
+                    ) {
+                        sessionStatuses[key] = s
                     } else {
                         sessionStatuses.remove(key)
                     }
@@ -1052,17 +1468,33 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun stopRecite() {
+    /**
+     * End a session. `reason` is the caller's intent ("user stop", "jump");
+     * a session that was still preparing when it was cancelled reports
+     * "preparing-cancelled" and names the caller in `via`.
+     *
+     *  Both paths emit the session summary and both clear the per-session
+     *  UI state. The old version emitted nothing and returned early, so a
+     *  session cancelled while preparing left no record at all and a
+     *  truncated session was indistinguishable from a complete one.
+     */
+    fun stopRecite(reason: String = "user stop") {
         // Retire the session even if it never reached the recording state: a
         // session that is still preparing would otherwise carry on and start
         // recording after the user had already moved on.
         sessionGen++
         cancelRepeat()
         SherpaZipformer.closeStream()
-        if (!_recording.value) return
+        if (!_recording.value) {
+            resetSessionUi()
+            endSession("preparing-cancelled", reason)
+            return
+        }
         _recording.value = false
         recorder.stop()
         _activeVerse.value = null
+        resetSessionUi()
+        endSession(reason, "recite")
     }
 
     // ---- Reference recitation audio (stream-on-tap, nothing bundled) ----
@@ -1147,6 +1579,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         stopPlayback()
+        // Queued lines still flush (shutdown() is not shutdownNow()), then
+        // diag() starts counting rejections instead of writing.
+        diagIo.shutdown()
         SherpaZipformer.close()
         SherpaVad.close()
         super.onCleared()
@@ -1160,6 +1595,23 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         private const val MAX_STARVATION_RECOVERIES = 3
         // Below this RMS the rolling window is effectively silence -> skip decoding.
         private const val SILENCE_RMS = 0.0025f
+        /** Neutral speed estimate a session starts from, and the value the
+         *  wpm readout returns to between sessions. */
+        private const val SEED_WPM = 70.0
+        /** In-memory diagnostic events kept for the screen. */
+        private const val DIAG_RING = 200
+        private const val DIAG_FILE = "diag.log"
+        /** Rotation size for the diag log. Sessions are no longer destroyed
+         *  wholesale at this point; the newest DIAG_KEEP-1 archives survive. */
+        private const val DIAG_MAX_BYTES = 512L * 1024
+        private const val DIAG_KEEP = 3
+        /**
+         * Per-frame lock-decision rows retained. The poll is 250ms, so 4000
+         * rows is ~16 minutes of a continuous session - long enough to cover
+         * the point where a lock stopped following the reciter, in about
+         * 250KB of text.
+         */
+        private const val FRAME_RING = 4000
 
         // Lock thresholds are COVERAGE: the fraction of a candidate ayah's
         // phoneme units that the emission slice accounts for. Calibrated by
@@ -1174,7 +1626,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         private const val HANDOFF_COVERAGE = 0.60f
         // The lock only yields BACKWARDS when the ayah it holds is clearly not
         // what is being recited. Without this the lock ping-pongs mid-session.
+        // It doubles as the long jump's "the lock is not being recited" test,
+        // which is what stops the jump from firing on a NESTED ayah: Al-Fatiha
+        // 1:3 is a subsequence of 1:1, so its coverage saturates at 1.00 while
+        // the reciter is still on 1:1.
         private const val STUCK_COVERAGE = 0.35f
+        /** Minimum gap between a lock move and a retreat. At ~1 ayah per 4s of
+         *  recitation this only bites on oscillation, never on a real pause. */
+        private const val MIN_RETREAT_GAP_MS = 1500L
+        /** Consecutive retreats allowed before the lock must move forward. */
+        private const val MAX_CONSECUTIVE_RETREATS = 2
     }
 }
 
@@ -1183,4 +1644,104 @@ private fun rms(samples: FloatArray): Float {
     var sum = 0.0
     for (v in samples) sum += v * v.toDouble()
     return Math.sqrt(sum / samples.size).toFloat()
+}
+
+/** Locale.US on every conversion: the dump is TSV, and a comma decimal
+ *  separator in a locale like de-DE would put a delimiter inside a field. */
+private fun f1(v: Double): String = String.format(Locale.US, "%.1f", v)
+private fun f3(v: Float): String = String.format(Locale.US, "%.3f", v)
+
+// FrameRing row tags. Only tag 0 is a frame the lock policy actually judged;
+// the other two mark the frames that bypass it, which are exactly the frames
+// whose absence from a dump would be read as "the policy did nothing".
+private const val TAG_DECIDED = 0
+private const val TAG_EMPTY_SLICE = 1
+private const val TAG_HANDOFF = 2
+
+/**
+ * Fixed-capacity circular store of the per-frame lock decision.
+ *
+ *  Preallocated primitive arrays and index-only writes: this is written from
+ *  the recognition loop 4x a second, and a row object per frame is exactly
+ *  the per-frame allocation the emission slice was rebuilt to avoid. The
+ *  writer is the recognition coroutine and the reader is the UI thread
+ *  taking a dump, so every method is synchronized; the window is far too
+ *  short for that to matter next to a decode.
+ */
+private class FrameRing(private val cap: Int) {
+    /** tRel: ms since session start. */
+    private val tRelMs = LongArray(cap)
+
+    /** Packed ints, 7 per row: surah, lock, jumpTo, syms, obsN, gen, tag. */
+    private val ints = IntArray(cap * 7)
+
+    /** Coverages, 4 per row: nextCov, hereCov, backCov, jumpCov. */
+    private val cov = FloatArray(cap * 4)
+
+    /** Next write slot; the oldest row is (head - rows) mod cap. */
+    private var head = 0
+    private var rows = 0
+
+    @Synchronized
+    fun clear() {
+        head = 0
+        rows = 0
+    }
+
+    @Synchronized
+    fun rowCount(): Int = rows
+
+    @Synchronized
+    fun add(
+        tRel: Long,
+        surah: Int, lock: Int,
+        nextCov: Float, hereCov: Float, backCov: Float,
+        jumpTo: Int, jumpCov: Float,
+        syms: Int, obsN: Int,
+        gen: Int, tag: Int,
+    ) {
+        val i = head
+        tRelMs[i] = tRel
+        val b = i * 7
+        ints[b] = surah
+        ints[b + 1] = lock
+        ints[b + 2] = jumpTo
+        ints[b + 3] = syms
+        ints[b + 4] = obsN
+        ints[b + 5] = gen
+        ints[b + 6] = tag
+        val c = i * 4
+        cov[c] = nextCov
+        cov[c + 1] = hereCov
+        cov[c + 2] = backCov
+        cov[c + 3] = jumpCov
+        head = if (head + 1 == cap) 0 else head + 1
+        if (rows < cap) rows++
+    }
+
+    /** Oldest row first, so the dump reads in the order it happened. */
+    @Synchronized
+    fun appendRows(sb: StringBuilder) {
+        // head - rows can go negative once the ring has wrapped, and a
+        // negative index here would be an ArrayIndexOutOfBounds rather than
+        // the oldest row.
+        val start = if (head >= rows) head - rows else head + cap - rows
+        for (k in 0 until rows) {
+            val i = if (start + k < cap) start + k else start + k - cap
+            val b = i * 7
+            val c = i * 4
+            sb.append(tRelMs[i]).append('\t')
+            sb.append(ints[b]).append('\t')
+            sb.append(ints[b + 1]).append('\t')
+            sb.append(f3(cov[c])).append('\t')
+            sb.append(f3(cov[c + 1])).append('\t')
+            sb.append(f3(cov[c + 2])).append('\t')
+            sb.append(ints[b + 2]).append('\t')
+            sb.append(f3(cov[c + 3])).append('\t')
+            sb.append(ints[b + 3]).append('\t')
+            sb.append(ints[b + 4]).append('\t')
+            sb.append(ints[b + 5]).append('\t')
+            sb.append(ints[b + 6]).append('\n')
+        }
+    }
 }

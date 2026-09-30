@@ -14,7 +14,12 @@ android {
         ndk {
             // arm64 only: the 32-bit phone is retired, and shipping a second
             // ABI costs ~26 MB of native libs on every download.
-            abiFilters += listOf("arm64-v8a")
+            //
+            // -PemulatorAbi=true adds x86_64 for LOCAL testing on the x86_64 AVD,
+            // which the arm64-only APK otherwise cannot install on. It is opt-in
+            // and off by default, so the released artifact is unchanged.
+            val emulatorAbi = providers.gradleProperty("emulatorAbi").orNull == "true"
+            abiFilters += if (emulatorAbi) listOf("arm64-v8a", "x86_64") else listOf("arm64-v8a")
         }
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = "0.1.0"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dump the sherpa-onnx streaming token stream for a 16k f32le .raw file.
+"""Dump the sherpa-onnx streaming token stream for a 16 kHz f32le .raw file.
 
 This is the AUDIO -> TOKENS front end only. All matching, scoring and lock
 logic lives in the Kotlin engine-core module, which consumes the JSON this
@@ -12,6 +12,33 @@ Mirrors the app's SherpaZipformer config exactly:
 Two cadences are supported so the "decoder starved" hypothesis can be tested:
   --frame-ms 250  replicates the app's 4 Hz poll (one decode per frame)
   --frame-ms  20  high-rate ingest (the Phase 2 fix)
+
+PER-TOKEN PROBABILITY - MEASURED, NOT AVAILABLE
+----------------------------------------------
+Every emission used to carry `"prob": -1.0`, which looked like a short read
+of `ys_probs` but is not: sherpa-onnx 1.13.8 returns an EMPTY ys_probs for
+this recogniser. Verified three ways:
+
+  * `recognizer.get_result_all(stream).ys_probs == []` and
+    `lm_probs == []` after a full decode, while `tokens` and `timestamps`
+    are both populated; `as_json_string()` serialises `"ys_probs": []`.
+  * `OnlineRecognizer.from_zipformer2_ctc` documents
+    `decoding_method: "The only valid value is greedy_search"`
+    (online_recognizer.py:582), so the beam searchers that populate
+    ys_probs are not reachable for this model.
+  * The C API's streaming result struct `SherpaOnnxOnlineRecognizerResult`
+    (c-api.h:403-431) has `text`, `tokens`, `timestamps`, `count`, `json` -
+    no probability array at all. Only the OFFLINE result carries
+    `ys_log_probs` (c-api.h:1512).
+
+So `"prob"` is now written as JSON `null`, with a top-level
+`ys_probs_available: false` and a reason string, instead of a `-1.0` that
+reads like a number. Nothing in this repo consumed it.
+
+CONSEQUENCE FOR THE APP (reported, not worked around here): the app gates
+WRONG on `wordProb` (PracticeViewModel.kt:968-975). `PhonemeMapper` leaves
+wordProb at -1f when probs is empty, and `conf < 0.5f` is then always true,
+so the gate can never pass and WRONG is unreachable with this recogniser.
 """
 import argparse
 import json
@@ -24,6 +51,12 @@ import sherpa_onnx
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_WEIGHTS = os.path.join(HERE, "..", "shootout", "weights", "zipformer")
+
+YS_PROBS_REASON = (
+    "sherpa-onnx returns an empty ys_probs for streaming CTC greedy_search: "
+    "the OnlineRecognizerResult C struct has no probability array (only the "
+    "offline result does), and from_zipformer2_ctc accepts no decoding_method "
+    "other than greedy_search")
 
 
 def read_raw(path):
@@ -42,6 +75,15 @@ def read_result(recognizer, stream):
     return toks, tss, probs
 
 
+def _prob_at(probs, i):
+    """Per-token chosen probability, or None when the recogniser does not
+    expose one. Never a sentinel number: -1.0 was read downstream as a real
+    score."""
+    if i < len(probs):
+        return float(probs[i])
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("raw", help="16k f32le .raw file")
@@ -51,6 +93,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--label", default=None)
     ap.add_argument("--threads", type=int, default=max(1, (os.cpu_count() or 2) // 2))
+    ap.add_argument("--require-probs", action="store_true",
+                    help="exit non-zero if the recogniser exposes no "
+                         "per-token probability")
     args = ap.parse_args()
 
     samples = read_raw(args.raw)
@@ -72,6 +117,7 @@ def main():
     ready_calls = 0
     emitted = []          # every token the model ever produced, in order
     last_count = 0
+    max_probs_seen = 0
     t0 = time.time()
     last_token_wall = t0
 
@@ -89,6 +135,7 @@ def main():
             # The Python binding exposes tokens/timestamps/probs as separate
             # accessors (Kotlin's getResult returns them as one object).
             toks, tss, probs = read_result(recognizer, stream)
+            max_probs_seen = max(max_probs_seen, len(probs))
             # enableEndpoint=false => these are the WHOLE hypothesis since the
             # last reset, so novelty is a length comparison.
             if len(toks) != last_count:
@@ -99,8 +146,8 @@ def main():
                             "frame": frames,
                             "audio_sec": round(fed / 16000.0, 3),
                             "symbol": toks[i],
-                            "ts": float(tss[i]) if i < len(tss) else -1.0,
-                            "prob": float(probs[i]) if i < len(probs) else -1.0,
+                            "ts": float(tss[i]) if i < len(tss) else None,
+                            "prob": _prob_at(probs, i),
                         }
                     )
                 last_count = len(toks)
@@ -113,6 +160,7 @@ def main():
         decode_calls += 1
         recognizer.decode_stream(stream)
         toks, tss, probs = read_result(recognizer, stream)
+        max_probs_seen = max(max_probs_seen, len(probs))
         if len(toks) != last_count:
             for i in range(last_count, len(toks)):
                 emitted.append(
@@ -121,8 +169,8 @@ def main():
                         "frame": frames,
                         "audio_sec": round(fed / 16000.0, 3),
                         "symbol": toks[i],
-                        "ts": float(tss[i]) if i < len(tss) else -1.0,
-                        "prob": float(probs[i]) if i < len(probs) else -1.0,
+                        "ts": float(tss[i]) if i < len(tss) else None,
+                        "prob": _prob_at(probs, i),
                     }
                 )
             last_count = len(toks)
@@ -153,6 +201,9 @@ def main():
         "tokens_at_or_after_80pct": sum(1 for e in emitted if e["audio_sec"] >= 0.8 * total_sec),
         "realtime_factor": round(wall / total_sec, 4) if total_sec else 0.0,
         "wall_sec": round(wall, 2),
+        "ys_probs_available": max_probs_seen > 0,
+        "ys_probs_max_len": max_probs_seen,
+        "ys_probs_reason": None if max_probs_seen else YS_PROBS_REASON,
         "emissions": emitted,
     }
     with open(args.out, "w") as f:
@@ -171,6 +222,11 @@ def main():
             out["realtime_factor"],
         )
     )
+    if not out["ys_probs_available"]:
+        print("  note: no per-token probability from this recogniser "
+              "(ys_probs empty) - every emission has prob=null", file=sys.stderr)
+    if args.require_probs and not out["ys_probs_available"]:
+        return 2
     if not emitted:
         print("  !! ZERO TOKENS for the whole file", file=sys.stderr)
     return 0

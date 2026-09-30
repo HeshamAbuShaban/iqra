@@ -22,6 +22,14 @@ captures/
 # NOTE: engine/replay/ IS tracked - it is the project's only measurement loop.
 /engine/*
 !/engine/replay/
+# Recorded recitation clips for the hesitation harness: keep the format notes,
+# never the audio. The raw/ and *.wav stay ignored.
+!/engine/audio/
+/engine/audio/*
+!/engine/audio/hesitate/
+/engine/audio/hesitate/*
+!/engine/audio/hesitate/README.md
+
 /engine/replay/out/
 /engine/.venv-replay/
 

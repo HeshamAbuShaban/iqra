@@ -188,6 +188,21 @@ object SherpaZipformer {
         s?.let { runCatching { it.release() } }
     }
 
+    /**
+     * Zero the run counters at the start of a session.
+     *
+     * These are process-lifetime, so without this a healthy second session
+     * still shows the first session's numbers - the "audio was flowing" illusion
+     * in its original form. `lastOpError` mattered most: it is assigned on the
+     * first failed accept and never cleared, so one error in session 1 made
+     * every later session report a fault that was not happening.
+     */
+    fun resetCounters() {
+        acceptedSamples = 0L
+        decodeCalls = 0L
+        lastOpError = null
+    }
+
     @Synchronized
     fun close() {
         runCatching { stream?.release() }
