@@ -149,6 +149,46 @@ No threshold on that number can fix it, because the number is true and means
 something else. The gate has to also ask about the item the lock is *currently*
 on.
 
+### Banding a DP that has no safe band to give
+
+A proposal arrived from outside the project to speed up the matcher by "simplifying
+the band width computation". It was rejected, and the reason generalises.
+
+A banded edit-distance DP prunes cells outside a diagonal band, which is an
+**approximation** unless the band provably contains the optimal path. The safe
+half-width is bounded by the trivial alignment cost, `max(n, len)` — and that
+spans the entire grid. So a *safe* band saves nothing here. The proposal banded
+anyway with `max(n, len) + 1`, which is also safe but strictly larger than the
+whole grid, and then got the arithmetic wrong three ways:
+
+- `cur[-off] = i` on the first row, because `lo` is zero on every row. It throws
+  in Kotlin. A Python model of the same arithmetic *wraps* and hides it.
+- the fill wrote the direction table at column `j + off` while the backtrace read
+  column `j - i + off` — the same path, offset by `i`. Silent: the wrong
+  alignment still produces a plausible number, and that number is `coverage`.
+- the doc comment advertised a fast path that was never implemented (`val full`
+  assigned and unused), and claimed a 12x cell reduction that the inactive band
+  made impossible.
+
+None of that is visible to an equivalence harness, because **none of it changes
+a line of Python**. Structural faults in the shipped language need a guard that
+reads the shipped source. `dp_source_parity.py` does, and it catches all five
+fault classes it was written for.
+
+The speedup that *is* available came from elsewhere: intern the units so the hot
+loop compares ints instead of Arabic strings, make the direction table a flat
+`ByteArray` when it holds only three states, and roll `dp` into two rows since
+the traceback never reads it. All provably value-identical, and proven over
+5,473 alignments rather than asserted.
+
+The same episode also showed how easy it is to write a guard that is worse than
+none. Mine failed on *correct* code three ways before it worked: its write
+pattern's trailing `=` matched the first `=` of a `==`, so reads were counted as
+writes and a real mis-indexing passed; it flagged an unreachable `-1` fallback
+as a collision risk; and its backtrace check was anchored on a line that did not
+exist, so it was dead. Every guard here is now verified to fail on a deliberately
+broken copy before being trusted on the real file.
+
 ### A permanently-false gate is worse than no gate
 
 The WRONG verdict was gated on `wordProb`. `sherpa-onnx` returns an **empty
@@ -307,9 +347,15 @@ for spec in "s001 1 7" "s103 103 3" "s108 108 3" \
 done                                    # 28/28 ayat, 0 reversals
 
 # the rest
-for t in search_parity ring_buffer session_stream word_rule_sweep; do
+for t in search_parity ring_buffer session_stream word_rule_sweep \
+         dp_source_parity; do
   engine/.venv-replay/bin/python engine/replay/$t.py   # all PASS
 done
+# the DP: value-identity, and a source guard for what Python cannot see
+engine/.venv-replay/bin/python engine/replay/dp_equivalence.py
+engine/.venv-replay/bin/python engine/replay/dp_source_parity.py
+
+# lock behaviour on real and synthetic hesitation
 engine/.venv-replay/bin/python engine/replay/hesitation_policy.py
 engine/.venv-replay/bin/python engine/replay/back_policy_sweep.py
 engine/.venv-replay/bin/python engine/replay/feed_starvation.py
