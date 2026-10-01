@@ -98,7 +98,27 @@ object PhonemeMapper {
         val units: List<String>,
         /** units[i] belongs to word unitWord[i]. */
         val unitWord: IntArray,
-    )
+    ) {
+        @Volatile private var ids: Map<String, Int>? = null
+
+        /**
+         * Unit -> dense id, built once per ayah and reused by every alignment
+         * against it. The lock policy aligns the same candidate ayat several
+         * times a second, so this must not be rebuilt per call. The lazy init is
+         * a benign race: two threads may both build it, both produce identical
+         * content, and the last write wins.
+         */
+        val symbolIds: Map<String, Int>
+            get() {
+                var m = ids
+                if (m == null) {
+                    m = HashMap<String, Int>(units.size * 2)
+                    for (u in units) if (!m.containsKey(u)) m[u] = m.size
+                    ids = m
+                }
+                return m
+            }
+    }
 
     /** Split a word's phoneme string into model units (greedy longest match). */
     private fun explode(wordPhonemes: String): List<String> {
@@ -182,16 +202,50 @@ object PhonemeMapper {
                 0, len,
             )
         }
-        val dp = Array(n + 1) { IntArray(len + 1) }
-        val dir = Array(n + 1) { IntArray(len + 1) } // 0=sub,1=del-from-expected,2=ins
-        for (i in 0..n) dp[i][0] = i
-        for (j in 0..len) dp[0][j] = j
+        // Units are interned to ints once per ayah, so the inner loop compares
+        // ints instead of Arabic strings. Value-identical: an emitted symbol
+        // outside this ayah's vocabulary becomes -1, which can never equal a ref
+        // id (every expected unit is in the map by construction), so it stays a
+        // substitution exactly as the string compare was. Two emission-only
+        // symbols also compare equal to each other, but they are only ever
+        // compared against ref, never against each other.
+        val ids = expected.symbolIds
+        val ref = IntArray(len) { ids[flat[it]] ?: -1 }
+        val qry = IntArray(n) { ids[emitted[it]] ?: -1 }
+
+        // One flat ByteArray for the direction table. The shipped version built
+        // Array(n+1){IntArray(len+1)} to hold only the values 0, 1 and 2 - four
+        // bytes and n+1 allocations for three states. dp becomes two rolling
+        // rows, because the traceback reads dir and never dp.
+        //
+        // No banding. A provably safe band half-width for edit distance is
+        // bounded by the trivial alignment cost max(n, len), which spans the
+        // entire grid - so banding buys nothing here while making the backtrace
+        // index fiddly enough to get wrong. A proposal that banded anyway was
+        // rejected: its fill wrote dir at column j+off while its backtrace read
+        // column j-i+off, and its boundary write indexed a negative slot.
+        //
+        // Proven value-identical to the previous implementation by
+        // engine/replay/dp_equivalence.py: 5,473 alignments, 112 of them on the
+        // recorded surahs, plus an exhaustive sweep of every sequence pair up to
+        // length 4 which is what pins the tie-breaking.
+        val width = len + 1
+        val dir = ByteArray((n + 1) * width)
+        var prev = IntArray(width) { it } // dp[0][j] = j
+        var cur = IntArray(width)
         for (i in 1..n) {
+            cur[0] = i // dp[i][0] = i
+            val qi = qry[i - 1]
+            val row = i * width
             for (j in 1..len) {
-                val cost = if (emitted[i - 1] == flat[j - 1]) 0 else 1
-                val sub = dp[i - 1][j - 1] + cost
-                val del = dp[i - 1][j] + 1
-                val ins = dp[i][j - 1] + 1
+                val cost = if (qi == ref[j - 1]) 0 else 1
+                val sub = prev[j - 1] + cost
+                val del = prev[j] + 1
+                val ins = cur[j - 1] + 1
+                // Tie-break order is load-bearing: substitution, then deletion,
+                // then insertion. Reordering can pick a different path through
+                // an equal-cost alignment, which changes the per-word verdicts
+                // even though the edit distance is unchanged.
                 var best = sub
                 var d = 0
                 if (del < best) {
@@ -202,10 +256,14 @@ object PhonemeMapper {
                     best = ins
                     d = 2
                 }
-                dp[i][j] = best
-                dir[i][j] = d
+                cur[j] = best
+                dir[row + j] = d.toByte()
             }
+            val t = prev
+            prev = cur
+            cur = t
         }
+
         val matched = BooleanArray(len)
         val wrong = BooleanArray(len)
         val emitWord = IntArray(n) { -1 }
@@ -213,8 +271,8 @@ object PhonemeMapper {
         var i = n
         var j = len
         while (i > 0 || j > 0) {
-            if (i > 0 && j > 0 && dir[i][j] == 0) {
-                if (emitted[i - 1] == flat[j - 1]) {
+            if (i > 0 && j > 0 && dir[i * width + j] == 0.toByte()) {
+                if (qry[i - 1] == ref[j - 1]) {
                     matched[j - 1] = true
                     unitsMatched++
                 } else {
@@ -223,9 +281,9 @@ object PhonemeMapper {
                 emitWord[i - 1] = wordOf[j - 1]
                 i--
                 j--
-            } else if (i > 0 && j > 0 && dir[i][j] == 1) {
+            } else if (i > 0 && j > 0 && dir[i * width + j] == 1.toByte()) {
                 i--
-            } else if (i > 0 && j > 0 && dir[i][j] == 2) {
+            } else if (i > 0 && j > 0 && dir[i * width + j] == 2.toByte()) {
                 j--
             } else if (i > 0) {
                 i--
