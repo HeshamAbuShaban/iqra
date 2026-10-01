@@ -554,7 +554,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val prev = lockedAyah
         val now = System.currentTimeMillis()
         if (measureSpeed) {
-            val dtSec = speechFramesSinceAdvance * 0.25
+            val dtSec = speechFramesSinceAdvance * SherpaVad.FEED_POLL_SEC
             val prevWords = verseWords[prev]?.size ?: 0
             if (dtSec in 2.0..180.0 && prevWords > 0) {
                 val inst = prevWords / dtSec * 60.0
@@ -609,7 +609,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Frames a WRONG flag must persist before it latches, scaled by measured
      *  words-per-minute so slow reciters' mid-word frames don't flash red. */
     private fun wrongLatchFrames(): Int =
-        (1.2 * (60.0 / wpmEma) / 0.25).roundToInt().coerceIn(2, 8)
+        (1.2 * (60.0 / wpmEma) / SherpaVad.FEED_POLL_SEC).roundToInt().coerceIn(2, 8)
 
     private var speechFramesSinceAdvance = 0L
 
@@ -1026,6 +1026,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             starvedRecoveries = 0
             speechFramesSinceAdvance = 0
             _engineLabel.value = "zipformer/" + (if (vadReady) "VAD" else "RMS")
+            // A pulled log cannot otherwise be attributed to the gate that
+            // produced it, and the gate is a prime suspect when recognition
+            // stalls.
+            diag("gate poll=${SherpaVad.FEED_POLL_SEC}s vad=$vadReady")
             // build= in the first line of every session: a log pulled off a
             // device is otherwise unattributable to a build.
             diag("session start s=$activeSurah lock=$lockedAyah build=$buildTag engine=${_engineLabel.value}")
@@ -1051,7 +1055,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             lastRecoveryTime = System.currentTimeMillis()
             diag("mic floor calibrated: ${"%.4f".format(noiseFloor)}")
             while (_recording.value && gen == sessionGen) {
-                delay(250)
+                // The poll cadence is a single declared constant, shared with the
+                // VAD so the gate's hangover cannot drift away from it.
+                delay((SherpaVad.FEED_POLL_SEC * 1000).toLong())
                 // Warm-up: let ~0.3s accumulate before feeding anything, as
                 // before. This used to be tested against the size of the whole
                 // captured buffer; with a delta-based read that would compare

@@ -17,6 +17,14 @@ import java.net.URL
  */
 object SherpaVad {
     private const val TAG = "SherpaVad"
+
+    /**
+     * How much audio the recogniser is fed per poll, in seconds. The gate's
+     * `minSilenceDuration` is expressed in terms of it, so the detector's
+     * hangover can never silently collapse to a single poll if the cadence
+     * changes.
+     */
+    const val FEED_POLL_SEC = 0.25f
     private const val MODEL_NAME = "silero_vad.onnx"
     private const val MODEL_URL =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
@@ -41,7 +49,16 @@ object SherpaVad {
             val silero = com.k2fsa.sherpa.onnx.SileroVadModelConfig(
                 model = file.absolutePath,
                 threshold = 0.5f,
-                minSilenceDuration = 0.25f,
+                // Two feed polls, NOT one. The app fed a 0.25s delta per poll
+                // and asked the detector for 0.25s of minimum silence, so a
+                // single quiet poll satisfied it and the gate closed - the
+                // hangover did nothing at this cadence, and a gap between two
+                // words shorter than one poll ended the speech segment and
+                // dropped that poll's audio. sherpa's own default is 0.5
+                // (cxx-api.h, SherpaOnnxSileroVadModelConfig), which is also
+                // exactly two polls, so this returns to upstream rather than
+                // inventing a number.
+                minSilenceDuration = 2 * FEED_POLL_SEC,
                 minSpeechDuration = 0.25f,
                 windowSize = 512,
                 maxSpeechDuration = 30.0f,
