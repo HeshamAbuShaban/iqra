@@ -1304,6 +1304,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val nextCov = if (nextExp != null) PhonemeMapper.align(obs, nextExp).coverage else 0f
             val hereExp = PhonemeMapper.expected(activeSurah, lockedAyah)
             val hereCov = if (hereExp != null) PhonemeMapper.align(obs, hereExp).coverage else 0f
+            // How long the lock has been sitting still. Computed here, at the
+            // top of the decision, because both the stall-recovery path and the
+            // published readout need it and the readout comes later.
+            val stallSec = (System.currentTimeMillis() - lastAdvanceAt) / 1000f
             val best = listOfNotNull(
                 nextExp?.let { nextAyah to nextCov },
                 hereExp?.let { lockedAyah to hereCov },
@@ -1460,7 +1464,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // whether a threshold change could help - because in two of the three
             // it cannot, and pretending otherwise is what would send someone
             // off to retune a number that was never wrong.
-            val stallSec = (System.currentTimeMillis() - lastAdvanceAt) / 1000f
             val stallNote = when {
                 stallSec < STALL_NOTE_SEC -> ""
                 nextCov < WEAK_COVERAGE ->

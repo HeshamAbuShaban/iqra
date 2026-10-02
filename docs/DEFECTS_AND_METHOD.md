@@ -561,3 +561,53 @@ scored as having no stalls at all. The report now carries `trailing_stall_sec`,
 `stuck_polls` and `stuck_dead_band_polls`, and `TraceResult.stuck` samples the
 coverage pair during a stall so the next occurrence explains itself instead of
 needing to be re-derived by hand.
+
+## The deadlock had an exit already; my attempt to add one was wrong
+
+`pinned-escape` is in both `PracticeViewModel.kt` and `lock_trace.py` and fires
+only from the dead band: `nextCov` in `[WEAK, ADVANCE)` while `hereCov` is
+strong, for longer than `PINNED_ESCAPE_MS`. Lowering `ADVANCE` would also have
+fixed surah 55, but `ADVANCE` exists to stop the lock crediting an ayah on a
+phrase it has not finished, so that was not an option.
+
+It had never been run against the corpus - it was written *after* the first
+scoring pass. Validated now, on real audio, both directions:
+
+```
+surah 55, 78 ayat, 530s audio
+  escape OFF: final 55:63   moves 62   stuck_polls 118
+  escape ON : final 55:78   moves 74   escapes 2
+    escape 63 -> 64 at t=445s (next_cov 0.500)
+    escape 65 -> 66 at t=468s (next_cov 0.412)
+```
+
+`engine/replay/pinned_escape.py` is that A/B as a permanent check, including the
+premise: it fails if 55:63 and 55:65 ever stop being byte-identical, because the
+whole diagnosis rests on the refrain. It also fails if an escape steps more than
+one ayah, or if escapes become frequent enough to stop being an escape hatch.
+
+### The addition that was built and then deleted
+
+`pinned-escape` needs `nextCov >= WEAK`. A successor scoring *below* `WEAK` is
+equally unrecoverable, so I added a stall-recovery path: after a sustained stall,
+read a recent window, and if something two or more ahead beats the locked ayah
+by a margin, step forward one ayah. Zero occurrences in 114 surahs - the corpus
+never reached that state - so I built a synthetic one to test it, and the
+synthetic test refused to isolate the branch.
+
+Two reasons, both worth recording:
+
+1. Diluting a successor does **not** create the deadlock. The slice grows with
+   the unheard material, `hereCov` falls, and the jump gate opens and rescues
+   the lock. Holding `hereCov` high requires the locked ayah's text to keep
+   reappearing - which is the refrain again.
+2. In the refrain case the margin test cannot fire, because the candidate it
+   compares against is *identical text*. 55:63, 55:65 and 55:67 are all the same
+   20 units. `bestCov >= hereRecent + 0.10` is `1.0 >= 1.0 + 0.1`: never.
+
+So the branch was unreachable in the one situation that needed it, and
+`pinned-escape` already covers every deadlock the corpus can actually produce.
+It was removed from both files rather than left in as untested policy. The
+unreachable state is worth knowing about and not worth shipping code for: the
+lock's inability to hear a successor is an evidence problem, and no policy
+change creates evidence.

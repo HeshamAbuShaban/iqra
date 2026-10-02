@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.filled.Refresh
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -63,6 +64,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +97,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.combinedClickable
@@ -104,6 +107,7 @@ import kotlin.math.min
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -128,6 +132,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.HighlightLayer
+import com.iqra.quran.data.PracticeLog
 import com.iqra.quran.data.WordStatus
 import com.iqra.quran.data.GlyphCoords
 
@@ -144,6 +149,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Before the first composition reads a setting, so a migrated value is
+        // never briefly the old one on screen.
+        ReaderPrefs.migrate(this)
         setContent {
             MaterialTheme(colorScheme = darkMushafScheme(), shapes = mushafShapes()) {
                 App(
@@ -268,6 +276,11 @@ private fun ExpectedWordsLine(
     modifier: Modifier = Modifier,
 ) {
     if (words.isEmpty()) return
+    // Mushaf text the app draws itself scales with the user's text-size setting.
+    // The page image does not and cannot: it is the printed bitmap, and scaling
+    // it would resample the glyphs. So this bar and the fallback line renderer
+    // are the two places the setting applies, and they must agree.
+    val scale = ReaderPrefs.fontScale(LocalContext.current)
     val b = AnnotatedString.Builder()
     words.forEachIndexed { i, w ->
         val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
@@ -300,7 +313,7 @@ private fun ExpectedWordsLine(
     Text(
         b.toAnnotatedString(),
         fontFamily = quranFont,
-        fontSize = 15.sp,
+        fontSize = (15 * scale).sp,
         maxLines = 2,
         modifier = modifier,
     )
@@ -371,27 +384,65 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     val data by vm.data.collectAsStateWithLifecycle()
     val mushaf by vm.mushaf.collectAsStateWithLifecycle()
     val lastRead by vm.lastRead.collectAsStateWithLifecycle()
-    var screen by remember { mutableStateOf<Screen>(Screen.Picker) }
+    // rememberSaveable, not remember: `screen` was plain remember, so rotating
+    // the phone mid-recitation threw the user back to the surah list. That is
+    // the single most common way a reader is interrupted, and Android does it
+    // on every rotation and on every keyboard open.
+    var screenName by rememberSaveable { mutableStateOf("picker") }
+    var screenSurah by rememberSaveable { mutableStateOf(0) }
+    var screenPage by rememberSaveable { mutableStateOf(-1) }
+    var screenAnchor by rememberSaveable { mutableStateOf(-1) }
 
     if (loading || data == null) {
         SplashScreen()
         return
     }
-    when (val s = screen) {
-        Screen.Data -> DataSetupScreen { screen = Screen.Picker }
+    // Rebuilt from the four saveable fields rather than being itself saved: a
+    // sealed object is not a type rememberSaveable can put in a Bundle without
+    // a custom Saver, and four primitives are both cheaper and restore exactly.
+    val screen: Screen = when (screenName) {
+        "data" -> Screen.Data
+        "settings" -> Screen.Settings
+        "progress" -> Screen.Progress
+        "diag" -> Screen.Diag
+        "reader" -> Screen.Reader(
+            screenSurah,
+            screenPage.takeIf { it > 0 },
+            screenAnchor.takeIf { it > 0 },
+        )
+        else -> Screen.Picker
+    }
+    val goReader: (Int, Int?, Int?) -> Unit = { s, p, a ->
+        screenSurah = s; screenPage = p ?: -1; screenAnchor = a ?: -1
+        screenName = "reader"
+    }
+
+    when (screen) {
+        Screen.Data -> DataSetupScreen { screenName = "picker" }
+        Screen.Settings -> SettingsScreen(
+            onBack = { screenName = "picker" },
+            onOpenData = { screenName = "data" },
+            onOpenProgress = { screenName = "progress" },
+        )
+        is Screen.Progress -> data?.let { d ->
+            ProgressScreen(d, onOpen = { s, p -> goReader(s, p, null) }) {
+                screenName = "picker"
+            }
+        }
         Screen.Picker -> HomeScreen(vm, lastRead,
-            onOpen = { surah, page -> screen = Screen.Reader(surah, page) },
-            onOpenAyah = { surah, page, ayah -> screen = Screen.Reader(surah, page, ayah) },
-            onDiag = { screen = Screen.Diag },
-            onData = { screen = Screen.Data },
+            onOpen = { surah, page -> goReader(surah, page, null) },
+            onOpenAyah = { surah, page, ayah -> goReader(surah, page, ayah) },
+            onDiag = { screenName = "diag" },
+            onData = { screenName = "data" },
+            onSettings = { screenName = "settings" },
             onResume = {
                 lastRead?.let { (s, p) ->
                     vm.resumeLastRead()
-                    screen = Screen.Reader(s, p)
+                    goReader(s, p, null)
                 }
             },
         )
-        is Screen.Diag -> DiagScreen(vm) { screen = Screen.Picker }
+        is Screen.Diag -> DiagScreen(vm) { screenName = "picker" }
         is Screen.Reader -> {
             val pages = mushaf
             if (pages == null) {
@@ -399,10 +450,10 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             } else {
                 ReaderScreen(
                     vm = vm,
-                    surah = s.surah,
-                    startPage = s.page,
-                    initialAnchorAyah = s.anchorAyah,
-                    onBack = { screen = Screen.Picker },
+                    surah = screenSurah,
+                    startPage = screenPage.takeIf { it > 0 },
+                    initialAnchorAyah = screenAnchor.takeIf { it > 0 },
+                    onBack = { screenName = "picker" },
                     onRequestMic = onRequestMic,
                 )
             }
@@ -415,9 +466,11 @@ sealed interface Screen {
     data class Reader(val surah: Int, val page: Int? = null, val anchorAyah: Int? = null) : Screen
     data object Diag : Screen
     data object Data : Screen
+    data object Settings : Screen
+    data object Progress : Screen
 }
 
-enum class HomeTab { Surahs, Juz, Bookmarks }
+enum class HomeTab { Surahs, Juz, Practice, Bookmarks }
 enum class SurahView { List, Grid }
 
 @Composable
@@ -428,11 +481,16 @@ fun HomeScreen(
     onOpenAyah: (Int, Int, Int) -> Unit = { _, _, _ -> },
     onDiag: () -> Unit = {},
     onData: () -> Unit = {},
+    onSettings: () -> Unit = {},
     onResume: () -> Unit = {},
 ) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
-    var tab by remember { mutableStateOf(HomeTab.Surahs) }
-    val surahs = remember { data.surahList() }
+    var tab by rememberSaveable { mutableStateOf(HomeTab.Surahs) }
+    // surahList() rebuilds all 114 SurahInfo objects on every call, so it is
+    // built once here and handed down rather than each child rebuilding its own
+    // copy. HomeScreen recomposes on every keystroke in the search field, which
+    // made that 114 allocations per character typed.
+    val surahs = remember(data) { data.surahList() }
     val cs = MaterialTheme.colorScheme
 
     Column(Modifier.fillMaxSize().background(cs.background)) {
@@ -459,6 +517,9 @@ fun HomeScreen(
             }
             IconButton(onClick = onData) {
                 Icon(Icons.Outlined.FolderOpen, "Data files", tint = cs.onSurface.copy(alpha = 0.55f))
+            }
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Outlined.Tune, "Settings", tint = cs.onSurface.copy(alpha = 0.55f))
             }
             IconButton(onClick = onDiag) {
                 Icon(Icons.Outlined.MonitorHeart, "Engine check", tint = cs.onSurface.copy(alpha = 0.55f))
@@ -523,8 +584,9 @@ fun HomeScreen(
 
         HomeTabRow(tab) { tab = it }
         when (tab) {
-            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen)
+            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs)
             HomeTab.Juz -> JuzList(vm, data, onOpen)
+            HomeTab.Practice -> PracticeOverview(data, onOpen)
             HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen)
         }
     }
@@ -539,6 +601,7 @@ private fun SearchResults(
     onOpenAyah: (Int, Int, Int) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
+    val scale = ReaderPrefs.fontScale(LocalContext.current)
     val lazy = rememberLazyListState()
     LaunchedEffect(surahHits.size, ayahHits.size) { lazy.scrollToItem(0) }
     LazyColumn(
@@ -579,7 +642,7 @@ private fun SearchResults(
                         Text(
                             v?.textUthmani?.take(90) ?: "",
                             fontFamily = quranFont,
-                            fontSize = 17.sp,
+                            fontSize = (17 * scale).sp,
                             color = cs.onSurface,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -603,11 +666,11 @@ private fun SearchResults(
 @Composable
 fun HomeTabRow(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
     val tabs = HomeTab.values()
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         tabs.forEach { t ->
             val sel = t == selected
             Box(
-                Modifier.weight(1f).padding(4.dp).clip(Pill)
+                Modifier.weight(1f).padding(horizontal = 2.dp).clip(Pill)
                     .background(if (sel) goldColor.copy(alpha = 0.16f) else Color.Transparent)
                     .clickable(role = Role.Tab) { onSelect(t) }.padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
@@ -616,11 +679,13 @@ fun HomeTabRow(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
                     when (t) {
                         HomeTab.Surahs -> "Surahs"
                         HomeTab.Juz -> "Juz"
-                        HomeTab.Bookmarks -> "Bookmarks"
+                        HomeTab.Practice -> "Practice"
+                        HomeTab.Bookmarks -> "Saved"
                     },
                     fontSize = 14.sp,
                     fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (sel) goldColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
                 )
             }
         }
@@ -633,9 +698,12 @@ fun SurahIndex(
     lastRead: Pair<Int, Int>?,
     data: com.iqra.quran.data.QuranData,
     onOpen: (Int, Int) -> Unit,
+    surahs: List<com.iqra.quran.data.SurahInfo> =
+        data.surahList(),
 ) {
-    val surahs = remember { data.surahList() }
-    var view by remember { mutableStateOf(SurahView.List) }
+    // `surahs` arrives prebuilt from HomeScreen. The default keeps this
+    // composable usable on its own without forcing every caller to remember it.
+    var view by rememberSaveable { mutableStateOf(SurahView.List) }
     // Filtering is driven by the single search field on HomeScreen; this
     // composable used to carry a second one and home rendered two boxes.
     val filtered = surahs
@@ -908,6 +976,7 @@ fun BookmarkList(
 
 @Composable
 fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
+    val ctx = LocalContext.current
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
     val lastMatch by vm.lastMatch.collectAsStateWithLifecycle()
     val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
@@ -972,6 +1041,24 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
             }
             IconButton(onClick = { clipboard.setText(AnnotatedString(log.joinToString("\n"))) }) {
                 Icon(Icons.Filled.ContentCopy, "Copy log")
+            }
+            // "Copy log" hands over the event lines alone, which on their own are
+            // close to unreadable: they say the lock moved and not what it was
+            // looking at when it decided not to. This builds the whole picture -
+            // engine, files, mic, matcher, thresholds and the ring buffer - into
+            // one block, and shares it rather than only pasting it, because the
+            // person who can read it is rarely the person holding the phone.
+            IconButton(onClick = {
+                val text = buildEngineReport(ctx, vm, snap, micDb, micN, micStalled, log, streamInfo)
+                clipboard.setText(AnnotatedString(text))
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "Iqra engine report")
+                    putExtra(Intent.EXTRA_TEXT, text)
+                }
+                ctx.startActivity(Intent.createChooser(send, "Share engine report"))
+            }) {
+                Icon(Icons.Filled.Share, "Share full report")
             }
             // The frame ring is what a lock-policy question is actually answered
             // from: per frame it records the lock plus every coverage the
@@ -1068,6 +1155,39 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                 }
             }
             item {
+                DiagSection("Lock policy") {
+                    // The gates, spelled out, because "the lock did not move" is
+                    // the most common report and it has a small number of causes
+                    // that look identical from the outside. Each of these is a
+                    // distinct reason the lock is sitting still right now.
+                    DiagRow("Advance", "next ayah coverage >= ${"%.2f".format(needs.first)}")
+                    DiagRow("Back", "previous ayah coverage >= ${"%.2f".format(needs.third)}")
+                    DiagRow("Frames held", live.held.ifEmpty { "—" })
+                    DiagRow("Stall", if (live.stallNote.isEmpty()) "none" else live.stallNote)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "A lock that will not advance is in one of four states: " +
+                            "the reciter has not reached the next ayah yet (next " +
+                            "coverage below ${"%.2f".format(needs.first)}), the gate " +
+                            "is shut so nothing is reaching the decoder, the " +
+                            "coverage sits between the advance and decay thresholds " +
+                            "so no branch can fire, or the recogniser is hearing a " +
+                            "reciter other than the one the model was trained on.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "The full gate set lives in PracticeViewModel.kt's companion " +
+                            "object; the three above are the ones the app publishes. " +
+                            "engine/replay/lock_trace.py replays the same policy over " +
+                            "recorded audio and is where thresholds are changed.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    )
+                }
+            }
+            item {
                 DiagSection("Events (${log.size})") {
                     if (log.isEmpty()) {
                         Text(
@@ -1105,6 +1225,98 @@ private fun DiagSection(title: String, content: @Composable () -> Unit) {
             content()
         }
     }
+}
+
+/**
+ * The whole engine state as one plain-text block.
+ *
+ * This exists because the pieces were already on screen but not obtainable
+ * together. The event log records what the lock did; the header records which
+ * files loaded; the matcher rows record the coverages it decided on. A report
+ * containing only the log is a list of moves with no way to tell a wrong gate
+ * from a wrong threshold from a model that never heard the ayah - which are
+ * three different bugs with three different fixes, and the log alone reads
+ * identically for all three.
+ *
+ * Plain text and no JSON on purpose: this gets pasted into an issue tracker by
+ * a person, and a person should be able to read it.
+ */
+private fun buildEngineReport(
+    ctx: android.content.Context,
+    vm: PracticeViewModel,
+    files: List<PracticeViewModel.EngineFileInfo>,
+    micDb: Float,
+    micSamples: Int,
+    micStalled: Boolean,
+    log: List<String>,
+    streamInfo: String,
+): String {
+    val live = vm.policyLive.value
+    val needs = vm.policyNeeds()
+    val b = StringBuilder()
+
+    fun section(t: String) {
+        b.append("\n== ").append(t).append(" ==\n")
+    }
+
+    b.append("Iqra engine report\n")
+    b.append("generated: ").append(
+        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", java.util.Locale.US)
+            .format(java.util.Date())
+    ).append('\n')
+
+    section("Engine")
+    b.append("label      : ").append(vm.engineLabel.value.ifEmpty { "idle" }).append('\n')
+    b.append("gate       : ").append(vm.gateReason.value.ifEmpty { "-" }).append('\n')
+    b.append("decoder    : ").append(vm.decoderState.value.ifEmpty { "-" }).append('\n')
+    b.append("recording  : ").append(vm.recording.value).append('\n')
+    b.append("stream     : ").append(streamInfo.ifEmpty { "-" }).append('\n')
+
+    section("Files")
+    files.forEach {
+        b.append("  ").append(it.toString()).append('\n')
+    }
+
+    section("Mic")
+    b.append("level      : ").append("%.5f".format(micDb)).append('\n')
+    b.append("samples    : ").append(micSamples).append('\n')
+    b.append("stalled    : ").append(micStalled).append('\n')
+
+    section("Matcher")
+    b.append("lock       : ").append(vm.activeVerse.value ?: "-").append('\n')
+    b.append("last match : ").append(
+        vm.lastMatch.value?.let { "${it.first} @ ${"%.3f".format(it.second)}" } ?: "-"
+    ).append('\n')
+    b.append("wpm        : ").append("%.0f".format(vm.wpmFlow.value)).append('\n')
+
+    section("Policy thresholds")
+    b.append("advance    : ").append("%.2f".format(needs.first)).append('\n')
+    b.append("back       : ").append("%.2f".format(needs.third)).append('\n')
+    b.append("current next coverage : ").append("%.3f".format(live.next)).append('\n')
+    b.append("current here coverage : ").append("%.3f".format(live.here)).append('\n')
+    b.append("frames held           : ").append(live.held.ifEmpty { "-" }).append('\n')
+    b.append("stall note            : ").append(live.stallNote.ifEmpty { "-" }).append('\n')
+    b.append(
+        "note: the remaining gates (STRONG/WEAK/STUCK/JUMP/HANDOFF and the " +
+            "pinned-lock escape) are compile-time constants in PracticeViewModel.kt " +
+            "and are not published as state, so they cannot be read from here.\n",
+    )
+
+    section("Practice summary")
+    val log1 = runCatching { PracticeLog.summarise(PracticeLog.load(ctx)).let {
+        "sessions=${it.sessions} words=${it.judgedWords} " +
+            "accuracy=${it.accuracy?.let { a -> "%.1f%%".format(a * 100) } ?: "n/a"} " +
+            "streak=${it.currentStreak}"
+    } }.getOrDefault("unavailable")
+    b.append(log1).append('\n')
+
+    section("Frame ring (last 400 frames)")
+    b.append(runCatching { vm.frameRingDump() }.getOrDefault("unavailable")).append('\n')
+
+    section("Events (last ${minOf(log.size, 120)})")
+    log.takeLast(120).forEach { b.append(it).append('\n') }
+
+    return b.toString()
 }
 
 @Composable
@@ -1155,6 +1367,7 @@ fun ReaderScreen(
     val playIndex by vm.playIndex.collectAsStateWithLifecycle()
     val playHead by vm.playHead.collectAsStateWithLifecycle()
     val engineHint by vm.engineHint.collectAsStateWithLifecycle()
+    val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
     val standWords = remember(activeVerse, mushaf) {
         val av = activeVerse ?: return@remember emptyList<MushafWord>()
         mushaf.flatMap { pg -> pg.lines.flatMap { it.words ?: emptyList() } }
@@ -1202,6 +1415,52 @@ fun ReaderScreen(
     // a single tap anywhere on the page toggles it, sliding the top bar off the
     // top and the bottom bar off the bottom together in 250ms.
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Hold the screen on for the duration of a recitation. Android starts
+    // dimming after ~30 s and a session routinely runs longer with the phone
+    // flat on a table, so without this the screen goes dark mid-ayah and the
+    // session looks like it ended. Set on the view rather than through a
+    // Window flag so it lifts automatically when the reader leaves.
+    val keepOn = ReaderPrefs.keepAwake(ctx)
+    val view = LocalView.current
+    DisposableEffect(recording, keepOn) {
+        view.keepScreenOn = keepOn && recording
+        onDispose { view.keepScreenOn = false }
+    }
+
+    // ---- record the result ------------------------------------------------
+    //
+    // `statusMap` is cleared the moment a session stops, so the tally has to be
+    // captured while the session is still live; by the time we know it is over
+    // there is nothing left to read. `live` holds the running snapshot and the
+    // stop edge is what writes it out.
+    var live by remember { mutableStateOf<PracticeLog.Session?>(null) }
+    LaunchedEffect(recording, statusMap, activeVerse, wpm) {
+        if (!recording) return@LaunchedEffect
+        val counts = statusMap.values.groupingBy { it }.eachCount()
+        live = PracticeLog.Session(
+            surah = data?.surahAtPage(currentPage ?: (startPage ?: 1))?.number ?: surah,
+            ayahs = activeVerse ?: 1,
+            correct = counts[WordStatus.CORRECT] ?: 0,
+            wrong = counts[WordStatus.WRONG] ?: 0,
+            skipped = counts[WordStatus.SKIPPED] ?: 0,
+            unknown = counts[WordStatus.UNKNOWN] ?: 0,
+            wpm = wpm,
+            millis = System.currentTimeMillis(),
+        )
+    }
+    LaunchedEffect(recording) {
+        if (recording) return@LaunchedEffect
+        val s = live
+        live = null
+        if (s != null && PracticeLog.isWorthRecording(s)) {
+            // Disk write, off the composition thread. The log is rewritten whole
+            // on append, so this is not something to do while laying out.
+            scope.launch(Dispatchers.IO) { PracticeLog.append(ctx, s) }
+        }
+    }
+
     var chromeVisible by remember { mutableStateOf(false) }
     val chromeOffset by animateFloatAsState(
         targetValue = if (chromeVisible) 0f else 1f,
@@ -1209,9 +1468,15 @@ fun ReaderScreen(
         label = "chrome",
     )
     var night by remember { mutableStateOf(ReaderPrefs.nightMode(ctx)) }
-    val mat = remember(night) { pageMat(ctx, night) }
-    val pageInk = remember(night) { NightPalette.pageInk(ctx) }
-    val chromeInk = remember(night) { NightPalette.chrome(ctx) }
+    // Keyed on the settings store's change tick as well as on `night`, because
+    // the two brightness sliders write the preference on every drag and the
+    // page behind the panel has to follow them. It used to key on `night` only,
+    // so tuning brightness adjusted the panel's own preview and left the page
+    // unchanged until something unrelated recomposed it.
+    val prefTick by ReaderPrefs.tick.collectAsStateWithLifecycle()
+    val mat = remember(night, prefTick) { pageMat(ctx, night) }
+    val pageInk = remember(night, prefTick) { NightPalette.pageInk(ctx) }
+    val chromeInk = remember(night, prefTick) { NightPalette.chrome(ctx) }
 
     fun showChrome() {
         chromeVisible = true
@@ -2339,10 +2604,16 @@ fun LineText(
     activeWindow: List<Int> = emptyList(),
 ) {
     if (words.isEmpty()) return
+    // This is the only renderer where the app draws the mushaf text itself, so
+    // it is the one place the user's text-size setting really lands - the
+    // normal path is a page bitmap that cannot be scaled. lineHeight scales with
+    // the glyph size because at 23/38 the leading is what makes the mushaf's
+    // own line rhythm; hold it fixed and larger text collides with the row above.
+    val scale = ReaderPrefs.fontScale(LocalContext.current)
     val roundelVerses = words.filter { it.isVerseEnd }.map { it.verse }
     val inlineContent = roundelVerses.associate { v ->
         "rdl_$v" to InlineTextContent(
-            Placeholder(20.sp, 20.sp, PlaceholderVerticalAlign.Center),
+            Placeholder((20 * scale).sp, (20 * scale).sp, PlaceholderVerticalAlign.Center),
         ) { VerseRoundel(v) }
     }
     val builder = AnnotatedString.Builder()
@@ -2384,8 +2655,8 @@ fun LineText(
     Text(
         builder.toAnnotatedString(),
         fontFamily = quranFont,
-        fontSize = 23.sp,
-        lineHeight = 38.sp,
+        fontSize = (23 * scale).sp,
+        lineHeight = (38 * scale).sp,
         textAlign = TextAlign.Justify,
         modifier = Modifier.fillMaxWidth(),
         inlineContent = inlineContent,

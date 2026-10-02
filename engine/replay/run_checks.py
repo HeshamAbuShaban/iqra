@@ -53,10 +53,13 @@ CHECKS = [
      "BACK/STUCK thresholds measured, including false back-moves"),
     ("hesitation_policy", "dumps",
      "repeat and backtrack scenarios built from real emissions"),
+    ("pinned_escape", "dumps",
+     "the deadlock state has an exit: Ar-Rahman 55 freezes without it"),
 ]
 
 # Scripts that need a dump argument rather than running bare.
-DUMPED = {"word_verdicts", "lock_trace", "back_policy_sweep", "hesitation_policy"}
+DUMPED = {"word_verdicts", "lock_trace", "back_policy_sweep", "hesitation_policy",
+          "pinned_escape"}
 
 CASES = re.compile(r"(\d+)\s+checked,\s+(\d+)\s+failed")
 

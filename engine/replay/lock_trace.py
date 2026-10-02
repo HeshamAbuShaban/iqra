@@ -320,7 +320,8 @@ class Move(object):
             "%d:%d" % (self.to_surah, self.to_ayah), self.reason, self.coverage)
 
 
-REASONS = ("forward-strong", "forward-pending", "jump", "backward", "handoff",
+REASONS = ("forward-strong", "forward-pending", "jump", "pinned-escape",
+           "backward", "handoff",
             "pinned-escape",
            "repeat")
 
@@ -368,7 +369,7 @@ def group_frames(dump):
 # --------------------------------------------------------------------------
 class TraceResult(object):
     def __init__(self, moves, surah, ayah, wpm, polls_evaluated, n_emissions,
-                 n_polls, rebase_polls, stuck=None):
+        n_polls, rebase_polls, stuck=None):
         # `stuck` samples the coverage pair while the lock refuses to move, so a
         # stall explains itself instead of having to be re-derived by hand.
         self.stuck = stuck or []

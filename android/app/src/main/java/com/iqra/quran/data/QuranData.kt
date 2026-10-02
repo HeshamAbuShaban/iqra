@@ -21,38 +21,64 @@ class QuranData private constructor(
     private val byRef = verses.associateBy { it.surah * 1000 + it.ayah }
     private val bySurah = verses.groupBy { it.surah }
 
-    fun getVerse(surah: Int, ayah: Int): Verse? = byRef[surah * 1000 + ayah]
-    fun getSurah(surah: Int): List<Verse> = bySurah[surah] ?: emptyList()
-
-    fun surahList(): List<SurahInfo> {
+    // Built once. surahList() used to rebuild all 114 SurahInfo objects on every
+    // call, and its callers are not occasional: surahInfo() and surahAtPage()
+    // each called it, and surahAtPage() is on the reader's header render path,
+    // which runs on every page turn and every recomposition. That is 114
+    // allocations plus 114 JSON reads per frame of a swipe. Nothing here changes
+    // after load - verses and metadata are both immutable once parsed.
+    private val surahs: List<SurahInfo> = buildList {
         val meta = metaByNumber
-        return bySurah.map { (num, vs) ->
+        bySurah.forEach { (num, vs) ->
             val m = meta[num]
-            SurahInfo(
-                number = num,
-                name = vs.first().surahName,
-                nameEn = vs.first().surahNameEn,
-                ayahCount = vs.size,
-                revelationType = m?.optString("revelationType") ?: "Meccan",
-                startPage = m?.optInt("startPage", 1) ?: 1,
-                endPage = m?.optInt("endPage", 1) ?: 1,
-                juz = m?.optInt("juz", 1) ?: 1,
+            add(
+                SurahInfo(
+                    number = num,
+                    name = vs.first().surahName,
+                    nameEn = vs.first().surahNameEn,
+                    ayahCount = vs.size,
+                    revelationType = m?.optString("revelationType") ?: "Meccan",
+                    startPage = m?.optInt("startPage", 1) ?: 1,
+                    endPage = m?.optInt("endPage", 1) ?: 1,
+                    juz = m?.optInt("juz", 1) ?: 1,
+                ),
             )
+        }
+    }.sortedBy { it.number }
+
+    private val surahsByNumber: Map<Int, SurahInfo> = surahs.associateBy { it.number }
+
+    /**
+     * Page -> surah, resolved once at load.
+     *
+     * First surah to claim a page keeps it, and that ordering is load-bearing
+     * rather than incidental: the page ranges in `surah_meta.json` overlap 66
+     * times, because a surah can begin part-way down a page its predecessor
+     * also starts on. Page 604 alone is claimed by surahs 112, 113 and 114.
+     * The scan this replaces returned the FIRST match, so plain `put` in a
+     * buildMap would have silently changed the reader's header on the last page
+     * of the mushaf from surah 112 to surah 114.
+     */
+    private val surahByPage: Map<Int, SurahInfo> = buildMap {
+        surahs.forEach { s ->
+            for (p in s.startPage..s.endPage) putIfAbsent(p, s)
         }
     }
 
-    fun surahInfo(number: Int): SurahInfo? = surahList().firstOrNull { it.number == number }
+    fun getVerse(surah: Int, ayah: Int): Verse? = byRef[surah * 1000 + ayah]
+    fun getSurah(surah: Int): List<Verse> = bySurah[surah] ?: emptyList()
+
+    fun surahList(): List<SurahInfo> = surahs
+
+    fun surahInfo(number: Int): SurahInfo? = surahsByNumber[number]
 
     /** The surah that contains a given Mushaf page (for Juz / bookmark jumps). */
     fun surahAtPage(page: Int): SurahInfo? =
-        surahList().firstOrNull { page in it.startPage..it.endPage }
+        surahByPage[page] ?: surahs.firstOrNull { page in it.startPage..it.endPage }
 
-    fun juzList(): List<JuzInfo> {
-        val surahs = surahList()
-        return JUZ_START_PAGES.mapIndexed { i, p ->
-            val s = surahs.firstOrNull { p in it.startPage..it.endPage }
-            JuzInfo(i + 1, p, s?.name ?: "", s?.nameEn ?: "")
-        }
+    fun juzList(): List<JuzInfo> = JUZ_START_PAGES.mapIndexed { i, p ->
+        val s = surahAtPage(p)
+        JuzInfo(i + 1, p, s?.name ?: "", s?.nameEn ?: "")
     }
 
     companion object {
