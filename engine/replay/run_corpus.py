@@ -143,6 +143,20 @@ def score(dump_path: Path, surah: int, n_ayat: int, table, tok):
     stuck = getattr(res, "stuck", [])
     dead = sum(1 for x in stuck if x.get("in_dead_band"))
 
+    # Classify each jump: was the ayah it skipped actually recited?
+    #
+    # A jump is non-sequential BY DEFINITION, so a correct jump - one over an
+    # ayah the reciter genuinely skipped - was being counted as a failure. Four
+    # of the six jumps the first full run produced were the policy working.
+    # Plain coverage cannot tell the cases apart (it returns 1.00 for the
+    # skipped ayah in 5 of 6, because the units do appear scattered across
+    # neighbours), so this uses the contiguous read plus a null baseline of the
+    # same ayah over same-length windows elsewhere in the surah.
+    #
+    # Borderline cases are reported as AMBIGUOUS with their margin rather than
+    # forced to one side. Surah 8 sits at 0.59 against a 0.60 threshold, and
+    # pretending that is a verdict would be the same mistake as the one this
+    # whole function exists to remove.
     bad_frames = []
     if not sequential:
         # Report the moves that deviate from a clean walk, with their coverage.
@@ -154,6 +168,61 @@ def score(dump_path: Path, surah: int, n_ayat: int, table, tok):
                     "to": f"{m.to_surah}:{m.to_ayah}", "reason": m.reason,
                     "coverage": round(m.coverage, 3),
                 })
+
+    JUMP_ABSENT, JUMP_RECITED, JUMP_AMBIGUOUS = 0.40, 0.60, 0.15
+    # `jumps` holds Move objects (__slots__, no item assignment); the dicts to
+    # annotate are bad_frames, which are populated just above.
+    for mv in bad_frames:
+        if mv.get("reason") == "jump":
+            mv["jump_verdict"] = "UNKNOWN"
+    if any(mv.get("reason") == "jump" for mv in bad_frames):
+        by_t = sorted(moves, key=lambda m: m.t)
+        for idx, mv in enumerate(bad_frames):
+            if mv.get("reason") != "jump":
+                continue
+            fs, fa = (int(x) for x in str(mv["from"]).split(":"))
+            ts, ta = (int(x) for x in str(mv["to"]).split(":"))
+            skipped = list(range(fa + 1, ta))
+            if not skipped or fs != ts:
+                continue
+            t = mv["t"]
+            # bad_frames is a FILTERED subset of moves, so its index is not the
+            # move's index - indexing by_t with it picked an unrelated pair of
+            # moves and produced an empty window, which left every jump
+            # UNKNOWN. Find the actual position instead.
+            pos = next((k for k, m in enumerate(by_t)
+                        if abs(m.t - t) < 1e-6 and m.reason == "jump"), None)
+            if pos is None:
+                continue
+            prev_t = by_t[pos - 1].t if pos > 0 else max(0.0, t - 10.0)
+            next_t = by_t[pos + 1].t if pos + 1 < len(by_t) else t + 10.0
+            span = max(1.0, next_t - prev_t)
+            win = [e["symbol"] for e in dump["emissions"]
+                   if prev_t <= e["audio_sec"] <= next_t]
+            # exp is {surah: {ayah: (units, unit_word, nwords)}}; fs == ts here.
+            aya = exp.get(fs) or {}
+            if not win or skipped[0] not in aya:
+                continue
+            ref = aya[skipped[0]][0]
+            loc = L.local_coverage(win, ref)[0]
+            nulls = []
+            dur = dump["audio_sec"]
+            for k in range(6):
+                c0 = (k * 1.7) % max(1.0, dur - span)
+                w = [e["symbol"] for e in dump["emissions"]
+                     if c0 <= e["audio_sec"] <= c0 + span]
+                nulls.append(L.local_coverage(w, ref)[0])
+            null = max(nulls) if nulls else 0.0
+            mv["jump_skipped"] = [f"{fs}:{a}" for a in skipped]
+            mv["jump_local_cov"] = round(loc, 3)
+            mv["jump_null_cov"] = round(null, 3)
+            if loc < JUMP_ABSENT:
+                mv["jump_verdict"] = "GENUINELY-ABSENT"
+            elif loc >= JUMP_RECITED and loc > null + JUMP_AMBIGUOUS:
+                mv["jump_verdict"] = "RECITED-BUT-MISSED"
+            else:
+                mv["jump_verdict"] = "AMBIGUOUS"
+
 
     return {
         "surah": surah,

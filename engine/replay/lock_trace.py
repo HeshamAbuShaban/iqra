@@ -117,7 +117,7 @@ class LockPolicy(object):
                  wpm_low=50.0,            # below this, needFrames = 3 (878)
                  wpm_min=25.0,            # coerceIn (line 317)
                  wpm_max=160.0,
-                 tail_mode="replay"):
+                 tail_mode="replay", pinned_escape_sec=12.0):
         self.advance = advance_coverage
         self.strong = strong_coverage
         self.weak = weak_coverage
@@ -135,6 +135,9 @@ class LockPolicy(object):
         self.wpm_min = wpm_min
         self.wpm_max = wpm_max
         self.tail_mode = tail_mode
+        # A state no gate can leave, held this long, advances the lock.
+        # 0 disables it, which is how the original deadlock is reproduced.
+        self.pinned_escape_sec = pinned_escape_sec
 
     def __repr__(self):
         return ("LockPolicy(advance=%.2f strong=%.2f weak=%.2f jump=%.2f "
@@ -171,6 +174,82 @@ def coverage(query, ref):
         hit = (hits / float(n), hits, n)
         _COVERAGE_CACHE[key] = hit
     return hit
+
+
+_SUB, _GO, _GE = 1, 1, 1  # plain edit costs, same shape as word_verdicts.align
+
+
+def local_coverage(query, ref):
+    """Best CONTIGUOUS read of `ref` anywhere in `query`.
+
+    Returns (hits/ref_len, hits, j_start, j_end) of the best-scoring monotone
+    match, where query[j_start:j_end] is the span it consumed.
+
+    Why this exists: coverage() is a GLOBAL alignment of the whole observation
+    window against the whole ayah, so a window long enough to be fair returns
+    1.00 for the SKIPPED ayah in 5 of the 6 jumps the corpus produced. That is
+    not evidence of presence - the units do appear, scattered across neighbouring
+    ayat. The question "was this ayah recited?" is not "do these units occur" but
+    "do they occur as one unbroken stretch".
+
+    Semi-global: free start and free end in the query (the ayah can be found
+    anywhere in the window), but GLOBAL in the reference (all of the ayah must be
+    accounted for, paying a gap for whatever was not spoken). Substitutions are
+    allowed inside the span - a single recogniser slip must not break the run,
+    which is why a strict longest-common-substring is the wrong tool here.
+
+    Callers must compare the result against a null baseline: same ayah, same
+    window length, elsewhere in the same surah. A three-word ayah will score
+    high by chance in any window.
+    """
+    n, m = len(ref), len(query)
+    if not n or not m:
+        return 0.0, 0, 0, 0
+    INF = float("inf")
+    M = [[INF] * (m + 1) for _ in range(n + 1)]
+    D = [[INF] * (m + 1) for _ in range(n + 1)]
+    pm = [[0] * (m + 1) for _ in range(n + 1)]
+    pd = [[0] * (m + 1) for _ in range(n + 1)]
+    M[0][0] = 0
+    for j in range(m + 1):
+        D[0][j] = 0          # free query start
+    for i in range(1, n + 1):
+        D[i][0] = _GO + (i - 1) * _GE
+        pd[i][0] = 1
+    for i in range(1, n + 1):
+        ri = ref[i - 1]
+        Mi, Mp, Dp = M[i], M[i - 1], D[i - 1]
+        Mi[0] = INF
+        for j in range(1, m + 1):
+            best, src = M[i - 1][j - 1], 0
+            if D[i - 1][j - 1] < best:
+                best, src = D[i - 1][j - 1], 1
+            Mi[j] = best + (0 if ri == query[j - 1] else _SUB)
+            pm[i][j] = src
+            if Mi[j - 1] + _GO <= D[i][j - 1] + _GE:
+                D[i][j] = Mi[j - 1] + _GO
+                pd[i][j] = 0
+            else:
+                D[i][j] = D[i][j - 1] + _GE
+                pd[i][j] = 1
+    bestj, bestc = 0, INF
+    for j in range(m + 1):
+        if M[n][j] < bestc:
+            bestc, bestj = M[n][j], j
+    i, j, hits, j_start = n, bestj, 0, bestj
+    while i > 0 and j > 0:
+        if pm[i][j] in (0, 1):
+            if ref[i - 1] == query[j - 1]:
+                hits += 1
+            j -= 1
+            i -= 1
+        elif pd[i][j] == 0:
+            j -= 1
+        elif pd[i][j] == 1:
+            i -= 1
+        else:
+            break
+    return hits / float(n), hits, j_start, bestj
 
 
 def expected_all(table, tok, surah, n_ayat):
@@ -242,6 +321,7 @@ class Move(object):
 
 
 REASONS = ("forward-strong", "forward-pending", "jump", "backward", "handoff",
+            "pinned-escape",
            "repeat")
 
 ARROW = {"forward-strong": "->", "forward-pending": "->", "jump": "=>",
@@ -594,6 +674,24 @@ def simulate(by_frame, n_frames, frame_sec, plan, exp_by_surah, policy, drain_fr
             s.pending_next_ayah = None
             s.pending_next_frames = 0
 
+        # ---- pinned-lock escape -------------------------------------
+        # Forward needs next_cov >= advance (0.60), decay needs next_cov < weak
+        # (0.40), and the jump needs here_cov < stuck (0.35). A frame whose
+        # next_cov sits in [weak, advance) while here_cov is high is one where
+        # NO branch can fire, ever. Surah 55 spent 118 polls there: here_cov
+        # pinned at 1.00, next_cov frozen at 0.50, for the rest of the surah.
+        # The locked ayah being fully covered is exactly why it could not
+        # recover, because a high here_cov is what holds the jump gate shut.
+        if (policy.pinned_escape_sec > 0
+                and next_cov < policy.advance
+                and next_cov >= policy.weak
+                and here_cov >= policy.strong
+                and (audio_sec - s.last_move_t) >= policy.pinned_escape_sec):
+            s.move(audio_sec, wall, s.surah, next_ayah, +1, "pinned-escape",
+                   next_cov, 0, measure_speed=True)
+            s.reset_stream(tail_replay=True)
+            moved = True
+
         # ---- gated long jump --------------------------------------
         # `here_cov < policy.stuck` is the nested-ayah gate. Coverage is
         # unitsMatched/unitsTotal, so a candidate whose units are a SUBSEQUENCE
@@ -739,6 +837,9 @@ def main(argv):
     ap.add_argument("--stuck", type=float, default=0.35)
     ap.add_argument("--tail-sec", type=float, default=1.5)
     ap.add_argument("--back-need", type=int, default=2)
+    ap.add_argument("--no-pinned-escape", action="store_true",
+                    help="disable the pinned-lock escape, reproducing the "
+                         "surah-55 deadlock")
     ap.add_argument("--drain-frames", type=int, default=None,
                     help="polls to run past end of file so the tail backlog "
                          "drains; default = the tail length. Use a negative "
@@ -749,7 +850,8 @@ def main(argv):
 
     policy = LockPolicy(args.advance, args.strong, args.weak, args.jump,
                         args.back, args.handoff, args.stuck, args.tail_sec,
-                        args.back_need, tail_mode=args.tail_mode)
+                        args.back_need, tail_mode=args.tail_mode,
+                        pinned_escape_sec=0.0 if args.no_pinned_escape else 12.0)
     if args.surah_change:
         plan = []
         for spec in args.surah_change:

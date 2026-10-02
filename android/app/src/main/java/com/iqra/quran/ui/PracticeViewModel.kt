@@ -502,6 +502,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var sliceStart = 0
     private var rebaseSlice = false
 
+    // When the lock last moved, on the wall clock. Used ONLY by the pinned-lock
+    // escape below; nothing else reads it.
+    private var lastLockMoveMs = 0L
+
     private val _activeWindow = MutableStateFlow<List<Int>>(emptyList())
     val activeWindow: StateFlow<List<Int>> = _activeWindow
 
@@ -589,6 +593,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         diag("lock $prev → $next")
         pendingNextAyah = null; pendingNextFrames = 0
         pendingBackAyah = null; pendingBackFrames = 0
+        lastLockMoveMs = System.currentTimeMillis()
         rebaseSlice = true
         // The stream is recycled below, so its token count restarts from zero
         // while the growth test compares against the PRE-move count. A fresh
@@ -779,6 +784,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val (s, a) = anchorForPage(page) ?: return
         loadSurah(s)
         lockedAyah = a
+        lastLockMoveMs = System.currentTimeMillis()
         rebaseSlice = true
         diag("jump → s=$s:$a p=$page")
         wrongStreak.clear()
@@ -867,6 +873,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             _currentPage.value = targetPage
         }
         lockedAyah = ayah
+        lastLockMoveMs = System.currentTimeMillis()
         rebaseSlice = true
         _activeVerse.value = ayah
         refreshWindow()
@@ -989,6 +996,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         loadSurah(s)
         if (verseWords.isEmpty()) return
         lockedAyah = pendingAnchor ?: anchor
+        // Armed here, not left at 0: the pinned-lock escape measures elapsed time
+        // since the lock last moved, and an un-armed timer reads as "motionless
+        // since 1970", which would let the escape fire on the very first frame.
+        lastLockMoveMs = System.currentTimeMillis()
         diag("session starts p=$page → s=$s:${lockedAyah}")
         rebaseSlice = true
         pendingAnchor = null
@@ -1252,6 +1263,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     if (cov >= HANDOFF_COVERAGE) {
                         loadSurah(activeSurah + 1)
                         lockedAyah = 1
+                        lastLockMoveMs = System.currentTimeMillis()
                         rebaseSlice = true
                         lastAdvanceAt = System.currentTimeMillis()
                         // The pending counters are keyed on an ayah NUMBER, not
@@ -1324,6 +1336,37 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 if (pendingNextFrames == 0) pendingNextAyah = null
             } else {
                 pendingNextAyah = null; pendingNextFrames = 0
+            }
+
+            // ---- pinned-lock escape ---------------------------------
+            // The three gates above cannot cover every state. Forward needs
+            // nextCov >= ADVANCE (0.60); decay needs nextCov < WEAK (0.40); the
+            // jump needs hereCov < STUCK (0.35). So a frame with nextCov in the
+            // dead band [0.40, 0.60) AND hereCov high is one where NO branch can
+            // ever fire, and the lock is stuck for good.
+            //
+            // That is not hypothetical. Scoring 114 surahs (6236 ayat, 26 h of
+            // Al-Dosari audio) found surah 55 sitting exactly there: hereCov
+            // pinned at 1.00, nextCov frozen at 0.50, for 118 consecutive
+            // polls - about 30 seconds and then the rest of the surah. The
+            // locked ayah was fully covered, which is precisely why it could
+            // never recover: a high hereCov is what keeps the jump gate shut.
+            //
+            // Lowering ADVANCE would fix that by accident and break the gates
+            // everywhere else - ADVANCE exists to stop the lock crediting an
+            // ayah on a phrase it has not finished. So this only fires from a
+            // state that is already unrecoverable, and only after the lock has
+            // demonstrably been motionless for PINNED_ESCAPE_MS. In normal
+            // recitation the lock moves every few seconds and this never runs.
+            val pinnedFor = System.currentTimeMillis() - lastLockMoveMs
+            if (nextCov < ADVANCE_COVERAGE &&
+                nextCov >= WEAK_COVERAGE &&
+                hereCov >= STRONG_COVERAGE &&
+                pinnedFor >= PINNED_ESCAPE_MS
+            ) {
+                diag("pinned escape: here ${pct(hereCov)} next ${pct(nextCov)} " +
+                    "after ${pinnedFor}ms motionless")
+                advanceLockTo(nextAyah)
             }
 
             // Gated long jump: the reciter skipped ahead. Kept deliberately -
@@ -1459,6 +1502,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     repeatLeftCount--
                     _repeatLeft.value = repeatLeftCount
                     lockedAyah = rep.second
+                    lastLockMoveMs = System.currentTimeMillis()
                     pendingNextAyah = null; pendingNextFrames = 0
                     pendingBackAyah = null; pendingBackFrames = 0
                     rebaseSlice = true
@@ -1754,6 +1798,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         private const val ADVANCE_COVERAGE = 0.60f
         private const val STRONG_COVERAGE = 0.85f
         private const val WEAK_COVERAGE = 0.40f
+        // How long the lock must be motionless, in a state no gate can leave,
+        // before the escape above advances it. Measured deadlock in surah 55 ran
+        // ~30 s; 12 s is well clear of that and well above the 3-5 s a healthy
+        // lock takes between moves at 100 wpm.
+        private const val PINNED_ESCAPE_MS = 12_000L
         private const val JUMP_COVERAGE = 0.92f
         private const val BACK_COVERAGE = 0.80f
         private const val HANDOFF_COVERAGE = 0.60f

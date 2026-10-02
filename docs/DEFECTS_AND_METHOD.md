@@ -499,20 +499,33 @@ coverage of the skipped ayah against the emission stream (a best-contiguous
 variant, because coverage over a wide window is 1.00 for the skipped ayah in 5
 of 6 cases and tells you nothing):
 
-| surah | jump | skipped ayah coverage | verdict |
-|---|---|---|---|
-| 52 | 52:5 -> 52:7 | 0.182 | reciter skipped it |
-| 74 | 74:30 -> 74:38 | 0.017-0.826 over 304 units | reciter skipped 7 |
-| 80 | 80:17 -> 80:19 | 0.417 | reciter skipped it |
-| 81 | 81:13 -> 81:15 | 0.071 | reciter skipped it |
-| 8 | 8:68 -> 8:70 | 0.744 | **recited but missed** |
-| 54 | 54:37 -> 54:39 | 1.000 | **recited but missed** |
+`lock_trace.local_coverage()` does this now: semi-global in the query (free
+start, free end), global in the reference, substitutions allowed inside the
+matched span - because a single recogniser slip must not break the run, which is
+why a strict longest-common-substring is the wrong tool. It is scored against a
+null baseline of the same ayah over same-length windows elsewhere in the same
+surah, since a three-word ayah scores high by chance in any window.
 
-So two root causes, not one. Four were the policy working. The other two share
-a mechanism worth naming: **coverage is computed over the post-rebase slice only,
-so a jump can fire on arrival order rather than presence.** At surah 54's jump
-the slice held 13 symbols scoring 54:39 = 0.929 against 54:38 = 0.130, because
-54:39's audio had already flowed through while 54:38's had only just arrived.
+`run_corpus.py` now runs this automatically for every jump and emits
+`jump_verdict`. Borderline cases are reported as AMBIGUOUS with their numbers
+rather than forced to one side, because forcing them is the same mistake this
+whole function exists to remove:
+
+| surah | jump | skipped | local | null | verdict |
+|---|---|---|---|---|---|
+| 52 | 52:5 -> 52:7 | 52:6 | 0.182 | 0.273 | reciter skipped it |
+| 74 | 74:30 -> 74:38 | 74:31-37 | 0.017 | 0.022 | reciter skipped 7 |
+| 80 | 80:17 -> 80:19 | 80:18 | 0.333 | 0.083 | reciter skipped it |
+| 81 | 81:13 -> 81:15 | 81:14 | 0.500 | 0.143 | ambiguous |
+| 8 | 8:68 -> 8:70 | 8:69 | 0.590 | 0.154 | ambiguous |
+| 54 | 54:37 -> 54:39 | 54:38 | 1.000 | 0.174 | **recited but missed** |
+
+Three were unambiguously the policy working, one is a real miss, and two do not
+admit a verdict at this threshold. The real miss shares a mechanism worth
+naming: **coverage is computed over the post-rebase slice only, so a jump can
+fire on arrival order rather than presence.** At surah 54's jump the slice held
+13 symbols scoring 54:39 = 0.929 against 54:38 = 0.130, because 54:39's audio had
+already flowed through while 54:38's had only just arrived.
 
 ### Ar-Rahman 55: a real deadlock, and no threshold fixes it
 
