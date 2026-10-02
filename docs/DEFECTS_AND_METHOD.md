@@ -452,3 +452,99 @@ at a glance, which is precisely how the 5.3% feed bug lived under a green build
 for so long. So the gate prints `SKIP` and says so in the summary, and CI runs
 the five model-free checks only - the five that need no model, no sherpa, no
 numpy and no audio, and cost about fifteen seconds.
+
+## The whole-Quran corpus (Al-Dosari, 114 surahs, 6236 ayat, 26 h)
+
+Run to completion in 6.1 h. A different reciter from the pinned Husary six, so
+it is a stress test rather than a pass/fail gate - and it found more than the
+first seven surahs did. Judging the policy from those seven would have shipped
+all nineteen failures.
+
+| | sequential | complete |
+|---|---|---|
+| as first measured | 95/114 | 101/114 |
+| after the tail-drain fix | **104/114** | **112/114** |
+
+### Ten of the nineteen were the harness, not the app
+
+After every forward move the fresh stream is handed 1.5 s of already-decoded
+audio (`TAIL_SAMPLES`, `PracticeViewModel.kt:1157`), so it runs that far behind
+live audio. The replay loop stopped at end of file, so the backlog could never
+drain and the last frames of a surah were never consumed. The symptom was a lock
+that refused to advance onto the FINAL ayah, on audio whose tokens ran to 100 %
+of the file, with the target's coverage sitting comfortably above `ADVANCE`.
+
+On a device this cannot happen - the microphone keeps delivering frames after
+the reciter stops. `simulate()` now runs `tail_frames` extra polls past the end
+of the recording, which models exactly that. Eleven surahs repaired by that one
+line. Verified three ways: surah 97, 105 and 53 each advance with the drain on
+and stop one short with `--drain-frames -1`, which reproduces the bug exactly.
+
+`--rescore` then re-ran all 114 from the existing dumps - no ffmpeg, no
+recogniser - in 110 minutes. A harness fix has to be applicable to a finished
+run, or every future finding costs another full pass.
+
+`tail_seconds` itself was then swept over {0, 0.75, 1.5, 3.0} on five surahs:
+**final lock, moves, oscillations and deviations were identical in all 20 runs.**
+The only thing that moved was the trailing stall, by exactly `-tail_seconds`. So
+the tail length is not a correctness knob; it delays the trajectory in wall-clock
+and nothing else. `tail=0` is a diagnostic bound, not a candidate fix - the device
+always has the tail.
+
+### Four of the six jumps were correct, and the metric called them failures
+
+A jump is non-sequential by definition, so a *correct* jump - one over an ayah
+the reciter really did skip - was being counted as a deviation. Measuring
+coverage of the skipped ayah against the emission stream (a best-contiguous
+variant, because coverage over a wide window is 1.00 for the skipped ayah in 5
+of 6 cases and tells you nothing):
+
+| surah | jump | skipped ayah coverage | verdict |
+|---|---|---|---|
+| 52 | 52:5 -> 52:7 | 0.182 | reciter skipped it |
+| 74 | 74:30 -> 74:38 | 0.017-0.826 over 304 units | reciter skipped 7 |
+| 80 | 80:17 -> 80:19 | 0.417 | reciter skipped it |
+| 81 | 81:13 -> 81:15 | 0.071 | reciter skipped it |
+| 8 | 8:68 -> 8:70 | 0.744 | **recited but missed** |
+| 54 | 54:37 -> 54:39 | 1.000 | **recited but missed** |
+
+So two root causes, not one. Four were the policy working. The other two share
+a mechanism worth naming: **coverage is computed over the post-rebase slice only,
+so a jump can fire on arrival order rather than presence.** At surah 54's jump
+the slice held 13 symbols scoring 54:39 = 0.929 against 54:38 = 0.130, because
+54:39's audio had already flowed through while 54:38's had only just arrived.
+
+### Ar-Rahman 55: a real deadlock, and no threshold fixes it
+
+The lock stops at 55:63 and stays there for 86 seconds. **55:63's expected units
+are byte-identical to 55:65's, 55:67's, 55:69's** - the refrain occupies every
+other ayah. So the slice permanently contains a full exact copy of the locked
+ayah, `here_cov` pins at **1.000** and never dips below `STUCK`, which shuts the
+jump gate; and `next_cov` sits at 0.375-0.500, inside the dead band
+`[WEAK, ADVANCE)`, which shuts the forward gate. Neither can open.
+
+The successor, 55:64, is a one-word 8-unit ayah (*mudh-hamat*) that the
+recogniser essentially never produces - the best 5-second window anywhere in all
+530 s is 2/8, and during the stall it emitted only `mim-ta`. Meanwhile coverage
+of 55:65, 55:66 and 55:67 against the same slice is **1.000**: the lock is eight
+ayat behind and can see it, but the policy only ever evaluates `ayah+1`.
+
+There is no threshold that fixes this. The evidence is absent - the recogniser
+cannot hear the ayah - so the right response is to *say so*, which is why the app
+now reports the stall and its cause. Retuning here would be the exact mistake of
+optimising a number that was never wrong.
+
+One hypothesis of mine was wrong and the measurement said so: I expected the
+jump gate to be unreachable, because coverage over a growing window can only
+increase. It is open on **85.3 %** of evaluated polls - the rebase resets the
+window on every move, so `here_cov` stays low normally. The freeze needs the
+refrain specifically.
+
+### What the metrics could not see
+
+`stall_gaps` measured only gaps *between* moves, so a stall running to the end of
+the file was invisible: surah 55 sat on one ayah for its final 99 seconds and
+scored as having no stalls at all. The report now carries `trailing_stall_sec`,
+`stuck_polls` and `stuck_dead_band_polls`, and `TraceResult.stuck` samples the
+coverage pair during a stall so the next occurrence explains itself instead of
+needing to be re-derived by hand.

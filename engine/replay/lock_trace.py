@@ -288,7 +288,10 @@ def group_frames(dump):
 # --------------------------------------------------------------------------
 class TraceResult(object):
     def __init__(self, moves, surah, ayah, wpm, polls_evaluated, n_emissions,
-                 n_polls, rebase_polls):
+                 n_polls, rebase_polls, stuck=None):
+        # `stuck` samples the coverage pair while the lock refuses to move, so a
+        # stall explains itself instead of having to be re-derived by hand.
+        self.stuck = stuck or []
         self.moves = moves
         self.final_surah = surah
         self.final_ayah = ayah
@@ -349,6 +352,8 @@ class _Session(object):
         # the port uses the audio clock - "how much recitation passed" is the
         # thing the gap is protecting against.
         self.last_move_t = 0.0
+        self.last_move_wall = None
+        self.stuck = []
         self.consecutive_retreats = 0
         self.repeat_left = repeat[2] if repeat else 0
         self.repeat_target = repeat[:2] if repeat else None
@@ -412,6 +417,7 @@ class _Session(object):
             self.surah = to_surah
         self.speech_since_advance = 0
         self.last_move_t = t
+        self.last_move_wall = wall
         self.consecutive_retreats = (
             self.consecutive_retreats + 1 if direction < 0 else 0)
 
@@ -437,7 +443,7 @@ class _Session(object):
             self.wpm = min(max(wpm, self.policy.wpm_min), self.policy.wpm_max)
 
 
-def simulate(by_frame, n_frames, frame_sec, plan, exp_by_surah, policy,
+def simulate(by_frame, n_frames, frame_sec, plan, exp_by_surah, policy, drain_frames=None,
              repeat=None, start=1):
     """Run the app's policy over grouped emissions.
 
@@ -465,7 +471,26 @@ def simulate(by_frame, n_frames, frame_sec, plan, exp_by_surah, policy,
         tail_frames = 0
     s = _Session(plan, exp_by_surah, policy, repeat, start, tail_frames)
 
-    for wall in range(n_frames):
+    # Drain the tail backlog past the end of the recording.
+    #
+    # After every forward move the fresh stream is handed `tail_frames` polls of
+    # already-decoded audio, so it runs that far BEHIND live audio. At end of
+    # file that backlog can never drain, because the loop simply stops - and the
+    # last frames of the surah are never consumed. The symptom was a lock that
+    # refused to advance onto the FINAL ayah of a surah, on audio whose tokens
+    # ran to 100% of the file, with coverage of the target sitting comfortably
+    # above ADVANCE. Ten surahs "failed" this way, and it was the harness, not
+    # the policy.
+    #
+    # On a device this cannot happen: the microphone keeps delivering frames
+    # after the reciter stops, so the backlog drains within ~1.5 s and the
+    # buffered emissions are evaluated. Extending the loop by `tail_frames`
+    # models exactly that - the extra polls have no emissions of their own, but
+    # `dump_frame` walks back into the real frames and finally consumes them.
+    drain = tail_frames if drain_frames is None else drain_frames
+    total = n_frames + max(0, drain)
+
+    for wall in range(total):
         # The stream consumes audio `backlog` polls behind live audio, so a
         # replayed symbol re-emerges one poll after it first appeared.
         dump_frame = wall - s.backlog
@@ -524,6 +549,24 @@ def simulate(by_frame, n_frames, frame_sec, plan, exp_by_surah, policy,
         here_cov = coverage(obs, exp[s.ayah][0])[0] if s.ayah in exp else 0.0
         need_frames = 3 if s.wpm < policy.wpm_low else 2
         moved = False
+
+        # ---- stuck probe -------------------------------------------
+        # While the lock will not move, record WHY: the coverage of the locked
+        # ayah and of the candidate. A stall is otherwise only a duration, and
+        # two stalls of the same length can have opposite causes - the dead band
+        # [weak, advance) where neither the forward gate nor the jump gate can
+        # open, versus the lock sitting on an ayah whose successor was never
+        # heard at all. Surah 94 was 27 seconds of audio that never advanced and
+        # the report said nothing about why.
+        if (s.last_move_wall is not None
+                and (wall - s.last_move_wall) * frame_sec >= 20.0):
+            s.stuck.append({
+                "t": round(audio_sec, 2),
+                "ayah": s.ayah,
+                "here_cov": round(here_cov, 3),
+                "next_cov": round(next_cov, 3),
+                "in_dead_band": bool(policy.weak <= next_cov < policy.advance),
+            })
 
         # ---- forward (879-893) --------------------------------------
         if next_cov >= policy.advance:
@@ -623,7 +666,7 @@ def simulate(by_frame, n_frames, frame_sec, plan, exp_by_surah, policy,
 
     n_emissions = sum(len(v) for v in by_frame.values())
     return TraceResult(s.moves, s.surah, s.ayah, s.wpm, s.evaluated,
-                       n_emissions, n_frames, s.rebase_polls)
+                       n_emissions, n_frames, s.rebase_polls, s.stuck)
 
 
 # --------------------------------------------------------------------------
@@ -649,7 +692,7 @@ def build_exp(table, tok, plan):
 
 
 def run_dump(dump, plan, policy=None, exp=None, table=None, tok=None,
-             repeat=None, start=1):
+             repeat=None, start=1, drain_frames=None):
     """Run the policy over a token dump. Returns TraceResult."""
     policy = policy or LockPolicy()
     table = table if table is not None else load_table()
@@ -657,7 +700,8 @@ def run_dump(dump, plan, policy=None, exp=None, table=None, tok=None,
     exp = exp if exp is not None else build_exp(table, tok, plan)
     frame_sec = dump.get("frame_ms", 250) / 1000.0
     return simulate(group_frames(dump), dump["frames"], frame_sec, plan, exp,
-                    policy, repeat=repeat, start=start)
+                    policy, repeat=repeat, start=start,
+                    drain_frames=drain_frames)
 
 
 def print_result(res, title="MOVE TRACE"):
@@ -695,6 +739,10 @@ def main(argv):
     ap.add_argument("--stuck", type=float, default=0.35)
     ap.add_argument("--tail-sec", type=float, default=1.5)
     ap.add_argument("--back-need", type=int, default=2)
+    ap.add_argument("--drain-frames", type=int, default=None,
+                    help="polls to run past end of file so the tail backlog "
+                         "drains; default = the tail length. Use a negative "
+                         "value to reproduce the un-drained bug.")
     ap.add_argument("--tail-mode", default="replay",
                     choices=("replay", "blank", "none"))
     args = ap.parse_args(argv)
@@ -716,7 +764,8 @@ def main(argv):
 
     with open(args.dump) as f:
         dump = json.load(f)
-    res = run_dump(dump, plan, policy=policy, repeat=repeat, start=args.start)
+    res = run_dump(dump, plan, policy=policy, repeat=repeat,
+                   start=args.start, drain_frames=args.drain_frames)
     print("dump      : %s (%d emissions over %d polls @ %.0f ms)"
           % (os.path.basename(args.dump), res.n_emissions, dump["frames"],
              dump.get("frame_ms", 250)))

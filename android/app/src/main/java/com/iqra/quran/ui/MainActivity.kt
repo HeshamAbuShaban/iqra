@@ -1054,6 +1054,9 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                     if (live.gateClosed > 0) {
                         DiagRow("Gate closed", "${live.gateClosed} frames, none reached the decoder")
                     }
+                    if (live.stallNote.isNotEmpty()) {
+                        DiagRow("Stalled", live.stallNote)
+                    }
                     DiagRow("WPM", "%.0f".format(wpm))
                     DiagRow("Gate", gate.ifEmpty { "—" })
                     DiagRow("Decoder", decoder.ifEmpty { "—" })

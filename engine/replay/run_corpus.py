@@ -128,6 +128,21 @@ def score(dump_path: Path, surah: int, n_ayat: int, table, tok):
         if gap > 25.0:
             stall_gaps.append({"after_ayah": a.to_ayah, "gap_sec": round(gap, 1)})
 
+    # The trailing stall - audio after the LAST move - was invisible, because
+    # the loop above only measures gaps *between* moves. Surah 55 sat on one
+    # ayah for the final 99 seconds of a 530 s surah and the report scored it as
+    # having no stalls at all. A stall that runs to end of file is the one that
+    # most needs reporting.
+    trailing = None
+    if moves:
+        trailing = round(dump["audio_sec"] - moves[-1].t, 1)
+
+    # Why the lock stopped, when it stopped: how long it was pinned, and how
+    # often it was sitting in the dead band [weak, advance) where the forward
+    # gate and the jump gate are both shut.
+    stuck = getattr(res, "stuck", [])
+    dead = sum(1 for x in stuck if x.get("in_dead_band"))
+
     bad_frames = []
     if not sequential:
         # Report the moves that deviate from a clean walk, with their coverage.
@@ -157,6 +172,9 @@ def score(dump_path: Path, surah: int, n_ayat: int, table, tok):
         "reached_ayah": reached,
         "complete": reached == n_ayat,
         "stall_gaps": stall_gaps,
+        "trailing_stall_sec": trailing,
+        "stuck_polls": len(stuck),
+        "stuck_dead_band_polls": dead,
         "deviating_moves": bad_frames,
         "wpm": round(res.wpm, 1),
     }
@@ -183,6 +201,9 @@ def main() -> int:
     ap.add_argument("--status", action="store_true", help="print the report and exit")
     ap.add_argument("--first", type=int, default=1)
     ap.add_argument("--last", type=int, default=114)
+    ap.add_argument("--rescore", action="store_true",
+                    help="re-run only the policy over existing token dumps; "
+                         "no ffmpeg and no recogniser")
     ap.add_argument("--source", default="dosari",
                     help="dosari (the local dos_6.zip) or husary (engine/audio)")
     args = ap.parse_args()
@@ -230,26 +251,36 @@ def main() -> int:
     for surah, n_ayat in pairs:
         if surah in already:
             continue
-        if args.source == "husary":
-            raw_src = AUDIO / f"{surah:03d}.raw"
-            src = raw_src if raw_src.is_file() else AUDIO / f"{surah:03d}.mp3"
-        else:
-            src = zip_dir / f"{surah:03d}.mp3"
-            if not src.is_file():
-                log(f"  {surah:3d}: audio missing at {src}")
-                continue
-        # The Husary clips in engine/audio are ALREADY 16 kHz mono f32le, so
-        # they must not go through ffmpeg - it rejects a raw stream with no
-        # container. The Dosari mp3s do need the transcode.
-        if src.suffix == ".raw":
-            raw = src
-        else:
-            raw = RAW / f"{surah:03d}.raw"
-            if not transcode(src, raw):
-                continue
         dump_path = DUMPS / f"{surah:03d}.json"
-        if not dump_tokens(raw, dump_path):
-            continue
+
+        if args.rescore:
+            # Scoring reads only the token dump. Re-running ffmpeg over 26 h of
+            # mp3 - let alone the recogniser - to recompute a POLICY decision is
+            # pure waste, and the dumps are already on disk. This is how a
+            # harness fix gets applied to a finished corpus run.
+            if not dump_path.is_file():
+                log(f"  {surah:3d}: no dump to rescore at {dump_path}")
+                continue
+        else:
+            if args.source == "husary":
+                raw_src = AUDIO / f"{surah:03d}.raw"
+                src = raw_src if raw_src.is_file() else AUDIO / f"{surah:03d}.mp3"
+            else:
+                src = zip_dir / f"{surah:03d}.mp3"
+                if not src.is_file():
+                    log(f"  {surah:3d}: audio missing at {src}")
+                    continue
+            # The Husary clips in engine/audio are ALREADY 16 kHz mono f32le,
+            # so they must not go through ffmpeg - it rejects a raw stream with
+            # no container. The Dosari mp3s do need the transcode.
+            if src.suffix == ".raw":
+                raw = src
+            else:
+                raw = RAW / f"{surah:03d}.raw"
+                if not transcode(src, raw):
+                    continue
+            if not dump_tokens(raw, dump_path):
+                continue
         try:
             row = score(dump_path, surah, n_ayat, table, tok)
         except Exception as exc:  # noqa: BLE001

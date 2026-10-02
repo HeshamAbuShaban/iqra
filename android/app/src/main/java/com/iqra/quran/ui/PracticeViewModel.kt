@@ -108,6 +108,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val gateClosed: Long = 0,
         val held: String = "",
         val vadSpeech: Boolean? = null,
+        // Seconds since the lock last moved, and why it has not moved.
+        //
+        // A frozen highlight is the one failure the user cannot diagnose for
+        // themselves: the readout looked identical on a normal frame and on the
+        // 86 seconds where a refrain kept the locked ayah scoring 1.00 while
+        // the successor sat in the dead band. The corpus found that case
+        // (Ar-Rahman 55) and the app had no way to show it.
+        val stallSec: Float = 0f,
+        val stallNote: String = "",
     )
 
     private val _policyLive = MutableStateFlow(PolicyLive())
@@ -1403,6 +1412,26 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             )
             // Published beside the ring, from the same values, so what the screen
             // shows and what a dump contains cannot disagree.
+            // The stall, in seconds, and its cause. Each branch names a
+            // situation the whole-corpus run actually produced, and each says
+            // whether a threshold change could help - because in two of the three
+            // it cannot, and pretending otherwise is what would send someone
+            // off to retune a number that was never wrong.
+            val stallSec = (System.currentTimeMillis() - lastAdvanceAt) / 1000f
+            val stallNote = when {
+                stallSec < STALL_NOTE_SEC -> ""
+                nextCov < WEAK_COVERAGE ->
+                    "stalled ${stallSec.toInt()}s: the next ayah is not being heard " +
+                        "at all (${pct(nextCov)}). Retuning will not help."
+                nextCov < ADVANCE_COVERAGE && hereCov >= STUCK_COVERAGE ->
+                    "stalled ${stallSec.toInt()}s: next is close (${pct(nextCov)}) but " +
+                        "not past ${pct(ADVANCE_COVERAGE)}, and this ayah still looks " +
+                        "recited (${pct(hereCov)}), so neither gate can open."
+                nextCov < ADVANCE_COVERAGE ->
+                    "stalled ${stallSec.toInt()}s: next is close (${pct(nextCov)}) but " +
+                        "not past ${pct(ADVANCE_COVERAGE)}."
+                else -> "stalled ${stallSec.toInt()}s: waiting for a confirming frame."
+            }
             _policyLive.value = PolicyLive(
                 next = nextCov,
                 here = hereCov,
@@ -1415,6 +1444,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     else -> "next is nowhere near it"
                 },
                 vadSpeech = null,
+                stallSec = stallSec,
+                stallNote = stallNote,
             )
 
             // Repeat practice hook.
@@ -1713,6 +1744,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // replaying engine/audio/001.raw (Al-Fatiha, Husary) through the real
         // pipeline - see engine/replay/. On that clip the lock advanced 7/7
         // ayat sequentially at 0.60, with per-advance coverage 0.64-0.78.
+        /** Below this a stall is not worth reporting; normal confirmations take
+         *  a few seconds and a readout that cries wolf is worse than none. */
+        private const val STALL_NOTE_SEC = 8f
+
+        /** Coverages are published as 0-1; the readout says percent. */
+        private fun pct(v: Float) = "${(v * 100).toInt()}%"
+
         private const val ADVANCE_COVERAGE = 0.60f
         private const val STRONG_COVERAGE = 0.85f
         private const val WEAK_COVERAGE = 0.40f
