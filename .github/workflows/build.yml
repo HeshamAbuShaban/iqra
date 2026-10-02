@@ -39,6 +39,15 @@ jobs:
       - name: Fetch token assets (model is downloaded on first launch)
         run: SKIP_MODEL=1 IQRA_SKIP_PAGES=1 bash scripts/fetch_assets.sh
 
+      # The measurement gate, before the build, so a broken invariant fails in
+      # about 15 seconds instead of after a full Android build. These checks
+      # import nothing outside the standard library - no sherpa, no numpy, no
+      # audio - so no dependency setup is needed. The checks that DO need the
+      # gated model report SKIPPED here, loudly, because a skipped check that
+      # looks green is how the 5.3% feed bug survived so long.
+      - name: Measurement gate (model-free checks)
+        run: python3 engine/replay/run_checks.py
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
