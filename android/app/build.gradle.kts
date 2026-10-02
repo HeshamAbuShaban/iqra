@@ -69,4 +69,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.8")
+
+    // The alignment kernel is pure Kotlin and is tested on the JVM, so CI can
+    // execute it. This is the only reason the kernel is split out of
+    // PhonemeMapper: a numeric routine that CI cannot run is a numeric routine
+    // that can be rewritten blind, and two such rewrites were proposed and
+    // rejected in one week - both crashed on a negative array index.
+    testImplementation("junit:junit:4.13.2")
 }

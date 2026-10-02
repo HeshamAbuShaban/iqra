@@ -24,14 +24,47 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-KT = ROOT / "android/app/src/main/java/com/iqra/quran/ml/PhonemeMapper.kt"
+# The DP now lives in UnitAligner.kt, extracted so CI can execute it. The guard
+# follows it there rather than being deleted - a source check that is "updated"
+# to point at nothing is how a real guard quietly stops guarding.
+KT = ROOT / "android/app/src/main/java/com/iqra/quran/ml/UnitAligner.kt"
+
+
+MAPPER = ROOT / "android/app/src/main/java/com/iqra/quran/ml/PhonemeMapper.kt"
+
+
+def check_caller(failures) -> None:
+    """PhonemeMapper must consume the kernel, not keep a second traceback.
+
+    Splitting the DP out is only safe while there is exactly ONE traceback in
+    the codebase. If someone inlines a local fill loop again, the two can drift
+    and the pinned kernel digest stops describing what the app actually runs.
+    """
+    if not MAPPER.is_file():
+        failures.append(f"missing {MAPPER}")
+        return
+    body = MAPPER.read_text(encoding="utf-8")
+    if "UnitAligner.refToQuery(" not in body:
+        failures.append("PhonemeMapper no longer calls UnitAligner.refToQuery - if a "
+                        "second DP was inlined here, the pinned kernel digest is no "
+                        "longer the behaviour of this app")
+    # PhonemeMapper.align is the public entry point and must exist; what must
+    # NOT exist is a second copy of the DP's internals, which could drift from
+    # the kernel the digest pins.
+    for pat, why in [
+        (r"IntArray\s*\(\s*\(\s*n\s*\+\s*1", "a second direction table"),
+        (r"val\s+sub\s*=", "a second fill"),
+        (r"dir\[", "a second direction-table index"),
+    ]:
+        if re.search(pat, body):
+            failures.append(f"PhonemeMapper contains {why}; there must be one traceback")
 
 
 def main() -> int:
     src = KT.read_text(encoding="utf-8")
     failures = []
 
-    body = src[src.index("fun align("):]
+    body = src[src.index("fun refToQuery("):]
 
     # 1. NO BANDING. The fill must sweep the full expected width every row. A
     #    band would be written as lo..hi, or with a half-width applied to the
@@ -72,9 +105,14 @@ def main() -> int:
     # `(?!=)` is load-bearing: without it the write pattern's trailing `=`
     # matches the first `=` of a `==` comparison, so every read was also counted
     # as a write and a genuinely mis-indexed fill passed unnoticed.
+    # A read is either `dir[x] == 0` or the dispatch form `when (dir[x])`. Both
+    # index the same table, so both are reads; only the first was matched before,
+    # which made the guard report "no read found" on a correct kernel.
     IDX = r"dir\[\s*([a-zA-Z0-9_()+ *\-]+?)\s*\]"
     writes = {norm(w) for w in re.findall(IDX + r"\s*=(?!=)", body)}
     reads = {norm(r) for r in re.findall(IDX + r"\s*==", body)}
+    reads |= {norm(r) for r in re.findall(r"when\s*\(\s*" + IDX, body)}
+    reads = {r for r in reads if r}
     if not writes or not reads:
         failures.append("could not find the direction-table write/read expressions")
     elif writes != reads:
@@ -88,13 +126,15 @@ def main() -> int:
     #    the very list the expected side is drawn from. The `?: -1` fallback in
     #    the lookup is unreachable in that case, so it is not the thing to
     #    assert - the provenance is.
-    exp_decl = src[src.index("data class Expected("):src.index("private fun explode")]
+    # Expected/explode stayed in PhonemeMapper; only the traceback moved.
+    mapper = MAPPER.read_text(encoding="utf-8")
+    exp_decl = mapper[mapper.index("data class Expected("):mapper.index("private fun explode")]
     if "for (u in units)" not in exp_decl or "m[u] = m.size" not in exp_decl:
         failures.append(
             "symbolIds is not built from Expected.units, so the expected side "
             "could miss the map and collide with the -1 used for unknown symbols"
         )
-    if "val flat = expected.units" not in body:
+    if "val flat = expected.units" not in mapper:
         failures.append("the expected unit list no longer comes from Expected.units")
 
     # 4. TIE-BREAK ORDER must be substitution, then deletion, then insertion.
@@ -112,10 +152,32 @@ def main() -> int:
             failures.append(
                 f"tie-break order is {first_use[:3]}, expected ['sub', 'del', 'ins']"
             )
+        # Declaring sub, del, ins in that order is not the same as preferring
+        # them in that order. `best` must be SEEDED from the substitution, or a
+        # substitution can lose to an equal-cost insertion - the original defect
+        # this whole file exists for.
+        seed = re.search(r"var best = (sub|del|ins)\b", fill.group(1))
+        if not seed or seed.group(1) != "sub":
+            failures.append(
+                f"best is seeded from {seed.group(1) if seed else 'nothing'}, "
+                "expected 'sub'; substitution must be preferred at equal cost"
+            )
+        di, ii = fill.group(1).find("del <"), fill.group(1).find("ins <")
+        if di < 0 or ii < 0 or di > ii:
+            failures.append("deletion must be considered before insertion")
 
     # 5. Interning must be present at all; check 3 covers the -1 collision.
-    if "symbolIds" not in body:
+    if "symbolIds" not in mapper:
         failures.append("units are not interned; the inner loop compares Arabic strings")
+    # Having the map is not the same as using it at the lookup site. An expected
+    # unit taken as a raw string straight into the IntArray would restore the
+    # Arabic comparison the optimisation removed - and would not even compile,
+    # which is how this gap stayed invisible.
+    if not re.search(r"ids\[flat\[", mapper):
+        failures.append(
+            "the expected units are not read through ids[flat[...]]; the kernel "
+            "takes IntArray, so raw strings would compare Arabic per row"
+        )
 
     # 6. The backtrace must keep its defensive tail branches. A collapsed
     #    `when`/`else` that assumes dir==0 spins forever if it ever reads a cell
@@ -131,14 +193,24 @@ def main() -> int:
                 "the backtrace has no branch for i==0 or j==0; if the direction "
                 "read ever misses, the loop cannot terminate"
             )
+        # The unknown-direction arm must BAIL rather than continue. Advancing on
+        # a cell that was never written walks off the edge of the path and
+        # eventually returns a plausible-looking alignment that is not one.
+        if not re.search(r"else\s*->\s*return", tail):
+            failures.append(
+                "the backtrace's unknown-direction arm no longer returns; it must "
+                "bail rather than keep walking a path it cannot trust"
+            )
 
     # 7. The `Expected` interning map must be per-ayah and not rebuilt per call.
-    exp = src[src.index("data class Expected("):src.index("private fun explode")]
+    exp = mapper[mapper.index("data class Expected("):mapper.index("private fun explode")]
     if "val symbolIds" not in exp:
         failures.append("Expected has no cached symbolIds map")
     if "val ids: Map<String, Int>?" in exp and "get()" in exp:
         if "synchronized" not in exp and "Volatile" not in exp:
             failures.append("symbolIds is lazily built with no visibility guarantee")
+
+    check_caller(failures)
 
     if failures:
         print("FAIL")

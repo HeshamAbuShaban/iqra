@@ -208,13 +208,16 @@ def main() -> int:
                        | {int(p.stem) for p in AUDIO.glob("*.mp3")})
         pairs = [(s, counts.get(s, 7)) for s in stems]
     else:
-        zip_dir = Path("/home/oldbrain_exe/WorkingOn/Use/Quran/dos_6")
-        if not zip_dir.is_dir():
+        # The archive has no directory entries, so it extracts FLAT into its
+        # own parent - not into a dos_6/ subdirectory. Looking in the
+        # subdirectory skipped all 114 surahs without a single message.
+        zip_dir = Path("/home/oldbrain_exe/WorkingOn/Use/Quran")
+        if not (zip_dir / "001.mp3").is_file():
             log("extracting dos_6.zip (1.4 GB) - one-off")
             CORPUS.mkdir(parents=True, exist_ok=True)
             r = subprocess.run(["unzip", "-q", "-o",
                                 "/home/oldbrain_exe/WorkingOn/Use/Quran/dos_6.zip",
-                                "-d", str(zip_dir.parent)], capture_output=True, text=True)
+                                "-d", str(zip_dir)], capture_output=True, text=True)
             if r.returncode != 0:
                 log(f"unzip failed: {r.stderr.strip()[:200]}")
                 return 1
@@ -233,6 +236,7 @@ def main() -> int:
         else:
             src = zip_dir / f"{surah:03d}.mp3"
             if not src.is_file():
+                log(f"  {surah:3d}: audio missing at {src}")
                 continue
         # The Husary clips in engine/audio are ALREADY 16 kHz mono f32le, so
         # they must not go through ffmpeg - it rejects a raw stream with no

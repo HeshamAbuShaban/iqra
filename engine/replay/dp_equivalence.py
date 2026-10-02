@@ -157,9 +157,146 @@ def align_optimised(emitted, flat, word_of, ids=None):
     return matched, wrong, emit_word, units_matched, ln
 
 
+# ------------------------------------------------------- the extracted kernel
+def ref_to_query(qry, ref):
+    """UnitAligner.refToQuery - the kernel's real output, and the only traceback.
+
+    PhonemeMapper now derives matched/wrong/emitWord/coverage from this, so the
+    derivation is checked against the reference bookkeeping on every alignment
+    rather than trusted.
+    """
+    n, ln = len(qry), len(ref)
+    out = [-1] * ln
+    if ln == 0 or n == 0:
+        return out
+    width = ln + 1
+    dir_ = bytearray((n + 1) * width)
+    prev = list(range(ln + 1))
+    cur = [0] * width
+    for i in range(1, n + 1):
+        cur[0] = i
+        qi = qry[i - 1]
+        row = i * width
+        for j in range(1, ln + 1):
+            c = 0 if qi == ref[j - 1] else 1
+            sub = prev[j - 1] + c
+            dele = prev[j] + 1
+            ins = cur[j - 1] + 1
+            best, d = sub, 0
+            if dele < best:
+                best, d = dele, 1
+            if ins < best:
+                best, d = ins, 2
+            cur[j] = best
+            dir_[row + j] = d
+        prev, cur = cur, prev
+    i, j = n, ln
+    while i > 0 or j > 0:
+        if i > 0 and j > 0:
+            d = dir_[i * width + j]
+            if d == 0:
+                out[j - 1] = i - 1
+                i -= 1
+                j -= 1
+            elif d == 1:
+                i -= 1
+            elif d == 2:
+                j -= 1
+            else:
+                return out
+        elif i > 0:
+            i -= 1
+        else:
+            j -= 1
+    return out
+
+
+def derive(r2q, qry, ref, word_of):
+    """What PhonemeMapper now derives from the single traceback."""
+    matched = [False] * len(ref)
+    wrong = [False] * len(ref)
+    emit_word = [-1] * len(qry)
+    units = 0
+    for j, qi in enumerate(r2q):
+        if qi < 0:
+            continue
+        if qry[qi] == ref[j]:
+            matched[j] = True
+            units += 1
+        else:
+            wrong[j] = True
+        # An aligned expected unit stamps its word onto the emission that
+        # satisfied it, including a substitution - the emission IS this word's
+        # sound, just the wrong one.
+        emit_word[qi] = word_of[j]
+    return matched, wrong, emit_word, units
+
+
+def digest(cases):
+    """FNV-1a over (len(q), len(ref), refToQuery...). Mirrors UnitAligner.digest.
+
+    This is the seam that lets CI run the real Kotlin: both sides walk the same
+    generated vector space and fold it to one number, so a behavioural
+    difference is one failing assertion instead of a transcript to read.
+    """
+    h = 0xCBF29CE484222325
+    M = (1 << 64) - 1
+    P = 0x100000001B3
+
+    def mix_int(v):
+        nonlocal h
+        for k in range(4):
+            h = ((h ^ ((v >> (8 * k)) & 0xFF)) * P) & M
+
+    for q, r, r2q in cases:
+        mix_int(len(q))
+        mix_int(len(r))
+        for v in r2q:
+            mix_int(v)
+    return h
+
+
+def canonical_cases():
+    """Identical walk to UnitAligner.canonicalCases()."""
+    cases = []
+
+    def seq(pat, ln):
+        return [(pat >> i) & 1 for i in range(ln)]
+
+    for lq in range(5):
+        for q in range(1 << lq):
+            query = seq(q, lq)
+            for lr in range(5):
+                for r in range(1 << lr):
+                    ref = seq(r, lr)
+                    cases.append((query, ref, ref_to_query(query, ref)))
+    for ln in range(1, 49):
+        ref = [i % 2 for i in range(ln)]
+        q1 = [ref[i + 1] for i in range(ln - 1)]
+        cases.append((q1, ref, ref_to_query(q1, ref)))
+        sub = list(ref)
+        sub[ln // 2] = 1 - sub[ln // 2]
+        cases.append((sub, ref, ref_to_query(sub, ref)))
+        noisy = [0, 0, 0] + list(ref) + [0, 0, 0]
+        cases.append((noisy, ref, ref_to_query(noisy, ref)))
+        rev = [ref[ln - 1 - i] for i in range(ln)]
+        cases.append((rev, ref, ref_to_query(rev, ref)))
+    return cases
+
+
 def compare(emitted, flat, word_of, label, failures, ids=None):
     a = align_reference(emitted, flat, word_of)
     b = align_optimised(emitted, flat, word_of, ids)
+    if ids is None:
+        ids = build_ids(flat)
+    ref_ids = [ids[u] for u in flat]
+    qry_ids = [ids[u] if u in ids else -1 for u in emitted]
+    d = derive(ref_to_query(qry_ids, ref_ids), qry_ids, ref_ids, word_of)
+    if d != a[:4]:
+        names = ("matched", "wrong", "emitWord", "unitsMatched")
+        diff = [names[i] for i in range(4) if d[i] != a[i]]
+        failures.append(f"{label}: derivation from refToQuery differs on {diff} "
+                        f"(direct={a[3]} derived={d[3]})")
     if a != b:
         for k, name in enumerate(("matched", "wrong", "emitWord", "unitsMatched", "unitsTotal")):
             if a[k] != b[k]:
@@ -280,6 +417,12 @@ def main() -> int:
         if len(failures) > 20:
             print(f"  ... and {len(failures) - 20} more")
         return 1
+    canon = canonical_cases()
+    d = digest(canon)
+    signed = d - (1 << 64) if d >> 63 else d
+    print(f"canonical kernel cases : {len(canon)}")
+    print(f"KERNEL DIGEST (hex)    : 0x{d:016x}")
+    print(f"KERNEL DIGEST (signed) : {signed}")
     print("\nPASS: optimised DP is value-identical to the shipped DP "
           "on coverage, matched, wrong and emitWord")
     return 0

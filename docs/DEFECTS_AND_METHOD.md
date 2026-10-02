@@ -398,3 +398,57 @@ the lock decide that" after the fact.
    sherpa binding does not expose, and would alias against a 300 ms poll.
 6. **Hide mode is verified in the page-image path only.** The missing-page text
    fallback was corrected but has no page to fall back from in practice.
+
+## The DP is now executable by CI (two independent layers)
+
+The matcher was a pure-Kotlin routine inside an Android class. Hosted CI could
+compile it and never run it, so every proposal to change it was reviewed by
+reading alone - and in one week two of the three that arrived were broken (one
+crashed on a negative array index, one silently banded away most of the grid).
+Reading was not the failure. The failure was that reading was all there was.
+
+Two layers, deliberately not sharing a mechanism, so a blind spot in one is not
+a blind spot in both:
+
+1. **A pinned digest.** `UnitAligner.kt` holds the traceback and nothing else -
+   no `android.*`, no `Log`, no `WordStatus`, all asserted by a test. Kotlin and
+   `dp_equivalence.py` walk the same generated vector space (961 pairs up to
+   length 4, plus 192 larger asymmetric cases up to 48) and fold it to one
+   FNV-1a digest, currently `0x743fce71b4fbecd0`. A change to either side moves
+   the number, and one failing assertion replaces a transcript to read.
+   `:app:testDebugUnitTest` runs it on every build.
+
+2. **The source guard.** `dp_source_parity.py` reads the Kotlin and checks the
+   structure. It was repointed at the extracted file rather than deleted, and a
+   second check now fails if `PhonemeMapper` stops calling the kernel or grows
+   its own direction table - so there is exactly one traceback, and the digest
+   describes what the app actually runs.
+
+Both were verified by injecting faults, not by reading the checks:
+
+| injected fault                          | caught by                    |
+|-----------------------------------------|------------------------------|
+| banded fill                             | source guard                 |
+| `best` seeded from insertion            | source guard                 |
+| insertion considered before deletion    | source guard + digest        |
+| backtrace stops bailing on unknown dir  | source guard                 |
+| backtrace tail branches removed         | source guard                 |
+| interning bypassed at the lookup        | source guard                 |
+| caller stops using the kernel           | source guard                 |
+| interning built from the wrong list     | source guard                 |
+
+Three of those eight slipped through the first version and were fixed before this
+was trusted. Two had been hiding in plain sight: the tie-break check verified
+the order sub/del/ins were *declared*, not which one *won* a tie, and the
+interning check verified the map existed rather than that anything looked up
+through it - an expected unit read straight into the `IntArray` would not even
+have compiled. A guard that passes a fault is worse than no guard, because it
+looks green.
+
+### The measured lesson
+
+A skipped check that renders as a pass is indistinguishable from a working one
+at a glance, which is precisely how the 5.3% feed bug lived under a green build
+for so long. So the gate prints `SKIP` and says so in the summary, and CI runs
+the five model-free checks only - the five that need no model, no sherpa, no
+numpy and no audio, and cost about fifteen seconds.

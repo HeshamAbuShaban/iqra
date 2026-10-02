@@ -52,6 +52,15 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
 
+      # The alignment kernel, executed. Until this existed, CI could compile the
+      # matcher but never run it, so every proposal to change it was reviewed by
+      # reading alone - and two of the three that arrived were broken. This runs
+      # it and pins it to the Python reference by digest, so the next proposal
+      # fails a test instead of a phone.
+      - name: Alignment kernel (JVM)
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
