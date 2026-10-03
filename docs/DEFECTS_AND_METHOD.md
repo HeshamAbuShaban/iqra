@@ -611,3 +611,52 @@ It was removed from both files rather than left in as untested policy. The
 unreachable state is worth knowing about and not worth shipping code for: the
 lock's inability to hear a successor is an evidence problem, and no policy
 change creates evidence.
+
+## Closing measurement: 114 surahs, 6236 ayat, 26.0 h
+
+Same dumps, same pinned Husary 28/28, re-scored after the tail-drain fix and
+after the pinned-lock escape was validated.
+
+| | sequential | complete |
+|---|---|---|
+| first measurement | 95/114 | 101/114 |
+| drain + pinned-escape | 104/114 | **113/114** |
+
+One surah short: 94, an 8-ayah surah that reaches 7/8. Its `next_cov` rises
+monotonically 0.000 -> 0.727, enters forward-pending hysteresis at one frame,
+and the recording ends before the confirming frame arrives - confirmed by
+raising the drain to 20 and 60 polls, which leaves `polls_evaluated` at 42. On a
+device the stream keeps running, so this is a replay limit rather than a lock
+defect.
+
+The 10 surahs that are not `sequential` but are `complete` are all deviations,
+and they are mostly the policy working:
+
+- **3 jumps GENUINELY-ABSENT** - the reciter skipped the ayah. A jump is
+  non-sequential by definition, so these can never be sequential.
+- **2 jumps AMBIGUOUS** - 81:14 at local 0.500 and 8:69 at 0.590, against nulls
+  of 0.143 and 0.154. Real margin, but not past the 0.60 threshold.
+- **2 jumps RECITED-BUT-MISSED** - 54:38 at 1.000 and one other. These are the
+  genuine defects: coverage is read over the post-rebase slice, so a jump can
+  fire on arrival order rather than presence.
+- **3 backward moves** - the policy correcting itself after a jump. Surah 54
+  jumps 37->39 then steps back to 38.
+
+So of 6236 ayat, two jumps skipped an ayah the reciter really did say, and one
+8-ayah surah stopped one short at end of file. That is the honest residue, and
+none of it is the 30.9 % stall time the first run reported - most of that was
+the un-drained tail backlog and the dead-band freeze, both since fixed.
+
+8458 polls across the corpus sat in the dead band, and every one of them was
+recoverable. The pinned escape fired twice on surah 55 and nowhere else, which
+is the right order of magnitude for an escape hatch.
+
+### Staging for an on-device check
+
+The engine needs four files in `/sdcard/Iqra`, two of them gated and never
+committed: `model.int8.onnx` (72,705,392 bytes) and `tokens.txt` from the local
+weights, plus `ordered_quran_phonemes.json` and `silero_vad.onnx` (643,854
+bytes). `SherpaZipformer.filesPresent` only checks existence and non-zero
+length, and an empty `manifest.json` means no hash gate, so an adb push is
+enough - the app will not try to re-download them. This is the last step that
+cannot be done from here: it needs a voice.
