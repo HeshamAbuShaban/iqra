@@ -393,6 +393,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      */
     private var handoffShowCov = 0f
 
+    /**
+     * Ayat seen this session whose words cannot be judged because the phoneme
+     * table and the Mushaf disagree on word segmentation. Surfaced rather than
+     * swallowed: a silent skip is indistinguishable from a working feature that
+     * happened to find nothing.
+     */
+    private var unjudgeableAyahs = 0
+
     private var sessionStartedAtMs = 0L
     private var startSurahToFile = 0
     private var pollsSinceFlush = 0
@@ -440,6 +448,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .append(",\"moves\":").append(sessionMoves)
             .append(",\"reversals\":").append(sessionReversals)
             .append(",\"evaluations\":").append(sessionEvaluations)
+            .append(",\"unjudgeableAyahs\":").append(unjudgeableAyahs)
             .append("}")
             .append(",\"frames\":")
         frameRing.appendJson(sb)
@@ -1228,6 +1237,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         startSurahToFile = s
         pollsSinceFlush = 0
         sessionEvaluations = 0
+        unjudgeableAyahs = 0
         sessionActive = true
         diag("session starts p=$page → s=$s:${lockedAyah}")
         // Write the header immediately. If the process dies before the first
@@ -1774,7 +1784,32 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val ws = verseWords[a] ?: emptyList()
                 if (ws.isEmpty()) continue
                 val pw = PhonemeMapper.expected(activeSurah, a) ?: continue
-                if (pw.wordCount != ws.size) continue
+                if (pw.wordCount != ws.size) {
+                    // The recognition phoneme table segments an ayah into words
+                    // on phoneme-pHRASE boundaries and the Mushaf on
+                    // orthographic words. Where they disagree - and they disagree
+                    // for 4116 of 6236 ayat, 66 % of the Quran - pairing table
+                    // word i with Mushaf word i would put a verdict on the WRONG
+                    // WORD, which is the exact harm this feature exists to
+                    // prevent. So do not judge, and say so.
+                    //
+                    // This used to `continue`, which dropped the ayah entirely:
+                    // no status for any word, so every word rendered UNSTARTED
+                    // and the ayah showed no highlight, no colouring and no
+                    // sign that anything was wrong. Reported on device as "some
+                    // ayat are not masked with colouring ... ayat 7, 8 and 10
+                    // from al-Baqarah" - reproducible from any starting page,
+                    // because it is a property of the data, not of timing.
+                    //
+                    // UNKNOWN rather than SKIPPED because both are non-verdicts,
+                    // but UNKNOWN reaches the renderer as a non-null status, so
+                    // resolveLayer still gives the ayah its RECITATION_AYAH
+                    // highlight. The reader sees where the lock is; nothing is
+                    // accused.
+                    unjudgeableAyahs++
+                    for (i in ws.indices) newMap[keyOf(ws[i])] = WordStatus.UNKNOWN
+                    continue
+                }
                 val al = PhonemeMapper.align(obs, pw, obsProbs.toFloatArray())
                 for (i in ws.indices) {
                     val key = keyOf(ws[i])

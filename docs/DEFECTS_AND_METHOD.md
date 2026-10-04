@@ -770,3 +770,69 @@ Both found by reading a real session back, not by running the code:
 
 The second is the general lesson: an instrument that can overwrite its own
 results is worse than none, because it fails silently and looks like data.
+
+## Two thirds of the Quran has no word-level colouring, and it is silent
+
+Reported on device: "some ayat are not masked with colouring ... ayat 7, 8 and 10
+from al-Baqarah", reproducible from any starting page, while the ayat either side
+behave normally, and the next ayah returns to normal so the lock is clearly
+detecting it.
+
+### Cause
+
+The recognition phoneme table segments an ayah into words on **phoneme-phrase**
+boundaries. The Mushaf segments it into **orthographic** words. They disagree,
+and `PracticeViewModel` refuses to judge an ayah whose counts differ:
+
+```kotlin
+if (pw.wordCount != ws.size) continue
+```
+
+`continue` drops the ayah. No word gets a status, so every word renders
+`HighlightLayer.UNSTARTED` — no highlight, no colouring, nothing. Not an error
+state, which is exactly why it survived until someone looked for it.
+
+**4116 of 6236 ayat — 66 % of the Quran.** All three of the reported ayat are in
+the set, alongside 2:1, 2:2, 2:4 and 2:5.
+
+The disagreement is systematic, not drift. Table entries correspond one-to-one
+with Mushaf words except where a **waqf mark** sits between two words: the
+phonemiser drops the mark and merges them.
+
+```
+2:7 table  8: 'غِشَااوَتُوووَلَهُم'
+2:7 mushaf 8: 'غِشَـٰوَةٌۭ ۖ'   9: 'وَلَهُمْ'
+```
+
+One table entry covers two Mushaf words, so 11 != 12 and the ayah is dropped.
+Where the table is finer it has split instead — but that is rare: coarser 4089,
+finer 27. So the counts cannot be reconciled by counting.
+
+### Fixed for now, by saying so instead of vanishing
+
+The mismatch cannot be repaired without aligning table entries to Mushaf words
+through an orthography the phonemiser deliberately altered — alef dropped or turned
+into lam, shadda expanded to a doubled letter — and then deciding what verdict two
+words sharing one entry should receive. A boundary in the wrong place does not
+merely mis-colour: it puts a WRONG verdict on the wrong word, which is the exact
+failure this feature exists to prevent. That is a deliberate piece of work, not a
+change to make at speed on a long day.
+
+So the ayah now yields **UNKNOWN** for every word instead of being dropped.
+UNKNOWN is a non-verdict, but unlike `null` it reaches the renderer, so
+`resolveLayer` still gives the ayah its `RECITATION_AYAH` highlight. The reader
+sees where the lock is and nothing is accused. `unjudgeableAyahs` is recorded per
+session so the gap is counted rather than remembered.
+
+`engine/replay/word_alignment_parity.py` states the number and bounds it at 70 %
+so a change that makes it worse fails the gate. It is not a pass in the sense that
+word colouring works — it is a pass in the sense that the failure is now a stated
+number rather than a surprise.
+
+### Why it was invisible
+
+Six months of corpus work measured the LOCK, and the lock is fine: it advanced
+through 2:7, 2:8 and 2:10 correctly on every one of those recordings. The defect
+was three lines below the matcher, in a `continue` with no else. Every test in
+this repository asserts that judgements are correct; none of them asserted that a
+judgement was *reached*.

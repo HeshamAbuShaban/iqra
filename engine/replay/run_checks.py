@@ -37,6 +37,8 @@ CHECKS = [
      "optimised DP is value-identical to the shipped one (5473 alignments)"),
     ("ui_state_parity", "none",
      "every reader remember() keys the navigation values it reads"),
+    ("word_alignment_parity", "none",
+     "how many ayat get no word verdict, and that it is not getting worse"),
     ("search_parity", "none",
      "search tables match the validated dual-reading behaviour"),
     ("ring_buffer", "none",
