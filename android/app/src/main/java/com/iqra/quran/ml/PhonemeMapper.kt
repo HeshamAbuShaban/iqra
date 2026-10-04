@@ -17,6 +17,21 @@ import java.io.File
  * unit inventory (tokens.txt) before alignment, with a unit->word map kept so
  * per-word verdicts still work.
  */
+/**
+ * Fraction of a word's own units that must be heard before a WRONG verdict is
+ * claimed; below it a contradiction yields UNKNOWN, meaning no verdict.
+ *
+ * A word cannot be pronounced wrongly on the part of it nobody heard, and the DP
+ * will attribute a neighbour's phonemes to a word it only caught part of -
+ * especially once a slice rebase lands mid-word, which happens on every lock
+ * move. Measured on 20 Al-Dosari surahs (34059 CORRECT, 1454 WRONG): 40 % of the
+ * WRONG verdicts sat on words heard below 0.80 of their own units, and were
+ * reported on device as the app "wronging" the reciter. It is the same threshold
+ * as the existing "barely covered means it was not said" rule, applied to the
+ * other side of the word.
+ */
+private const val WRONG_MIN_HEARD_COVERAGE = 0.80f
+
 object PhonemeMapper {
     private const val TAG = "PhonemeMapper"
     @Volatile private var table: Map<String, List<String>>? = null
@@ -171,6 +186,19 @@ object PhonemeMapper {
         /** Expected units aligned 1:1 with an emission. */
         val unitsMatched: Int = 0,
         val unitsTotal: Int = 0,
+        /**
+         * Per expected word, the fraction of ITS OWN units that were matched -
+         * how much of that word the emission accounts for.
+         *
+         * The per-word ok/total was always computed to build `statuses` and then
+         * discarded. It is the evidence needed to tell "this word was said
+         * wrongly" from "we only caught part of this word": both produce
+         * `bad > 0`, and the WRONG verdict used to be claimed on either. A word
+         * cannot be pronounced wrongly on the part of it nobody heard.
+         *
+         * -1 means the word has no units, so no evidence either way.
+         */
+        val wordCoverage: FloatArray = FloatArray(0),
     ) {
         /** Fraction of this ayah's phonemes the emission accounts for. */
         val coverage: Float
@@ -233,6 +261,7 @@ object PhonemeMapper {
             emitWord[qi] = wordOf[j]
         }
 
+        val wordHeard = FloatArray(m) { -1f }
         val statuses = List(m) { wi ->
             var total = 0
             var ok = 0
@@ -243,6 +272,7 @@ object PhonemeMapper {
                 if (matched[k]) ok++
                 if (wrong[k]) bad++
             }
+            if (total > 0) wordHeard[wi] = ok / total.toFloat()
             when {
                 total == 0 -> WordStatus.SKIPPED
                 ok == total -> WordStatus.CORRECT
@@ -252,9 +282,11 @@ object PhonemeMapper {
                 // skipping word 1 leaves word 0 at 1 of 2 units and word 1 at 1
                 // of 4, and only the ratio tells them apart.
                 ok * 2 < total -> WordStatus.SKIPPED
-                // Some units landed on the wrong phonemes. The caller still
-                // gates this on model confidence and a frame streak.
-                bad > 0 -> WordStatus.WRONG
+                // Contradicted, but only after hearing most of the word - see
+                // WRONG_MIN_HEARD_COVERAGE. Below the floor this falls through
+                // to UNKNOWN, which already means "no verdict", and the caller's
+                // streak never accumulates because UNKNOWN is not WRONG.
+                bad > 0 && ok >= (total * WRONG_MIN_HEARD_COVERAGE) -> WordStatus.WRONG
                 // Partly covered, nothing contradicted: no verdict. This used
                 // to be WRONG, which is what made a skipped word paint its
                 // neighbour red.
@@ -276,7 +308,7 @@ object PhonemeMapper {
                 if (cnt[wi] > 0) wordProb[wi] = sum[wi] / cnt[wi]
             }
         }
-        return Alignment(statuses, emitWord, wordProb, unitsMatched, len)
+        return Alignment(statuses, emitWord, wordProb, unitsMatched, len, wordHeard)
     }
 
     /** Word holding the most recent emission within [recencySec] of now. */

@@ -226,6 +226,12 @@ def align(query, ref, unit_word):
     return matched, wrong, ref_to_query, emit_word, hits, nwords
 
 
+# Fraction of a word's own units that must be heard before WRONG is claimed.
+# Mirrors WRONG_MIN_HEARD_COVERAGE in PhonemeMapper.kt. Measured on 20 Al-Dosari
+# surahs: 40% of WRONG verdicts sat below it.
+WRONG_MIN_HEARD = 0.80
+
+
 def statuses_from(matched, wrong, unit_word, nwords):
     out = {}
     for wi in range(nwords):
@@ -244,8 +250,10 @@ def statuses_from(matched, wrong, unit_word, nwords):
             v = "CORRECT"
         elif ok * 2 < tot:
             v = "SKIPPED"          # barely covered: not said
+        elif bad > 0 and ok >= tot * WRONG_MIN_HEARD:
+            v = "WRONG"          # contradicted, and most of the word was heard
         elif bad > 0:
-            v = "WRONG"
+            v = "UNKNOWN"        # contradicted, but too little of it was heard
         else:
             # Partly covered with nothing contradicted: no verdict. This used to
             # be WRONG, which made a skipped word paint its neighbour red.
