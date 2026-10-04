@@ -446,6 +446,27 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var lockedAyah: Int = 1
     @Volatile private var pageNumber: Int = 1
     private var verseWords: Map<Int, List<MushafWord>> = emptyMap()
+
+    /**
+     * Bumped whenever [verseWords] is rebuilt, so observers recompute instead of
+     * holding words from the surah they were on when they first composed.
+     *
+     * The control-bar preview used to build its word list itself:
+     * `remember(activeVerse, mushaf) { allWords.filter { it.surah == surah ... } }`
+     * — `surah` read in the body but absent from the keys, so travelling between
+     * two surahs that sat on the same ayah number never invalidated it and the
+     * bar kept showing the previous surah while the colouring tracked the new
+     * one correctly. The identical bug had already been fixed once, for the
+     * header. Rather than add the missing key, the lookup now lives here where
+     * the map is rebuilt, and this counter makes it observable — so there is no
+     * remembered value left to go stale.
+     */
+    private val _wordsVersion = MutableStateFlow(0)
+    val wordsVersion: StateFlow<Int> = _wordsVersion
+
+    /** Words of [ayah] in the active surah, in reading order. O(ayah). */
+    fun standWordsFor(ayah: Int): List<MushafWord> =
+        verseWords[ayah].orEmpty().sortedBy { it.wordInVerse }
     private var versePage: Map<Int, Int> = emptyMap()
     private var pendingNextAyah: Int? = null
     private var pendingBackAyah: Int? = null
@@ -726,6 +747,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val byAyah = all.groupBy { it.verse }
         verseWords = byAyah.mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
         versePage = byAyah.mapValues { (_, ws) -> ws.minOf { it.page } }
+        _wordsVersion.value = _wordsVersion.value + 1
     }
 
     /**

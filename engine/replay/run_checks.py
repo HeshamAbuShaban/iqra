@@ -35,6 +35,8 @@ CHECKS = [
      "the DP is unbanded, fill and backtrace agree, tie-break intact"),
     ("dp_equivalence", "none",
      "optimised DP is value-identical to the shipped one (5473 alignments)"),
+    ("ui_state_parity", "none",
+     "every reader remember() keys the navigation values it reads"),
     ("search_parity", "none",
      "search tables match the validated dual-reading behaviour"),
     ("ring_buffer", "none",

@@ -191,8 +191,20 @@ def dump_for_audio(path, out_path=None, frame_ms=250):
                 "  ffmpeg -i %s -ar 16000 -ac 1 -f f32le out.raw" % path)
         tmp = tempfile.NamedTemporaryFile(suffix=".raw", delete=False)
         tmp.close()
-        subprocess.check_call([ffmpeg, "-v", "error", "-i", path, "-ar",
-                               "16000", "-ac", "1", "-f", "f32le", tmp.name])
+        # -y is load-bearing, not tidiness. NamedTemporaryFile has just created
+        # an EMPTY file at tmp.name, so without it ffmpeg sees the destination
+        # exist, prompts "already exists. Overwrite? [y/N]", reads EOF from the
+        # closed stdin, declines, writes nothing, and returns 0 - so
+        # check_call passes and the failure surfaces one step later as
+        # "empty raw file". -nostdin stops it waiting on a terminal that is not
+        # there. Both flags match run_corpus.py's transcode call.
+        subprocess.check_call([ffmpeg, "-nostdin", "-v", "error", "-y", "-i",
+                               path, "-ar", "16000", "-ac", "1", "-f", "f32le",
+                               tmp.name])
+        if os.path.getsize(tmp.name) == 0:
+            raise SystemExit(
+                "ffmpeg produced no audio from %s - the file may be empty or "
+                "truncated." % path)
         raw = tmp.name
     out_path = out_path or os.path.join(
         HESITATE_DIR, "dump-" + os.path.splitext(os.path.basename(path))[0]

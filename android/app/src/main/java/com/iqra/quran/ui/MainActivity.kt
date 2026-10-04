@@ -1368,11 +1368,19 @@ fun ReaderScreen(
     val playHead by vm.playHead.collectAsStateWithLifecycle()
     val engineHint by vm.engineHint.collectAsStateWithLifecycle()
     val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
-    val standWords = remember(activeVerse, mushaf) {
+    // Words of the active ayah, taken from the ViewModel's per-surah map rather
+    // than rebuilt here. The old version was
+    // `remember(activeVerse, mushaf) { mushaf.flatMap { all 604 pages }.filter { it.surah == surah } }`:
+    // `surah` was read in the body but missing from the keys, so travelling
+    // between surahs on the same ayah number left the control bar showing the
+    // PREVIOUS surah while the colouring tracked the new one correctly. It also
+    // flattened every word on every page and recomputed it on every lock move.
+    // keysVersion changes whenever the ViewModel rebuilds its per-surah word map,
+    // so this cannot outlive a surah change.
+    val wordsVersion by vm.wordsVersion.collectAsStateWithLifecycle()
+    val standWords = remember(activeVerse, wordsVersion) {
         val av = activeVerse ?: return@remember emptyList<MushafWord>()
-        mushaf.flatMap { pg -> pg.lines.flatMap { it.words ?: emptyList() } }
-            .filter { it.surah == surah && it.verse == av }
-            .sortedBy { it.wordInVerse }
+        vm.standWordsFor(av)
     }
     val bookmarkPages by vm.bookmarks.collectAsStateWithLifecycle()
     var showGoto by remember { mutableStateOf(false) }
