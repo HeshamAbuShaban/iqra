@@ -127,6 +127,18 @@ def main() -> int:
     for x in st[:10]:
         print(f"     {x['s']}:{x['lock']}  {x['sec']}s")
 
+    ay = rec.get("ayahStatus", [])
+    if ay:
+        # The "some ayat are not masked" report: SKIPPED renders as untouched, so
+        # an ayah low on CORRECT and high on SKIPPED is the shape to look for.
+        ay_sorted = sorted(ay, key=lambda x: -(x.get("skipped", 0)))
+        print("\n  per-ayah verdicts (most SKIPPED first) - SKIPPED renders unmasked:")
+        print(f"     {'ayah':>9} {'correct':>8} {'wrong':>6} {'skipped':>8} {'unknown':>8}")
+        for x in ay_sorted[:15]:
+            flag = "  <-- mostly unmasked" if x.get("correct", 0) == 0 and x.get("skipped", 0) > 0 else ""
+            print(f"     {x['ayah']:>9} {x.get('correct',0):>8} {x.get('wrong',0):>6} "
+                  f"{x.get('skipped',0):>8} {x.get('unknown',0):>8}{flag}")
+
     words = rec.get("words", [])
     if words:
         from collections import Counter

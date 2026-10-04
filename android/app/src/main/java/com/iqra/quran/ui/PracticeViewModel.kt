@@ -454,6 +454,39 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             sb.append("{\"key\":\"").append(k).append("\",\"st\":\"").append(v.name).append("\"}")
         }
         sb.append("]")
+        // Per-ayah status COUNTS, including SKIPPED and CORRECT.
+        //
+        // The words array above deliberately omits SKIPPED and CORRECT - a surah
+        // of them is thousands of entries and derives from the rest. But the
+        // user's report that "some ayat are not masked with colouring" is almost
+        // certainly about SKIPPED, which is precisely what the mask renders as
+        // untouched, and excluding it made that lead invisible. Counts per ayah
+        // are O(ayat) and answer it: a fixed set of ayat would show up as the
+        // same handful of keys with a low CORRECT count every session.
+        sb.append(",\"ayahStatus\":[")
+        val byAyah = LinkedHashMap<String, IntArray>()
+        for ((k, v) in sessionStatuses) {
+            val parts = k.split(":")
+            if (parts.size < 3) continue
+            val a = byAyah.getOrPut("${parts[0]}:${parts[1]}") { IntArray(4) }
+            val idx = when (v) {
+                WordStatus.CORRECT -> 0
+                WordStatus.WRONG -> 1
+                WordStatus.SKIPPED -> 2
+                else -> 3
+            }
+            a[idx]++
+        }
+        var firstA = true
+        for ((k, a) in byAyah) {
+            if (!firstA) sb.append(',')
+            firstA = false
+            sb.append("{\"ayah\":\"").append(k).append("\",\"correct\":").append(a[0])
+                .append(",\"wrong\":").append(a[1])
+                .append(",\"skipped\":").append(a[2])
+                .append(",\"unknown\":").append(a[3]).append('}')
+        }
+        sb.append("]")
         // The diag tail carries the lock moves, handoffs and any diag() the
         // policy emitted - in order, with the reason each move happened.
         sb.append(",\"diagTail\":[")
