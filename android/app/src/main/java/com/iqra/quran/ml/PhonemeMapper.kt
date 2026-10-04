@@ -30,9 +30,13 @@ import java.io.File
  * as the existing "barely covered means it was not said" rule, applied to the
  * other side of the word.
  */
-private const val WRONG_MIN_HEARD_COVERAGE = 0.80f
+internal const val WRONG_MIN_HEARD_COVERAGE = 0.80f
 
 object PhonemeMapper {
+    /** The WRONG evidence floor, so a session record carries the threshold the
+     *  verdicts in that session were actually produced under. */
+    const val WRONG_MIN_HEARD = WRONG_MIN_HEARD_COVERAGE
+
     private const val TAG = "PhonemeMapper"
     @Volatile private var table: Map<String, List<String>>? = null
 

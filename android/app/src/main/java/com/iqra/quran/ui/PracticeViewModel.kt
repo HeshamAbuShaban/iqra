@@ -343,6 +343,135 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * script never has to hard-code the tuning, and a dump from a retuned
      * build cannot be misread against the previous build's thresholds.
      */
+    // ---- session record --------------------------------------------------
+    //
+    // A raw, per-session record of what the lock actually did, written on a
+    // timer as well as at session end.
+    //
+    // On a timer, because Android kills backgrounded processes: a session that
+    // was recording when the screen went off would otherwise leave NO file at
+    // all, and the interesting failure - the one that happens when nobody is
+    // watching - would be the one we cannot see. Same bug class as the 5.3%-fed
+    // session and the first-session-only stream.
+    //
+    // Raw on purpose. PracticeLog is being reworked into a reader over these
+    // files, so there must be exactly one on-disk format and it must not be
+    // shaped around whatever a summary screen wants to show.
+    private fun sessionsDir(): File =
+        File(getApplication<Application>().filesDir, "sessions").apply { mkdirs() }
+
+    /** Own prefs file, so this never collides with the reader's preferences. */
+    private fun sessionPrefs() =
+        getApplication<Application>().getSharedPreferences("iqra_sessions", 0)
+
+    fun sessionCaptureEnabled(): Boolean = sessionPrefs().getBoolean("capture", true)
+
+    fun setSessionCaptureEnabled(on: Boolean) {
+        sessionPrefs().edit().putBoolean("capture", on).apply()
+        if (!on) File(sessionsDir(), currentSessionName()).delete()
+    }
+
+    fun sessionKeepCount(): Int = sessionPrefs().getInt("keep", 10).coerceIn(1, 100)
+
+    fun setSessionKeepCount(n: Int) {
+        sessionPrefs().edit().putInt("keep", n.coerceIn(1, 100)).apply()
+        pruneSessions()
+    }
+
+    private fun currentSessionName(): String =
+        "s-${sessionStartedAtMs}-$startSurahToFile-${buildTag.ifEmpty { "dev" }.take(24)}.json"
+
+    /** Evaluated polls this session. Counts what actually reached the policy. */
+    private var sessionEvaluations = 0
+
+    private var sessionStartedAtMs = 0L
+    private var startSurahToFile = 0
+    private var pollsSinceFlush = 0
+
+    /** Force a write. Called on a timer, and on session end. */
+    fun flushSessionRecord(ended: Boolean, reason: String? = null) {
+        if (!sessionCaptureEnabled() && !ended) return
+        val dir = sessionsDir()
+        val f = File(dir, currentSessionName())
+        val tmp = File(dir, currentSessionName() + ".tmp")
+        val sb = StringBuilder(FRAME_RING * 96 + 4096)
+        sb.append("{\"v\":1,\"build\":\"").append(buildTag).append('"')
+            .append(",\"startedAt\":").append(sessionStartedAtMs)
+            .append(",\"flushedAt\":").append(System.currentTimeMillis())
+            .append(",\"ended\":").append(ended)
+            .append(",\"reason\":\"").append(reason ?: "").append('"')
+            .append(",\"surahStart\":").append(startSurahToFile)
+            .append(",\"surahNow\":").append(activeSurah)
+            .append(",\"lockNow\":").append(lockedAyah)
+            .append(",\"gen\":").append(sessionGen)
+            .append(",\"wpmEma\":").append(f1(wpmEma))
+            .append(",\"noiseFloor\":").append(f3(noiseFloor))
+            .append(",\"thresholds\":{")
+            .append("\"advance\":").append(f3(ADVANCE_COVERAGE))
+            .append(",\"strong\":").append(f3(STRONG_COVERAGE))
+            .append(",\"weak\":").append(f3(WEAK_COVERAGE))
+            .append(",\"jump\":").append(f3(JUMP_COVERAGE))
+            .append(",\"back\":").append(f3(BACK_COVERAGE))
+            .append(",\"handoff\":").append(f3(HANDOFF_COVERAGE))
+            .append(",\"stuck\":").append(f3(STUCK_COVERAGE))
+            .append(",\"wrongMinHeard\":").append(f3(PhonemeMapper.WRONG_MIN_HEARD))
+            .append("}")
+            .append(",\"counters\":{")
+            .append("\"fedTotal\":").append(fedTotal)
+            .append(",\"fedSess\":").append(sessionFed)
+            .append(",\"gateClosed\":").append(gateClosedFrames)
+            .append(",\"moves\":").append(sessionMoves)
+            .append(",\"reversals\":").append(sessionReversals)
+            .append(",\"evaluations\":").append(sessionEvaluations)
+            .append("}")
+            .append(",\"frames\":")
+        frameRing.appendJson(sb)
+        // Only the words that carry a verdict. CORRECT for a whole surah is
+        // thousands of entries and tells us nothing we cannot derive.
+        sb.append(",\"words\":[")
+        var first = true
+        for ((k, v) in sessionStatuses) {
+            if (v != WordStatus.WRONG && v != WordStatus.UNKNOWN) continue
+            if (!first) sb.append(',')
+            first = false
+            sb.append("{\"key\":\"").append(k).append("\",\"st\":\"").append(v.name).append("\"}")
+        }
+        sb.append("]")
+        // The diag tail carries the lock moves, handoffs and any diag() the
+        // policy emitted - in order, with the reason each move happened.
+        sb.append(",\"diagTail\":[")
+        // ConcurrentLinkedDeque is a java Deque; Kotlin's takeLast is a List
+        // extension and does not apply. Materialise then take the tail.
+        val tail = diagBuffer.toList().takeLast(300)
+        for ((i, line) in tail.withIndex()) {
+            if (i > 0) sb.append(',')
+            sb.append('"').append(line.replace('\\', '/').replace('"', '\'')).append('"')
+        }
+        sb.append("]}")
+        runCatching {
+            tmp.writeText(sb.toString())
+            // rename is atomic within a directory, so a process death mid-write
+            // leaves the previous good file rather than a truncated one.
+            if (!tmp.renameTo(f)) { f.writeText(sb.toString()); tmp.delete() }
+        }
+        if (ended) pruneSessions()
+    }
+
+    private fun pruneSessions() {
+        val keep = sessionKeepCount()
+        val files = sessionsDir().listFiles { _, n -> n.endsWith(".json") } ?: return
+        if (files.size <= keep) return
+        files.sortedBy { it.lastModified() }
+            .take(files.size - keep)
+            .forEach { runCatching { it.delete() } }
+    }
+
+    /** Newest session file, for the existing Share action. */
+    fun latestSessionFile(): File? =
+        sessionsDir().listFiles { _, n -> n.endsWith(".json") }
+            ?.maxByOrNull { it.lastModified() }
+
+
     fun frameRingDump(): String {
         val sb = StringBuilder(FRAME_RING * 64 + 1024)
         sb.append("#iqra-frame-ring v1")
@@ -1045,7 +1174,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // since the lock last moved, and an un-armed timer reads as "motionless
         // since 1970", which would let the escape fire on the very first frame.
         lastLockMoveMs = System.currentTimeMillis()
+        sessionStartedAtMs = System.currentTimeMillis()
+        startSurahToFile = s
+        pollsSinceFlush = 0
+        sessionEvaluations = 0
         diag("session starts p=$page → s=$s:${lockedAyah}")
+        // Write the header immediately. If the process dies before the first
+        // timer tick there is still a file naming the session that died.
+        flushSessionRecord(ended = false)
         rebaseSlice = true
         pendingAnchor = null
         pageNumber = page
@@ -1207,6 +1343,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 // screen was really asking while showing fedTotal's stale
                 // process-lifetime number instead.
                 sessionFed += fresh.size
+                pollsSinceFlush++
+                if (pollsSinceFlush >= SESSION_FLUSH_POLLS) {
+                    pollsSinceFlush = 0
+                    flushSessionRecord(ended = false)
+                }
                 tailBuf = (tailBuf + fresh).takeLast(TAIL_SAMPLES).toFloatArray()
             }
             // Decode ONLY when sherpa reports ready: forcing decode with
@@ -1713,6 +1854,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // recording after the user had already moved on.
         val endedGen = sessionGen
         sessionGen++
+        // Final write BEFORE the session state is torn down, so the record keeps
+        // the moves and verdicts this session produced.
+        runCatching { flushSessionRecord(ended = true, reason = reason) }
         cancelRepeat()
         SherpaZipformer.closeStream()
         if (!_recording.value) {
@@ -1852,6 +1996,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
          *  a few seconds and a readout that cries wolf is worse than none. */
         private const val STALL_NOTE_SEC = 8f
 
+        /**
+         * Polls between session-record flushes. At the 0.25 s poll period this
+         * is about 25 s: often enough that a process death loses at most half a
+         * minute, rare enough that the write is not competing with the decoder.
+         */
+        private const val SESSION_FLUSH_POLLS = 100
+
         /** Coverages are published as 0-1; the readout says percent. */
         private fun pct(v: Float) = "${(v * 100).toInt()}%"
 
@@ -1959,6 +2110,41 @@ private class FrameRing(private val cap: Int) {
         cov[c + 3] = jumpCov
         head = if (head + 1 == cap) 0 else head + 1
         if (rows < cap) rows++
+    }
+
+    /**
+     * Oldest row first, as one JSON array of objects.
+     *
+     * The session record needs the ring structurally, not as the TSV the
+     * clipboard dump uses, so a reader does not have to re-parse it. Written by
+     * hand rather than through org.json: this runs every flush over up to
+     * FRAME_RING rows, and allocating that many JSONObject instances to encode
+     * fixed columns is wasteful for no benefit.
+     */
+    @Synchronized
+    fun appendJson(sb: StringBuilder) {
+        val start = if (head >= rows) head - rows else head + cap - rows
+        sb.append('[')
+        for (k in 0 until rows) {
+            val i = if (start + k < cap) start + k else start + k - cap
+            val b = i * 7
+            val c = i * 4
+            if (k > 0) sb.append(',')
+            sb.append("{\"t\":").append(tRelMs[i])
+                .append(",\"s\":").append(ints[b])
+                .append(",\"lock\":").append(ints[b + 1])
+                .append(",\"next\":").append(f3(cov[c]))
+                .append(",\"here\":").append(f3(cov[c + 1]))
+                .append(",\"back\":").append(f3(cov[c + 2]))
+                .append(",\"jumpTo\":").append(ints[b + 2])
+                .append(",\"jumpCov\":").append(f3(cov[c + 3]))
+                .append(",\"syms\":").append(ints[b + 3])
+                .append(",\"obs\":").append(ints[b + 4])
+                .append(",\"gen\":").append(ints[b + 5])
+                .append(",\"tag\":").append(ints[b + 6])
+                .append('}')
+        }
+        sb.append(']')
     }
 
     /** Oldest row first, so the dump reads in the order it happened. */

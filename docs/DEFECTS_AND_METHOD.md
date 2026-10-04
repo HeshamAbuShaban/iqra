@@ -660,3 +660,50 @@ bytes). `SherpaZipformer.filesPresent` only checks existence and non-zero
 length, and an empty `manifest.json` means no hash gate, so an adb push is
 enough - the app will not try to re-download them. This is the last step that
 cannot be done from here: it needs a voice.
+
+## The session record: raw format, periodic flush
+
+`filesDir/sessions/s-<startedAt>-<surah>-<build>.json`, written atomically via a
+`.tmp` rename so a process death mid-write leaves the previous good file rather
+than a truncated one.
+
+Written on a **timer** (every 100 polls, ~25 s) and at session start and end,
+not only at session end. Android kills backgrounded processes, so a session that
+was recording when the screen went off would otherwise leave no file at all —
+and the interesting failure is the one that happens when nobody is watching.
+Same bug class as the 5.3 %-fed session and the first-session-only stream.
+
+Contents: header (build, thresholds including `wrongMinHeard`, counters, wpm,
+noise floor), the full frame ring as JSON, every word carrying a verdict (WRONG
+and UNKNOWN only — CORRECT for a surah is thousands of entries and derives from
+the rest), and a 300-line diag tail which holds the lock moves, handoffs and the
+reason each move happened, in order.
+
+Raw on purpose: `PracticeLog` is being reworked into a reader over these files,
+so there must be exactly one on-disk format and it must not be shaped around
+whatever a summary screen wants to show. Preferences live in their own
+`iqra_sessions` SharedPreferences file, so they cannot collide with the reader's.
+
+### What the corpus could not have told us about the shell
+
+Three defects, all reported by hand on a device, none reachable by any test that
+existed:
+
+- **Stale preview.** `remember(activeVerse, mushaf)` with `surah` read in the
+  body and absent from the keys. Travelling between surahs on the same ayah
+  number left the control bar on the previous surah while the colouring tracked
+  the new one. The identical defect had already been fixed once, for the header,
+  a few lines away. Fixed by moving the lookup into the ViewModel behind a
+  `wordsVersion` counter, so no remembered value is left to go stale — and the
+  O(words in the ayah) read replaced a flatMap over every word on all 604 pages,
+  recomputed on every lock move.
+- **Handoff deadlock.** Handoff waits for the next surah's first ayah; the page
+  is derived from the lock. Chicken-and-egg, and worse for a memoriser because
+  the words they would recite from memory are the ones they cannot see.
+- **False WRONG.** 40 % of WRONG verdicts sat on words heard below 0.80 of their
+  own units.
+
+The lesson is not "test more". It is that 114 surahs of scoring measured the
+lock, and the lock was fine; every defect lived in the Compose shell, the page
+boundary and the word-status rule, none of which a token corpus can reach. The
+guards for those are static or synthetic because there is nothing else to run.
