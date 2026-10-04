@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Deep green field. Kept as a gradient rather than a flat slab so the icon
-     has some depth without adding ornament that reads as a smudge. -->
+<!--
+    Deep green field behind the mushaf mark. Matched to the top and bottom
+    stops of tools/icon/iqra.svg so the launcher icon and the master are the
+    same colour at the edges.
+
+    A gradient rather than a flat slab, and only a gradient: a flat field made
+    the mark look pasted on, and ornament on top of it read as a smudge at 48px.
+    Two stops, a diagonal, and nothing else.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -13,10 +20,10 @@
                 android:type="linear"
                 android:startX="0"
                 android:startY="0"
-                android:endX="38"
+                android:endX="43"
                 android:endY="108">
-                <item android:offset="0" android:color="#14654C" />
-                <item android:offset="1" android:color="#08372A" />
+                <item android:offset="0" android:color="#15684E" />
+                <item android:offset="1" android:color="#072E23" />
             </gradient>
         </aapt:attr>
     </path>

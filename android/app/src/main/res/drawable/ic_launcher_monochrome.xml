@@ -1,20 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed-icon (Android 13+) layer: one flat colour, tinted by the system. -->
+<!--
+    Themed-icon layer (Android 13+): the system tints this one colour, so it
+    cannot rely on gold against green to separate the resolved line from the
+    receded ones.
+
+    That constraint makes it the cleanest test of whether the mark's idea works:
+    with a single colour, the resolved line has to be distinguished by weight
+    alone. It is - 5dp against 2.6dp - and the spine is a gap rather than a fill,
+    because a filled spine in one colour would merge with the pages.
+
+    Geometry matches tools/icon/iqra.svg and ic_launcher_foreground.xml.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- pages -->
     <path
-        android:pathData="M21.5,33 Q37,26.5 52,32.5 L52,82.5 Q37,76.5 21.5,83 Z"
+        android:pathData="M21,29 Q36.5,29.5 52.4,34 L52.4,81 Q36.5,77 21,77 Z"
         android:fillColor="#FFFFFF" />
     <path
-        android:pathData="M86.5,33 Q71,26.5 56,32.5 L56,82.5 Q71,76.5 86.5,83 Z"
+        android:pathData="M87,29 Q71.5,29.5 55.6,34 L55.6,81 Q71.5,77 87,77 Z"
         android:fillColor="#FFFFFF" />
-    <path
-        android:pathData="M52,44h4v8h-4z M52,58h4v8h-4z M52,72h4v8h-4z"
-        android:fillColor="#000000" />
-    <path
-        android:pathData="M28,45.2H46v1.6H28z M28,56.2H46v1.6H28z M28,67.2H46v1.6H28z M62,45.2H80v1.6H62z M62,56.2H80v1.6H62z M62,67.2H80v1.6H62z"
-        android:fillColor="#000000" />
+
+    <!-- receded lines: thin -->
+    <group>
+        <path android:pathData="M27,42.9 h20 v2.6 h-20 z" android:fillColor="#000000" />
+        <path android:pathData="M61,42.9 h20 v2.6 h-20 z" android:fillColor="#000000" />
+        <path android:pathData="M27,60.7 h20 v2.6 h-20 z" android:fillColor="#000000" />
+        <path android:pathData="M61,60.7 h20 v2.6 h-20 z" android:fillColor="#000000" />
+        <path android:pathData="M27,69.7 h20 v2.6 h-20 z" android:fillColor="#000000" />
+        <path android:pathData="M61,69.7 h20 v2.6 h-20 z" android:fillColor="#000000" />
+    </group>
+
+    <!-- resolved line: heavy. The only reason this layer reads at all. -->
+    <path android:pathData="M27,50.5 h20 v5 h-20 z" android:fillColor="#000000" />
+    <path android:pathData="M61,50.5 h20 v5 h-20 z" android:fillColor="#000000" />
+
+    <!-- spine as a gap: two edges of background, so the fold is a crease -->
+    <path android:pathData="M52.4,34 h1.5 v47 h-1.5 z" android:fillColor="#000000" />
 </vector>

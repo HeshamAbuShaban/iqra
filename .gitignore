@@ -14,9 +14,24 @@ captures/
 
 # Reverse-engineering working artifacts (kept local only)
 /re/
-/tools/
+/tools/*
 /apk/
 /work/
+
+# ...except the launcher icon master. It is a 2 KB source file and the Android
+# vector drawables are transcriptions of it, so without it in the repository the
+# only copy of the design lives on one machine and the drawables become
+# unreviewable.
+#
+# The pattern has to re-include each level of the path in turn: git does not
+# descend into an excluded directory at all, so negating a file inside
+# /tools/icon/ can only work if /tools/icon/ itself is first re-included.
+# Rendered previews stay ignored - they are regenerated from the SVG with
+# rsvg-convert, at 48/96/192/432px.
+/tools/*
+!/tools/icon/
+/tools/icon/*
+!/tools/icon/iqra.svg
 
 # Node prototype (rejected web PWA + local proofs); see reference/ for the kept proof
 # NOTE: engine/replay/ IS tracked - it is the project's only measurement loop.

@@ -1,7 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Open mushaf, head-on. Authored on a 108 grid; all ink sits inside the
-     66dp adaptive safe zone (21..87). Geometry mirrors tools/icon/iqra.svg,
-     which is the master copy rendered and reviewed at 48/96/192/432px. -->
+<!--
+    Open mushaf with one line resolved.
+
+    Geometry is transcribed from tools/icon/iqra.svg, which is the master copy
+    and is rendered and reviewed at 48/96/192/432px before any of this is
+    believed. Keep the two in step: the SVG is the thing that can be looked at.
+
+    Authored on the 108 adaptive grid. All ink sits inside 21..87, which is the
+    66dp safe zone - a circular launcher mask clips anything outside it, which is
+    why the block does not run to the full 108 even though it could.
+
+    One line is heavier, gold and full measure; three recede. That difference in
+    weight is the whole product in one mark, and it is a difference rather than
+    a detail because a detail does not survive the launcher grid.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -9,40 +21,61 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- left page -->
-    <path android:pathData="M21.5,33 Q37,26.5 52,32.5 L52,82.5 Q37,76.5 21.5,83 Z">
+    <!-- left page: outer edge y 29..77, spine edge y 34..81, so the two pages
+         close into a single V at the gutter -->
+    <path android:pathData="M21,29 Q36.5,29.5 52.4,34 L52.4,81 Q36.5,77 21,77 Z">
         <aapt:attr name="android:fillColor">
             <gradient android:type="linear"
-                android:startX="21.5" android:startY="33"
-                android:endX="52" android:endY="43">
-                <item android:offset="0" android:color="#FBF6E9" />
-                <item android:offset="1" android:color="#E9DDC3" />
+                android:startX="21" android:startY="35"
+                android:endX="52.4" android:endY="60">
+                <item android:offset="0" android:color="#FCF8EC" />
+                <item android:offset="1" android:color="#EADFC4" />
             </gradient>
         </aapt:attr>
     </path>
 
-    <!-- right page, mirrored about the spine -->
-    <path android:pathData="M86.5,33 Q71,26.5 56,32.5 L56,82.5 Q71,76.5 86.5,83 Z">
+    <!-- right page, mirrored about x=54 -->
+    <path android:pathData="M87,29 Q71.5,29.5 55.6,34 L55.6,81 Q71.5,77 87,77 Z">
         <aapt:attr name="android:fillColor">
             <gradient android:type="linear"
-                android:startX="86.5" android:startY="33"
-                android:endX="56" android:endY="43">
-                <item android:offset="0" android:color="#FBF6E9" />
-                <item android:offset="1" android:color="#E9DDC3" />
+                android:startX="87" android:startY="35"
+                android:endX="55.6" android:endY="60">
+                <item android:offset="0" android:color="#FCF8EC" />
+                <item android:offset="1" android:color="#EADFC4" />
             </gradient>
         </aapt:attr>
     </path>
 
-    <!-- gold spine: the fold, the one saturated accent -->
-    <path android:pathData="M52,32.5h4v50h-4z" android:fillColor="#D9B36B" />
-    <path android:pathData="M52,32.5h1.5v50h-1.5z" android:fillColor="#E8C98F" android:fillAlpha="0.7" />
+    <!-- receded lines: identical measure on both pages, muted -->
+    <group>
+        <path android:pathData="M27,44 H47" android:strokeColor="#BFA070"
+            android:strokeWidth="2.6" android:strokeLineCap="round"
+            android:strokeAlpha="0.7" />
+        <path android:pathData="M61,44 H81" android:strokeColor="#BFA070"
+            android:strokeWidth="2.6" android:strokeLineCap="round"
+            android:strokeAlpha="0.7" />
+        <path android:pathData="M27,62 H47" android:strokeColor="#BFA070"
+            android:strokeWidth="2.6" android:strokeLineCap="round"
+            android:strokeAlpha="0.7" />
+        <path android:pathData="M61,62 H81" android:strokeColor="#BFA070"
+            android:strokeWidth="2.6" android:strokeLineCap="round"
+            android:strokeAlpha="0.7" />
+        <path android:pathData="M27,71 H47" android:strokeColor="#BFA070"
+            android:strokeWidth="2.6" android:strokeLineCap="round"
+            android:strokeAlpha="0.7" />
+        <path android:pathData="M61,71 H81" android:strokeColor="#BFA070"
+            android:strokeWidth="2.6" android:strokeLineCap="round"
+            android:strokeAlpha="0.7" />
+    </group>
 
-    <!-- three rules per page: identical length and inset, so the rhythm is
-         deliberate and still resolves at 48px -->
-    <path android:pathData="M28,46H46" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
-    <path android:pathData="M28,57H46" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
-    <path android:pathData="M28,68H46" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
-    <path android:pathData="M62,46H80" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
-    <path android:pathData="M62,57H80" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
-    <path android:pathData="M62,68H80" android:strokeColor="#B4905A" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeAlpha="0.9" />
+    <!-- the resolved line -->
+    <path android:pathData="M27,53 H47" android:strokeColor="#C08A2E"
+        android:strokeWidth="5" android:strokeLineCap="round" />
+    <path android:pathData="M61,53 H81" android:strokeColor="#C08A2E"
+        android:strokeWidth="5" android:strokeLineCap="round" />
+
+    <!-- spine: flat band plus a lighter core, so it reads as a crease -->
+    <path android:pathData="M52.4,34 h3.2 v47 h-3.2 Z" android:fillColor="#A87F33" />
+    <path android:pathData="M52.4,34 h1.1 v47 h-1.1 Z"
+        android:fillColor="#D9B36B" android:fillAlpha="0.8" />
 </vector>
