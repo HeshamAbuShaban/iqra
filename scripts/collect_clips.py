@@ -47,8 +47,13 @@ REPLAY = os.path.join(ROOT, "engine", "replay")
 PY = os.path.join(ROOT, "engine", ".venv-replay", "bin", "python")
 SCORER = os.path.join(REPLAY, "hesitation_policy.py")
 
-# Audio the harness will decode. Anything else is ignored rather than guessed at.
-EXT = (".wav", ".m4a", ".mp3", ".ogg", ".flac", ".raw")
+# Audio the harness will decode, plus `.json` so an already-dumped token stream
+# can be scored directly. That is not just convenience: it is how a corpus dump
+# (engine/corpus/out/NNN.json) can be put through the same table as a phone
+# recording, which is the only way to compare the two on equal terms. The
+# harness's own caches are named `dump-<stem>.json` and so cannot collide with
+# the NNN<variant> naming rule below.
+EXT = (".wav", ".m4a", ".mp3", ".ogg", ".flac", ".raw", ".json")
 
 # engine/audio/hesitate/README.md's naming rule: three digits of surah, then a
 # free-text variant. The surah digits are load-bearing - the scorer reads the
@@ -263,8 +268,8 @@ def main():
         # knowing anything about the reciter: the lock must end on the last
         # ayah of the surah. Every other variant depends on what the person
         # actually did, so no expectation is invented for it.
-        if "clean" in r["variant"] and r.get("ayah_total"):
-            want = "%d:%d" % (r["surah"], r["ayah_total"])
+        if "clean" in r["variant"] and r.get("ayat_total"):
+            want = "%d:%d" % (r["surah"], r["ayat_total"])
             exp = want if r.get("lock") == want else "got %s" % r.get("lock")
             if r.get("lock") != want:
                 fails.append(r["clip"])
