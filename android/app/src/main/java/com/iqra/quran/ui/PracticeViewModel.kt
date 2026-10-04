@@ -384,13 +384,30 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Evaluated polls this session. Counts what actually reached the policy. */
     private var sessionEvaluations = 0
 
+    /**
+     * Coverage of the NEXT surah's first ayah, measured while the lock sits on
+     * the current surah's last one. At a surah end there is no `ayah+1`, so the
+     * normal Next readout is a meaningless 0.00 for as long as the reciter takes
+     * to move on - which is exactly when the reader most wants to know what the
+     * app is waiting for.
+     */
+    private var handoffShowCov = 0f
+
     private var sessionStartedAtMs = 0L
     private var startSurahToFile = 0
     private var pollsSinceFlush = 0
 
+    /** True between startRecite and stopRecite; gates the periodic flush. */
+    private var sessionActive = false
+
     /** Force a write. Called on a timer, and on session end. */
     fun flushSessionRecord(ended: Boolean, reason: String? = null) {
         if (!sessionCaptureEnabled() && !ended) return
+        // A tick that fires after the session was torn down would rewrite the
+        // good final record with post-reset counters. Measured: the Al-Fatiha
+        // session held 192 frames and reported moves=0, because exactly that
+        // happened. Only an explicit end write may run once the session is over.
+        if (!ended && !sessionActive) return
         val dir = sessionsDir()
         val f = File(dir, currentSessionName())
         val tmp = File(dir, currentSessionName() + ".tmp")
@@ -1178,6 +1195,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         startSurahToFile = s
         pollsSinceFlush = 0
         sessionEvaluations = 0
+        sessionActive = true
         diag("session starts p=$page → s=$s:${lockedAyah}")
         // Write the header immediately. If the process dies before the first
         // timer tick there is still a file naming the session that died.
@@ -1636,6 +1654,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // they produced. Placed after the backward block and before the
             // repeat hook, the last point at which every column is in scope
             // and nothing has yet moved the lock for an unrelated reason.
+            sessionEvaluations++
             frameRing.add(
                 SystemClock.elapsedRealtime() - sessionStartMono,
                 activeSurah, lockAtDecision,
@@ -1652,6 +1671,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // off to retune a number that was never wrong.
             val stallNote = when {
                 stallSec < STALL_NOTE_SEC -> ""
+                nextExp == null && activeSurah < 114 ->
+                    "at the end of ${'$'}surah: waiting for ${'$'}activeSurah+1's opening " +
+                        "(${'$'}{(handoffShowCov * 100).toInt()}% heard, " +
+                        "hands off at ${'$'}{(HANDOFF_COVERAGE * 100).toInt()}%)"
                 nextCov < WEAK_COVERAGE ->
                     "stalled ${stallSec.toInt()}s: the next ayah is not being heard " +
                         "at all (${pct(nextCov)}). Retuning will not help."
@@ -1825,7 +1848,30 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val atSurahEnd = verseWords.isNotEmpty() && lockedAyah >= verseWords.size
             val atScopeEnd = scopeEndAyah()?.let { lockedAyah >= it } ?: false
             if (atSurahEnd && atScopeEnd && activeSurah < 114) {
-                firstPageOfSurah(activeSurah + 1)?.let { page = it }
+                // Advance the page only once there is EVIDENCE the reciter has
+                // moved on - not the moment the lock reaches the last ayah.
+                //
+                // Doing it immediately was worse than not doing it. Measured on
+                // device: at Al-Fatiha 1:7 the lock reached the last ayah at 33 s
+                // and could not advance for another 42 s, because there is no
+                // 1:8 and handoff needs the next surah actually recited. The page
+                // had already jumped to Al-Baqarah, so for 42 seconds the
+                // highlighted ayah sat on a page the reader was no longer
+                // looking at - reported as "crazy switching between fatiha and
+                // baqara right when reaching the final aya".
+                //
+                // Showing what the reciter is doing while crediting nothing until
+                // it is certain: the bar is far below HANDOFF_COVERAGE, so the
+                // page turns as soon as the next surah is audible and the lock
+                // still waits for the full threshold.
+                val cand = PhonemeMapper.expected(activeSurah + 1, 1)
+                val candCov = if (cand != null && obs.isNotEmpty()) {
+                    PhonemeMapper.align(obs, cand).coverage
+                } else 0f
+                handoffShowCov = candCov
+                if (candCov >= HANDOFF_SHOW_COV) {
+                    firstPageOfSurah(activeSurah + 1)?.let { page = it }
+                }
             }
             withContext(Dispatchers.Main) {
                 pageNumber = page
@@ -1857,6 +1903,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // Final write BEFORE the session state is torn down, so the record keeps
         // the moves and verdicts this session produced.
         runCatching { flushSessionRecord(ended = true, reason = reason) }
+        sessionActive = false
         cancelRepeat()
         SherpaZipformer.closeStream()
         if (!_recording.value) {
@@ -2002,6 +2049,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
          * minute, rare enough that the write is not competing with the decoder.
          */
         private const val SESSION_FLUSH_POLLS = 100
+
+        /**
+         * Coverage of the next surah's opening at which the READER turns the
+         * page to it. Deliberately far below [HANDOFF_COVERAGE]: the page should
+         * show what the reciter is saying as soon as it is audible, while the
+         * lock still refuses to credit an ayah on partial evidence.
+         */
+        private const val HANDOFF_SHOW_COV = 0.25f
 
         /** Coverages are published as 0-1; the readout says percent. */
         private fun pct(v: Float) = "${(v * 100).toInt()}%"

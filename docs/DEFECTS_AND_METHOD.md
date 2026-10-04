@@ -707,3 +707,66 @@ The lesson is not "test more". It is that 114 surahs of scoring measured the
 lock, and the lock was fine; every defect lived in the Compose shell, the page
 boundary and the word-status rule, none of which a token corpus can reach. The
 guards for those are static or synthetic because there is nothing else to run.
+
+## What a real session record showed that 114 surahs could not
+
+Eight sessions on the phone, read back with `session_report.py`. Three findings,
+none of them reachable from a token corpus.
+
+### Zero false WRONG after the evidence floor
+
+Across all eight sessions — Fatiha, Al-Baqarah twice, Al-Mulk, Al-Balad twice,
+Ash-Sharh — **not one word was marked WRONG or UNKNOWN.** Every verdict was
+CORRECT or SKIPPED. The user had been reporting the app "wronging" them, and the
+`WRONG_MIN_HEARD` floor removed it on real audio rather than on inference.
+
+### The surah-end page divergence, and why it was self-inflicted
+
+On Al-Fatiha the lock reached 1:7 at 33.3 s. The frame ring shows why it then
+sat for 42 seconds:
+
+```
+ t(s)  lock   next   here
+ 33.3   1:7   0.000  0.051     <- next is 0.000 because Fatiha has no 1:8
+ 38.1   1:7   0.000  0.436
+ 48.3   1:7   0.000  0.000     <- rebase: the user re-anchored
+ 75.5   1:7   0.000  0.308
+ 76.1   2:1                     <- handoff, once Baqarah was actually recited
+```
+
+There is nothing to advance *to* at a surah end, so the only exit is handoff,
+and handoff is evidence-gated on the next surah being recited. That is correct.
+
+The bug was mine. `firstPageOfSurah` advanced the page the moment the lock
+reached the last ayah, so for 42 seconds the highlighted ayah sat on a page the
+reader was no longer looking at. Reported as "crazy switching between fatiha and
+baqara right when reaching the final aya" — a regression introduced by the fix
+for the handoff deadlock, which had been verified in the harness and never on a
+device.
+
+The page now turns on **evidence** rather than on arrival: `HANDOFF_SHOW_COV`
+0.25 against the next surah's opening, well under the 0.60 the lock needs to
+credit it. The reader shows what the reciter is doing; the lock still refuses to
+move on partial evidence. A natural pause at the last ayah no longer yanks the
+page away.
+
+And because `next` reads a meaningless 0.000 at a surah end, the stall readout
+now names what it is actually waiting for:
+
+> at the end of the surah: waiting for the next surah's opening (38% heard,
+> hands off at 60%)
+
+### Two faults in the record writer itself
+
+Both found by reading a real session back, not by running the code:
+
+- `sessionEvaluations` was declared and written into the file but **never
+  incremented** — an earlier patch aborted on a failed anchor after the field was
+  introduced, and the increment was in the part that never ran.
+- A periodic flush could fire *after* the session was torn down and rewrite the
+  good final record with reset counters. The Al-Fatiha record held 192 frames and
+  reported `moves=0`, which is what tipped it off. Flushing is now gated on the
+  session being active, and only the explicit end write may run past it.
+
+The second is the general lesson: an instrument that can overwrite its own
+results is worse than none, because it fails silently and looks like data.
