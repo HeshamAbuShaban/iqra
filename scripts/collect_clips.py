@@ -37,6 +37,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import subprocess
 import sys
 
@@ -138,12 +139,23 @@ def score(clip):
     # Prefer an existing dump, but only if it is newer than the audio it came
     # from - a re-recorded clip with a stale dump is exactly the sort of thing
     # that makes a loop report yesterday's answer as today's.
+    #
+    # The dump MUST be presented under the clip's own basename, never its own.
+    # hesitation_policy.py derives both the surah and the variant from
+    # `os.path.basename(path)[:3]` / `[3:]`, because the surah decides which
+    # expected phoneme table is loaded. Handing it `dump-113clean.json` makes
+    # it read the surah as "dum", fall through to the default of 1, and
+    # silently score a Surah 113 recording against Al-Fatiha - a wrong answer
+    # with no error anywhere. Copying to <stem>.json keeps the cache and keeps
+    # the name the scorer reads.
     use = audio
     cached = False
-    if os.path.exists(dump):
-        fresh = os.path.getmtime(dump) >= os.path.getmtime(audio)
-        if fresh or not args_force:
-            use, cached = dump, fresh
+    if os.path.exists(dump) and not args_force:
+        if os.path.getmtime(dump) >= os.path.getmtime(audio):
+            td = tempfile.mkdtemp(prefix="iqra-clip-")
+            use = os.path.join(td, stem + ".json")
+            shutil.copyfile(dump, use)
+            cached = True
 
     r = subprocess.run([PY, SCORER, "--audio", use],
                        capture_output=True, text=True, cwd=ROOT)

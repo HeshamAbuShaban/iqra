@@ -57,11 +57,13 @@ CHECKS = [
      "repeat and backtrack scenarios built from real emissions"),
     ("pinned_escape", "dumps",
      "the deadlock state has an exit: Ar-Rahman 55 freezes without it"),
+    ("handoff_boundary", "dumps",
+     "surah handoff is reachable, and the page can show what it waits for"),
 ]
 
 # Scripts that need a dump argument rather than running bare.
 DUMPED = {"word_verdicts", "lock_trace", "back_policy_sweep", "hesitation_policy",
-          "pinned_escape"}
+          "pinned_escape", "handoff_boundary"}
 
 CASES = re.compile(r"(\d+)\s+checked,\s+(\d+)\s+failed")
 

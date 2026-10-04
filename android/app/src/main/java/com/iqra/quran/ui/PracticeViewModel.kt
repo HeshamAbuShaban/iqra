@@ -798,6 +798,29 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         return here.filter { it.first == activeSurah }.maxOfOrNull { it.second }
     }
 
+    /**
+     * The first Mushaf page carrying [surah]'s first ayah, or null.
+     *
+     * Used only to unblock handoff: at a page that ends exactly on a surah's
+     * final ayah the lock cannot advance until the NEXT surah's opening is
+     * recited, but the page only turns when the lock moves. So the text handoff
+     * is waiting for is never on screen, and the user can neither read it nor
+     * produce it. The only ways out were to swipe manually or recite from memory
+     * - which is worse for a memoriser, since the words they would be reciting
+     * from memory are precisely the ones they cannot see.
+     */
+    private fun firstPageOfSurah(surah: Int): Int? {
+        val pages = _mushaf.value ?: return null
+        for ((i, pg) in pages.withIndex()) {
+            val hit = pg.lines.asSequence()
+                .filter { it.type == "text" }
+                .flatMap { it.words?.asSequence() ?: emptySequence() }
+                .any { it.surah == surah && it.verse == 1 }
+            if (hit) return i + 1
+        }
+        return null
+    }
+
     /** Jump to an arbitrary Mushaf page and resync the tracker to its anchor. */
     fun jumpToPage(page: Int) {
         // Unconditional: navigating away must also cancel a session that is
@@ -1650,7 +1673,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            val page = versePage[lockedAyah] ?: pageNumber
+            // The page normally follows the lock. The one exception is the last
+            // ayah of a surah, where following the lock is a deadlock: handoff
+            // waits for the next surah's first ayah to be recited, and the reader
+            // will not turn to it until handoff fires. So at exactly that
+            // boundary, show the next surah's opening - the lock stays where it
+            // is, so nothing is credited to an ayah the reciter has not reached,
+            // and handoff stays armed and keeps being evaluated.
+            var page = versePage[lockedAyah] ?: pageNumber
+            val atSurahEnd = verseWords.isNotEmpty() && lockedAyah >= verseWords.size
+            val atScopeEnd = scopeEndAyah()?.let { lockedAyah >= it } ?: false
+            if (atSurahEnd && atScopeEnd && activeSurah < 114) {
+                firstPageOfSurah(activeSurah + 1)?.let { page = it }
+            }
             withContext(Dispatchers.Main) {
                 pageNumber = page
                 _statusMap.value = newMap
