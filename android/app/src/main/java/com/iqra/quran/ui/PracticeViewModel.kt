@@ -1232,6 +1232,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             }
             val ok = SherpaZipformer.ensure(app) &&
                 PhonemeMapper.ensureTable(com.iqra.quran.data.AssetPaths.file(app, "ordered_quran_phonemes.json")) &&
+                // Bundled, not fetched: it is the difference between 31 ayat and
+                // 4,116 that can be word-judged, so it must not depend on a download
+                // having happened. Optional - a missing asset falls back to the
+                // phrase-segmented table and the old 66% gap.
+                runCatching {
+                    PhonemeMapper.ensureWordTable(
+                        app.assets.open("word_aligned_phonemes.json"))
+                }.isSuccess &&
                 // The expected side must be expressed in the MODEL's unit
                 // inventory, otherwise coverage is identically zero.
                 PhonemeMapper.ensureUnits(com.iqra.quran.data.AssetPaths.file(app, "tokens.txt")) &&

@@ -34,7 +34,7 @@ and none of them was reachable by a token corpus.
 | Surah-end page advance vs handoff deadlock | `PracticeViewModel.kt` handoff + page | `handoff_boundary`, both directions |
 | Page flapping at a surah end | latch on `handoffPageShown` | symptom reported, cause measured |
 | False WRONG colouring | `WRONG_MIN_HEARD = 0.80` | 1454 → 876 WRONG on 20 Al-Baqarah surahs |
-| 66% of the Quran silently uncoloured | UNKNOWN instead of `continue` | `word_alignment_parity`, 4116/6236 |
+| 66% of the Quran silently uncoloured | word-aligned table, flat-identical units | `word_alignment_parity`, 31/6236 |
 | Stall invisible in every metric | `trailing_stall_sec`, `TraceResult.stuck` | surah 55's 99 s was scored "no stalls" |
 | Handoff never executed by any test | `handoff_boundary.py` | `lock_trace.py:61` said so for months |
 | Harness never drained the tail backlog | `simulate()` drain | 11 surahs repaired |
@@ -53,18 +53,37 @@ still misbehaves, the next thing to separate is the case you raised yourself:
 continuing *within* a surah across a page break is a different problem from moving
 to a *new* surah, and the first belongs to the swipe logic, not to handoff.
 
-**2. Word-level judgement for 4116 of 6236 ayat.**
-The recognition phoneme table segments on phoneme-phrase boundaries, the Mushaf
-on orthographic words. They disagree at a waqf mark, where the phonemiser merges
-two words into one entry. The counts cannot be reconciled by counting (coarser in
-4089, finer in 27). The ayah now yields UNKNOWN — the highlight shows, nothing is
-accused — but **no word-level verdict is possible** until table entries are mapped
-onto Mushaf words. That needs an alignment through an orthography the phonemiser
-deliberately altered (alef dropped or turned into lam, shadda expanded to a
-doubled letter), and then a decision about what verdict two words sharing one
-entry should get. A boundary in the wrong place puts a WRONG verdict on the wrong
-word, which is the exact harm this feature exists to prevent. Deliberate work, not
-a change to make quickly.
+**2. Word-level judgement: SOLVED for 6205 of 6236 ayat (was 1220).**
+The recognition phoneme table segments on phoneme-*phrase* boundaries — a waqf
+mark or an idgham merges two Mushaf words into one entry — so its word count is
+lost by the physics of connected recitation, and 4,116 of 6,236 ayat disagreed
+with the Mushaf. Every one of those was silently uncoloured.
+
+The fix is `android/app/src/main/assets/word_aligned_phonemes.json`, built by
+`engine/replay/build_word_table.py` from `Quran-Lab/quran-tajweed-phonetics`
+(ungated, same lab, `quran-lab-npl-1.2`): 522k atomic phones carrying
+`word_index`, which is the Mushaf segmentation, plus their own lab's stated
+bijection onto our 250-unit inventory (6,236 ayat aligned, 0 mismatches, 0
+conflicts). No fuzzy alignment, no new phonemiser.
+
+**The units are the old table's; only the boundaries are new.** The first build
+used the tajweed units, which changed the flat unit sequence on 66 ayat. Scored
+through the real DP on surah 56 that is 88/93 matched versus 90/94 — the model was
+trained with `ة` as `تَ`+`اا` and emits exactly that, so the tajweed inventory's
+single `ه` for it is phonetically tidier and empirically worse. Ownership was the
+defect; the units were never in question. So the build takes boundaries from
+tajweed and fills them with the old table's units, and asserts the written bytes
+are flat-identical to `ordered_quran_phonemes.json`:
+
+    flat sequence IDENTICAL to today's table: 6236 ayat
+    flat sequence differing               : 0 ayat
+
+`PhonemeMapper.align` runs its DP over the flat list and `unitWord` only assigns
+ownership, and the lock reads coverage from that flat list (the word-count check
+was only ever in the *painting* path). So recognition is **provably unchanged**:
+no corpus re-run, no digest to re-derive. 31 surah-opening ayat, where the tajweed
+text and the Mushaf segment the bismillah differently, stay UNKNOWN rather than
+being guessed at.
 
 **3. 30.9% of audio time stalled** across the corpus. Mostly fixed (un-drained
 backlog, dead-band freeze); what remains is the ~38% of ayat that take twice as

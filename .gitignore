@@ -9,8 +9,17 @@ captures/
 .externalNativeBuild/
 .cxx/
 
-# Bundled model + token tables (fetched by scripts/fetch_assets.sh, ~100 MB)
-/android/app/src/main/assets/
+# Bundled model + token tables (fetched by scripts/fetch_assets.sh, ~100 MB).
+# The CONTENTS are listed rather than the directory, because git cannot
+# re-include a file whose parent directory is excluded.
+#/android/app/src/main/assets/
+/android/app/src/main/assets/*
+# ...except the word-aligned phoneme table. It is 2.7 MB of *derived* data, it is
+# what makes 6,205 of 6,236 ayat word-judgeable instead of 1,220, and it has to be
+# in the repository because a committed generated asset nobody can regenerate is
+# a liability - so `engine/replay/fetch_word_table_inputs.sh` pins the 149 MB
+# source by hash and `build_word_table.py` rebuilds these exact bytes.
+!/android/app/src/main/assets/word_aligned_phonemes.json
 
 # Reverse-engineering working artifacts (kept local only)
 /re/

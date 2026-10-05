@@ -1,3 +1,20 @@
+> **RESOLVED — see `docs/STATUS.md` section 2.** The diagnosis below was right and
+> the conclusion about *how* was wrong. This is kept because the reasoning error
+> is the useful part: it assumed a mapping had to be invented, when the same lab
+> had already published the segmentation.
+>
+> What was actually wrong: the counts could not be reconciled *by counting*, and
+> that was a hint, not a dead end. The task was never "reconcile these two
+> counts", it was "find a third source that states the segmentation". A waqf mark
+> does not erase a word boundary, it erases it from *our* representation of it.
+>
+> The fix is a committed asset carrying the old table's units with tajweed word
+> boundaries, built by `engine/replay/build_word_table.py`. 4,116 unjudgeable ayat
+> became 31. The DP input is flat-identical for all 6,236 ayat, so recognition is
+> provably unchanged and no corpus re-run was needed.
+
+---
+
 # The 4,116 unjudgeable ayat — what is actually wrong, and the fix
 
 Established by measurement, 2026-10-03. Companion to

@@ -45,6 +45,61 @@ object PhonemeMapper {
     @Volatile private var unitSet: Set<String>? = null
     private val expectedCache = HashMap<String, Expected>()
 
+    /**
+     * Word-aligned units per ayah, from `word_aligned_phonemes.json`.
+     *
+     * The canonical table segments an ayah on phoneme-PHRASE boundaries: idgham
+     * across a word boundary, or a waqf mark, merges two Mushaf words into one
+     * entry. The word count is therefore lost by the physics of connected
+     * recitation, and `PracticeViewModel` refuses to judge an ayah whose counts
+     * disagree - which silently left 4,116 of 6,236 ayat (66%) with no colouring
+     * at all. Not a rendering fault: no status reached the renderer.
+     *
+     * This table carries the same model units, attributed to Mushaf words by the
+     * Quran-Lab tajweed dataset (`word_index` per phone, with its own lab's
+     * bijection onto the old 250-unit inventory, stated as aligned across all
+     * 6,236 ayat with 0 mismatches). It is the SAME units, so the flat sequence
+     * the DP runs over is identical for 6,170 of 6,236 ayat and differs by one
+     * unit on the other 66 - a doubled alef present or absent, or a vowel
+     * attached to the neighbouring consonant. Only word ownership moves.
+     */
+    private var wordTable: Map<String, Array<Array<String>>>? = null
+
+    @Volatile private var wordTableLoaded = false
+
+    /**
+     * Idempotent. Kept separate from [ensureTable] so a missing word-aligned
+     * file degrades to the old behaviour rather than failing the engine.
+     */
+    @Synchronized
+    fun ensureWordTable(source: java.io.InputStream): Boolean {
+        if (wordTableLoaded) return wordTable != null
+        wordTableLoaded = true
+        return try {
+            val root = JSONObject(source.bufferedReader().use { it.readText() })
+            val map = HashMap<String, Array<Array<String>>>(7000)
+            val keys = root.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val arr = root.optJSONArray(k) ?: continue
+                val words = Array(arr.length()) { _ -> emptyArray<String>() }
+                for (i in 0 until arr.length()) {
+                    val wa = arr.optJSONArray(i) ?: continue
+                    words[i] = Array(wa.length()) { j -> wa.optString(j) }
+                }
+                map[k] = words
+            }
+            wordTable = map
+            Log.i(TAG, "word-aligned table ready (${map.size} ayat)")
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "word-aligned table load failed", t)
+            false
+        }
+    }
+
+    fun wordTableSize(): Int = wordTable?.size ?: 0
+
     /** Idempotent; ~5 MB JSON parsed once per process. */
     fun ensureTable(file: File): Boolean {
         if (table != null) return true
@@ -165,6 +220,28 @@ object PhonemeMapper {
     fun expected(surah: Int, ayah: Int): Expected? {
         val key = "$surah:$ayah"
         expectedCache[key]?.let { return it }
+        // Word-aligned first: it carries the same units with Mushaf-correct
+        // ownership. Already exploded, so explode() is skipped entirely.
+        wordTable?.get(key)?.let { wa ->
+            if (wa.isNotEmpty()) {
+                var n = 0
+                for (w in wa) n += w.size
+                if (n > 0) {
+                    val units = ArrayList<String>(n)
+                    val unitWord = ArrayList<Int>(n)
+                    for (wi in wa.indices) {
+                        for (u in wa[wi]) {
+                            units.add(u)
+                            unitWord.add(wi)
+                        }
+                    }
+                    val e = Expected(wa.size, units, unitWord.toIntArray())
+                    if (expectedCache.size > 8000) expectedCache.clear()
+                    expectedCache[key] = e
+                    return e
+                }
+            }
+        }
         val words = table?.get(key) ?: return null
         if (words.isEmpty()) return null
         val units = ArrayList<String>(words.size * 4)

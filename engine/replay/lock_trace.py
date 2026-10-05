@@ -84,6 +84,32 @@ from word_verdicts import align, load_units, make_tokenizer
 HERE = os.path.dirname(os.path.abspath(__file__))
 PHONEMES = os.path.join(HERE, "..", "shootout", "weights", "zipformer",
                         "ordered_quran_phonemes.json")
+# Mirrors PhonemeMapper.expected(): the word-aligned table is preferred, and it
+# is already exploded so `tok` is not applied to it. Without this the replay
+# harness would measure the OLD phrase segmentation while the app ships the new
+# word ownership - the gate would pass on something that does not ship.
+WORD_ALIGNED = os.path.join(HERE, "..", "..", "android", "app", "src", "main",
+                            "assets", "word_aligned_phonemes.json")
+_word_table = None
+_word_table_loaded = False
+
+
+def load_word_table():
+    global _word_table, _word_table_loaded
+    if _word_table_loaded:
+        return _word_table
+    _word_table_loaded = True
+    try:
+        if os.path.isfile(WORD_ALIGNED) and os.path.getsize(WORD_ALIGNED) > 0:
+            with open(WORD_ALIGNED) as f:
+                _word_table = json.load(f)
+            print("lock_trace: word-aligned table %d ayat" % len(_word_table))
+        else:
+            _word_table = None
+    except Exception as e:            # never let the gate die on the new file
+        print("lock_trace: word-aligned table load failed (%s), falling back" % e)
+        _word_table = None
+    return _word_table
 
 TAIL_SAMPLES = 24000          # PracticeViewModel.kt:1157
 POLL_SEC = 0.25               # PracticeViewModel.kt:697 `delay(250)`
@@ -259,8 +285,19 @@ def expected_all(table, tok, surah, n_ayat):
     tolerant of ayat absent from the table (a scoped plan may stop short).
     """
     out = {}
+    wt = load_word_table() or {}
     for a in range(1, n_ayat + 1):
         key = "%d:%d" % (surah, a)
+        wa = wt.get(key)
+        if wa:
+            units, unit_word = [], []
+            for wi, word in enumerate(wa):
+                for u in word:
+                    units.append(u)
+                    unit_word.append(wi)
+            if units:
+                out[a] = (units, unit_word, len(wa))
+                continue
         if key not in table:
             continue
         units, unit_word = [], []

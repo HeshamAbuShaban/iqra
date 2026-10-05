@@ -85,10 +85,18 @@ def main():
     surah = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     n_ayat = int(sys.argv[3]) if len(sys.argv) > 3 else 7
     tok = make_tokenizer(load_units())
+    # Same preference as the app and lock_trace: word-aligned ownership.
+    import lock_trace as _lt
+    wt = _lt.load_word_table() or {}
     refs = []
     for a in range(1, n_ayat + 1):
+        key = "%d:%d" % (surah, a)
+        wa = wt.get(key)
+        if wa:
+            refs.append([u for w in wa for u in w])
+            continue
         seq = []
-        for w in table["%d:%d" % (surah, a)]["aya_phonemes_list"]:
+        for w in table[key]["aya_phonemes_list"]:
             seq.extend(tok(w))
         refs.append(seq)
     syms = [e["symbol"] for e in dump["emissions"]]
