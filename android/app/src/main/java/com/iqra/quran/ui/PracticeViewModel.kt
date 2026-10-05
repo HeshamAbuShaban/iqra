@@ -399,7 +399,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * swallowed: a silent skip is indistinguishable from a working feature that
      * happened to find nothing.
      */
-    private var unjudgeableAyahs = 0
+    private val unjudgeableKeys = linkedSetOf<String>()
+
+    /**
+     * Latch for the surah-end page advance. Set when the reader has been taken
+     * to the next surah's opening, cleared when the lock actually moves there.
+     * Without it the page follows a noisy coverage threshold and oscillates.
+     */
+    private var handoffPageShown = false
 
     private var sessionStartedAtMs = 0L
     private var startSurahToFile = 0
@@ -448,7 +455,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .append(",\"moves\":").append(sessionMoves)
             .append(",\"reversals\":").append(sessionReversals)
             .append(",\"evaluations\":").append(sessionEvaluations)
-            .append(",\"unjudgeableAyahs\":").append(unjudgeableAyahs)
+            .append(",\"unjudgeableAyahs\":").append(unjudgeableKeys.size)
+            .append(",\"unjudgeableKeys\":[\"")
+            .append(unjudgeableKeys.joinToString("\",\""))
+            .append("\"]")
             .append("}")
             .append(",\"frames\":")
         frameRing.appendJson(sb)
@@ -785,6 +795,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
         lastAdvanceAt = now
         speechFramesSinceAdvance = 0
+        handoffPageShown = false
         lockedAyah = next
         // A reversal is a move whose direction differs from the previous
         // move's: ping-ponging is exactly what the back-coverage gate exists
@@ -1237,7 +1248,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         startSurahToFile = s
         pollsSinceFlush = 0
         sessionEvaluations = 0
-        unjudgeableAyahs = 0
+        unjudgeableKeys.clear()
+        handoffPageShown = false
         sessionActive = true
         diag("session starts p=$page → s=$s:${lockedAyah}")
         // Write the header immediately. If the process dies before the first
@@ -1509,6 +1521,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     val cov = PhonemeMapper.align(obs, next).coverage
                     if (cov >= HANDOFF_COVERAGE) {
                         loadSurah(activeSurah + 1)
+                        handoffPageShown = false
                         lockedAyah = 1
                         lastLockMoveMs = System.currentTimeMillis()
                         rebaseSlice = true
@@ -1806,7 +1819,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     // resolveLayer still gives the ayah its RECITATION_AYAH
                     // highlight. The reader sees where the lock is; nothing is
                     // accused.
-                    unjudgeableAyahs++
+                    unjudgeableKeys.add("$activeSurah:$a")
                     for (i in ws.indices) newMap[keyOf(ws[i])] = WordStatus.UNKNOWN
                     continue
                 }
@@ -1937,8 +1950,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     PhonemeMapper.align(obs, cand).coverage
                 } else 0f
                 handoffShowCov = candCov
-                if (candCov >= HANDOFF_SHOW_COV) {
-                    firstPageOfSurah(activeSurah + 1)?.let { page = it }
+                // LATCH. Coverage is noisy frame to frame, so gating the page on
+                // a coverage threshold alone makes it flap: the reader sees the
+                // page jump to the next surah and back, once per few frames,
+                // which is the "fast pace page switching" reported on device.
+                // Once we have shown the next surah's opening there is nothing
+                // to go back to - the lock is on the last ayah of this one, so
+                // versePage[lockedAyah] is this surah's page, and the two
+                // disagree every frame until the handoff actually lands.
+                if (!handoffPageShown && candCov >= HANDOFF_SHOW_COV) {
+                    firstPageOfSurah(activeSurah + 1)?.let {
+                        page = it
+                        handoffPageShown = true
+                    }
                 }
             }
             withContext(Dispatchers.Main) {
