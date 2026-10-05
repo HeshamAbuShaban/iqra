@@ -304,7 +304,7 @@ private fun AccuracyTrendCard(s: PracticeLog.Summary, c: IqraColors) {
             TrendLine(
                 points = withAcc.mapIndexed { i, p ->
                     TrendPoint(
-                        i / (withAcc.size - 1f),
+                        com.iqra.quran.ui.theme.trendX(i, withAcc.size),
                         p.accuracy ?: 0f,
                         shortDate(p.dayKey),
                     )
@@ -329,9 +329,17 @@ private fun AccuracyTrendCard(s: PracticeLog.Summary, c: IqraColors) {
 
 @Composable
 private fun PaceTrendCard(s: PracticeLog.Summary, c: IqraColors) {
-    val paced = s.series.filter { it.wpm > 1.0 }
+    // A session where nothing was judged has no pace. Pace is a rate, and a rate
+    // over zero recited words is not a slow session - it is no session. Showing
+    // "70 words per minute" beside "0 words judged" was reporting a stopwatch
+    // reading for a run that never happened.
+    val paced = s.series.filter { it.wpm > 1.0 && it.judged > 0 }
     Panel(c) {
-        PanelTitle("Pace", if (paced.isEmpty()) "No pace recorded yet" else null, c)
+        PanelTitle(
+            "Pace",
+            if (paced.isEmpty()) "Needs a session where words were judged" else null,
+            c,
+        )
         if (paced.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Row {
@@ -343,11 +351,14 @@ private fun PaceTrendCard(s: PracticeLog.Summary, c: IqraColors) {
                     c.gold, "%.0f".format(best?.wpm ?: 0.0), "fastest", "best",
                 )
             }
-            if (paced.size >= 3) {
+            if (paced.size >= 2) {
                 Spacer(Modifier.height(14.dp))
                 TrendLine(
                     points = paced.mapIndexed { i, p ->
-                        TrendPoint(i / (paced.size - 1f), p.wpm.toFloat(), shortDate(p.dayKey))
+                        TrendPoint(
+                            com.iqra.quran.ui.theme.trendX(i, paced.size),
+                            p.wpm.toFloat(), shortDate(p.dayKey),
+                        )
                     },
                     line = c.series2,
                     fill = c.series2,

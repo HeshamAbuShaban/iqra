@@ -52,6 +52,15 @@ import androidx.compose.ui.unit.sp
 data class TrendPoint(val x: Float, val y: Float, val label: String)
 
 /**
+ * Evenly spaced x for point [i] of [n].
+ *
+ * `i / (n - 1)` is NaN when n == 1, and a NaN coordinate draws as a one-pixel
+ * stub at the left edge with a label under it - which looks like a chart of
+ * nothing rather than a chart of one. A single point belongs in the middle.
+ */
+fun trendX(i: Int, n: Int): Float = if (n < 2) 0.5f else i / (n - 1f)
+
+/**
  * A line chart with a gradient under it.
  *
  * The line is smoothed with a Catmull-Rom spline converted to cubic segments. That

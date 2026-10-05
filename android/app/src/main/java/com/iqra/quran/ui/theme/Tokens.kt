@@ -351,10 +351,10 @@ fun liveColorsFor(c: IqraColors): LiveColors = LiveColors(
     crest = c.gold,
     crestHot = c.goldBright,
     mist = mix(c.accent, c.gold, 0.35f),
-    // 7% is deliberate. The lattice is a texture, not a pattern: any stronger and
-    // it competes with the Arabic, which is the one thing on this screen that must
-    // always win.
-    lattice = c.gold.copy(alpha = 0.07f),
+    // 3.5% is deliberate, and it was 7% first. The lattice is a texture, not a
+    // pattern. At 7% on a near-black ground it read as geometric wallpaper and
+    // dominated the screen - the exact opposite of a background that recedes.
+    lattice = c.gold.copy(alpha = 0.035f),
     waiting = mix(c.accent, c.gold, 0.20f),
     ink = c.ink,
     inkMuted = c.inkMuted,
@@ -402,6 +402,17 @@ fun iqraScheme(c: IqraColors): androidx.compose.material3.ColorScheme =
         surface = c.surface,
         onSurface = c.ink,
         surfaceVariant = c.surfaceHigh,
+        // AlertDialog and the sheet group read these, not `surface`. Left unset
+        // they fall back to M3 defaults, which is why the dialog over the recite
+        // screen was grey-purple on a warm theme.
+        surfaceContainer = c.surface,
+        surfaceContainerHigh = c.surfaceHigh,
+        surfaceContainerHighest = c.surfaceHigh,
+        surfaceContainerLow = c.surface,
+        surfaceContainerLowest = c.ground,
+        surfaceBright = c.surfaceHigh,
+        surfaceDim = c.ground,
+        surfaceTint = c.accent,
         onSurfaceVariant = c.inkMuted,
         outline = c.hairline,
         outlineVariant = c.hairline,

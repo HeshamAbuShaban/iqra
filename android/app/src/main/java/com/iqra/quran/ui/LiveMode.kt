@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -54,6 +55,15 @@ import android.graphics.BlurMaskFilter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.nativeCanvas
+import com.iqra.quran.ui.theme.LiveColors
+import com.iqra.quran.ui.theme.mix
+import com.iqra.quran.ui.theme.LocalIqraColors
+import com.iqra.quran.ui.theme.LocalLiveColors
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 
 /**
  * Recitation test: the verse is hidden, you recite it from memory, and each
@@ -98,11 +108,28 @@ fun LiveModeScreen(
     onFinished: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
+    val lcG = LocalIqraColors.current
+    val lc = LocalLiveColors.current
+    val animOn = remember { ReaderPrefs.liveAnimation(ctx) }
+    // Tone needs band energy the engine does not publish - micLevel() is RMS and
+    // micSampleCount() is a count, so there is no spectrum to read. Until the
+    // view model exposes one, brightness follows pace and the crest's own onset,
+    // which is honest about being a stand-in rather than pretending to measure a
+    // pitch that is not available.
     val recording by vm.recording.collectAsStateWithLifecycle()
     val statusMap by vm.statusMap.collectAsStateWithLifecycle()
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val policy by vm.policyLive.collectAsStateWithLifecycle()
+
+    // The lattice breathes on a period coprime with the horizon's, so the two never
+    // visibly lock into a shared rhythm.
+    val latticeFlow = rememberInfiniteTransition(label = "lattice")
+    val driftPhase by latticeFlow.animateFloat(
+        0f, 6.2831855f,
+        infiniteRepeatable(tween(19000, easing = LinearEasing)),
+        label = "latticePhase",
+    )
 
     var started by remember { mutableStateOf(false) }
     var finished by remember { mutableStateOf(false) }
@@ -123,6 +150,7 @@ fun LiveModeScreen(
     var startedAt by remember { mutableLongStateOf(0L) }
     // Public on the view model; the engine keeps the raw field private.
     val wpm by vm.wpmFlow.collectAsState()
+    val brightness = remember(wpm) { ((wpm - 40.0) / 90.0).toFloat().coerceIn(0f, 1f) }
     // The orb's memory. A plain FloatArray, written by the poll and read inside
     // the draw lambda - never touched during composition, so it costs one
     // canvas redraw rather than a recomposition.
@@ -203,7 +231,12 @@ fun LiveModeScreen(
                         tint = Color(0xFF8FA0BE))
                 }
                 Text(
-                    "Surah $surah  ·  $ayahCount ${if (ayahCount == 1) "ayah" else "ayat"}",
+                    // The name, not the number. "Surah 1" is a lookup; the name
+                    // is what the reciter is holding in their head.
+                    listOfNotNull(
+                        data.surahInfo(surah)?.nameEn,
+                        "$ayahCount ${if (ayahCount == 1) "ayah" else "ayat"}",
+                    ).joinToString("  ·  "),
                     fontSize = 14.sp,
                     color = Color(0xFF8FA0BE),
                     modifier = Modifier.weight(1f),
@@ -217,12 +250,26 @@ fun LiveModeScreen(
             // Drawn first and anchored to the bottom edge, so the ground above it
             // stays empty. Tapping the light is what starts the session, which is
             // why the gesture lives on the wave and nowhere else.
+            GirihLattice(
+                colour = lc.lattice,
+                phase = if (animOn) driftPhase else 0.6f,
+                brighten = (voice.floatValue + onset.floatValue * 0.6f).coerceIn(0f, 1f),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.62f)
+                    // Canvas does not clip to its own bounds, and without this the
+                    // pattern ran past its box and into the light.
+                    .clipToBounds(),
+            )
             HorizonWave(
+                lc = lc,
                 history = history,
                 head = headState,
                 level = voice,
                 onset = onset,
-                pace = (wpm / 160.0).toFloat(),
+                brightness = brightness,
+                animate = animOn,
                 stall = policy.stallSec,
                 state = state,
                 modifier = Modifier
@@ -254,7 +301,7 @@ fun LiveModeScreen(
                     },
                     fontSize = 13.sp,
                     color = when (state) {
-                        LiveState.Thinking -> waveAmber
+                        LiveState.Thinking -> lc.crestHot
                         LiveState.Quiet -> Color(0xFF64748B)
                         else -> Color(0xFF8FA0BE)
                     },
@@ -295,24 +342,18 @@ fun LiveModeScreen(
                     Spacer(Modifier.height(16.dp))
                 }
 
-                // The same numbers Diagnostics shows, readable at a glance, and a
-                // tool that only explains itself on another screen has failed the
-                // person who most needs the explanation.
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    LiveStat("heard", "${statusMap.size}")
-                    LiveStat("moving", if (policy.next >= 0f) "%.2f".format(policy.next) else "—")
-                    LiveStat("pace", if (policy.stallSec > 0f) "%.0fs".format(policy.stallSec) else "—")
-                    LiveStat("in passage", "$totalWords")
-                }
-
+                // No diagnostics row here. "moving 0.50", "pace 16s" and
+                // "in passage 29" were parked in the middle of a devotional screen,
+                // and they are engineering state, not feedback: 0.50 is the lock's
+                // normalised position, 16s is how long it has been stalled. They
+                // belong on the Diagnostics screen and in the session report, where
+                // someone who wants them can find them. What the reciter needs
+                // mid-recitation is the words and the light.
                 Spacer(Modifier.height(14.dp))
 
                 // Controls live in a floating bar on the light, not in a top row.
                 Surface(
-                    color = Color(0xFF111A2E),
+                    color = lc.bar,
                     shape = RoundedCornerShape(30.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -328,7 +369,7 @@ fun LiveModeScreen(
                                     onRequestMic()
                                 },
                                 modifier = Modifier.weight(1f),
-                            ) { Text("Begin reciting", color = waveCyan, fontSize = 16.sp) }
+                            ) { Text("Begin reciting", color = lcG.accent, fontSize = 16.sp) }
                         } else {
                             Text(
                                 "${statusMap.size} of $totalWords heard",
@@ -337,7 +378,7 @@ fun LiveModeScreen(
                                 modifier = Modifier.weight(1f).padding(start = 12.dp),
                             )
                             TextButton(onClick = { vm.stopRecite("live done") }) {
-                                Text("End", color = waveCyan, fontSize = 16.sp)
+                                Text("End", color = lcG.accent, fontSize = 16.sp)
                             }
                         }
                     }
@@ -373,8 +414,18 @@ fun LiveModeScreen(
                 val judged = statusMap.size
                 Text(
                     if (judged == 0) {
-                        "Nothing was judged. The microphone may not have been " +
-                            "granted, or the words were too quiet to hear."
+                        // Distinguish the cases. The old copy blamed the microphone
+                        // and the level, which is wrong whenever the mic was fine and
+                        // the room was simply silent - and it did so at exactly the
+                        // moment someone most wants to know what happened.
+                        if (!everRecorded) {
+                            "The microphone was never opened, so nothing could be " +
+                                "heard."
+                        } else {
+                            "No words were judged. The microphone was open and " +
+                                "nothing was said - try again and recite from the " +
+                                "first ayah."
+                        }
                     } else {
                         "$judged ${if (judged == 1) "word" else "words"} " +
                             "heard. Your report is ready."
@@ -404,12 +455,14 @@ private fun lerp(a: Color, b: Color, t: Float): Color {
 /** The one warm accent this screen owns, so a stalled lock reads differently. */
 private val amberColor = Color(0xFFE09112)
 
-// The horizon's palette, taken from the references: a blue core, violet at the
-// shoulders, cyan where the light is strongest, over near-black ground.
-private val waveBlue   = Color(0xFF2B57F0)
-private val waveViolet = Color(0xFF7B4BEE)
-private val waveCyan   = Color(0xFF3FD8F0)
-private val waveAmber  = Color(0xFFE0A23C)
+// The light's colours come from LocalLiveColors, which derives them from whichever
+// theme is active. The violet and cyan that used to live here were taken from a
+// screenshot of a generic voice assistant, which is the wrong object entirely: a
+// mushaf is an illuminated manuscript, and its register is gold leaf on a dark
+// ground, not a neon gradient. Worse, they were a THIRD palette - the app was
+// teal and gold, the reader had its own light scheme, and this screen had
+// twenty literals of its own - so the same five word verdicts were two different
+// colours in two different files.
 
 /**
  * The horizon.
@@ -445,11 +498,15 @@ private val waveAmber  = Color(0xFFE0A23C)
  */
 @Composable
 private fun HorizonWave(
+    lc: LiveColors,
     history: FloatArray,
     head: androidx.compose.runtime.MutableIntState,
     level: androidx.compose.runtime.MutableFloatState,
     onset: androidx.compose.runtime.MutableFloatState,
-    pace: Float,
+    /** 0..1 tone brightness. See the note where it arrives. */
+    brightness: Float,
+    /** Amplitude when the user has switched animation off. */
+    animate: Boolean,
     stall: Float,
     state: LiveState,
     modifier: Modifier = Modifier,
@@ -463,6 +520,11 @@ private fun HorizonWave(
     val mist by flow.animateFloat(
         0f, 6.2831855f,
         infiniteRepeatable(tween(17300, easing = LinearEasing)), label = "mist")
+    // Pinned phases when motion is switched off. The surface stops breathing and
+    // the light still answers the voice, which is the part anyone turning the
+    // setting off still wants.
+    val phD = if (animate) drift else 0.9f
+    val phM = if (animate) mist else 2.4f
 
     Canvas(modifier) {
         val w = size.width
@@ -482,11 +544,15 @@ private fun HorizonWave(
         // turning amber. Amber reads as a warning on this ground and turns the
         // bottom of the screen brown; the waiting state belongs inside the same
         // blue-violet family, and the amber in the label above already says it.
-        val tint = when (state) {
-            LiveState.Thinking -> lerp(waveViolet, waveBlue, 0.45f)
-            else -> lerp(waveViolet, waveCyan, (pace * 0.55f + on * 0.45f).coerceIn(0f, 1f))
-        }
-        val core = lerp(waveBlue, waveCyan, on * 0.6f)
+        // Brightness carries tone. Gold at rest, paler and whiter as the voice
+        // gets brighter - a lit edge getting hotter, which is what a high voice
+        // looks like. With animation off this is pinned to rest, so the still
+        // image is the resting state rather than a frozen sample of something.
+        val hot = (brightness * 0.6f + on * 0.4f).coerceIn(0f, 1f)
+        val tint = if (state == LiveState.Thinking) lc.waiting
+                   else lerp(lc.mist, lc.crest, 0.35f + 0.4f * hot)
+        val core = if (state == LiveState.Thinking) mix(lc.body, lc.crest, 0.3f)
+                   else lerp(lc.bodyDeep, lc.crest, hot)
 
         // Crest geometry. `restY` is the mean, `lift` how far the crest can climb
         // above it. Both are fractions of the box so the form is identical on any
@@ -503,9 +569,9 @@ private fun HorizonWave(
             val x = w * i / steps
             val u = i / steps.toFloat()
             var shape = 0.50f
-            shape += 0.30f * sin(drift + u * 2.1f)
-            shape += 0.20f * sin(drift * 1.7f + u * 4.7f + 1.1f)
-            shape += 0.12f * sin(drift * 2.3f + u * 9.3f + 2.4f)
+            shape += 0.30f * sin(phD + u * 2.1f)
+            shape += 0.20f * sin(phD * 1.7f + u * 4.7f + 1.1f)
+            shape += 0.12f * sin(phD * 2.3f + u * 9.3f + 2.4f)
             val k = (u * 0.88f * n).toInt().coerceIn(0, n - 1)
             val hv = history[((hd - 1 - k) % n + n) % n].coerceIn(0f, 1f)
             val y = restY - lift * (0.26f + 0.42f * shape + 0.58f * hv)
@@ -523,8 +589,8 @@ private fun HorizonWave(
         drawPath(
             mass,
             Brush.verticalGradient(
-                0.00f to waveViolet.copy(alpha = 0f),
-                (bandTop * 0.55f).coerceIn(0f, 0.9f) to waveViolet.copy(alpha = 0f),
+                0.00f to lc.crest.copy(alpha = 0f),
+                (bandTop * 0.55f).coerceIn(0f, 0.9f) to lc.crest.copy(alpha = 0f),
                 bandTop to tint.copy(alpha = peakA * 0.34f),
                 (bandTop + 0.13f).coerceAtMost(1f) to tint.copy(alpha = peakA * 0.72f),
                 1.00f to core.copy(alpha = (peakA * 0.98f).coerceAtMost(0.94f)),
@@ -533,7 +599,7 @@ private fun HorizonWave(
 
         // --- drifting mist inside the mass ------------------------------
         for (i in 0 until 6) {
-            val ph = mist + i * 1.9f
+            val ph = phM + i * 1.9f
             val cx = w * (0.5f + 0.42f * sin(ph * 0.7f + i))
             val cy = h * (0.78f + 0.18f * sin(ph * 1.1f + i * 2.1f))
             val r = h * (0.36f + 0.11f * sin(ph + i * 0.7f))
@@ -555,7 +621,7 @@ private fun HorizonWave(
         drawIntoCanvas { canvas ->
             val blur = Paint().asFrameworkPaint().apply {
                 maskFilter = BlurMaskFilter(26f + 22f * on, BlurMaskFilter.Blur.NORMAL)
-                color = lerp(tint, waveCyan, on * 0.7f)
+                color = lerp(tint, lc.crestHot, on * 0.7f)
                     .copy(alpha = (0.42f + 0.42f * on).coerceAtMost(0.85f))
                     .toArgb()
                 style = android.graphics.Paint.Style.STROKE
@@ -565,7 +631,7 @@ private fun HorizonWave(
         }
         drawPath(
             crest,
-            color = lerp(tint, waveCyan, 0.4f + 0.5f * on)
+            color = lerp(tint, lc.crestHot, 0.4f + 0.5f * on)
                 .copy(alpha = (0.34f + 0.50f * on + 0.20f * lv) * clear * live),
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f + 2.4f * on),
         )
@@ -577,8 +643,8 @@ private fun HorizonWave(
         val g = androidx.compose.ui.geometry.Offset(gx, gy)
         drawCircle(
             brush = Brush.radialGradient(
-                0f to lerp(core, waveCyan, on * 0.6f).copy(alpha = (0.26f + 0.24f * on) * live),
-                1f to waveBlue.copy(alpha = 0f),
+                0f to lerp(core, lc.crestHot, on * 0.6f).copy(alpha = (0.26f + 0.24f * on) * live),
+                1f to lc.bodyDeep.copy(alpha = 0f),
                 center = g, radius = gr,
             ),
             radius = gr, center = g,
@@ -588,36 +654,66 @@ private fun HorizonWave(
 
 @Composable
 private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean) {
-    val reveal by animateFloatAsState(
-        targetValue = if (status == null) 0f else 1f,
-        animationSpec = tween(420, easing = LinearEasing),
-        label = "reveal",
-    )
+    val reveal = remember { Animatable(0f) }
+    val tick = LocalHapticFeedback.current
+
+    // Ink, not a fade.
+    //
+    // A cross-fade from nothing is the weakest possible arrival, and the arrival
+    // IS the feedback here - the moment a word resolves is the only thing telling
+    // you the engine heard you. So the word rises a few pixels and settles, which
+    // reads as ink meeting paper, rather than simply becoming visible. It also
+    // springs, so it carries the velocity of the syllable that produced it instead
+    // of running on a fixed clock.
+    LaunchedEffect(status) {
+        if (status != null) {
+            reveal.animateTo(1f, spring(dampingRatio = 0.7f, stiffness = 520f))
+            // A light tick on every word, and a firmer one on a mistake. In a
+            // screen where you are looking at your memory rather than at the
+            // phone, haptics is the channel that reaches you without taking your
+            // eyes off the words.
+            if (status == WordStatus.WRONG) {
+                tick.performHapticFeedback(HapticFeedbackType.LongPress)
+            } else {
+                tick.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        } else {
+            reveal.snapTo(0f)
+        }
+    }
+    val t = reveal.value
+    val c = LocalIqraColors.current
+
     val fg = when (status) {
-        null -> Color(0xFF6E807A)
-        WordStatus.CORRECT -> Color(0xFFF2EFE4)
-        WordStatus.WRONG -> Color(0xFFF08A80)
-        WordStatus.SKIPPED -> Color(0xFF8A7F63)
-        else -> Color(0xFF4E5A78)
+        null -> c.ink.copy(alpha = 0f)          // unheard: absent, not a whisper
+        WordStatus.CORRECT -> c.wordGood
+        WordStatus.WRONG -> c.wordBad
+        WordStatus.SKIPPED -> c.wordUnknown.copy(alpha = 0.45f)
+        else -> c.wordUnknown
     }
     Text(
         text,
         fontFamily = quranFont,
         fontSize = 30.sp,
         lineHeight = 46.sp,
-        // Invisible until the engine has actually heard it. A whisper of grey
-        // is still the whole ayah on screen, which defeats the point of
-        // reciting from memory - the passage has to arrive word by word.
-        color = fg.copy(alpha = reveal),
+        color = fg.copy(alpha = fg.alpha * t),
         fontWeight = if (isCurrent) FontWeight.Medium else FontWeight.Normal,
-        modifier = if (isCurrent && status != null) {
-            Modifier.drawBehind {
-                drawRoundRect(
-                    color = goldColor.copy(alpha = 0.16f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f),
-                )
+        modifier = Modifier
+            .graphicsLayer {
+                // Rises and sharpens as it arrives.
+                translationY = (1f - t) * 9f
+                alpha = t
             }
-        } else Modifier,
+            .then(
+                if (isCurrent && status != null) {
+                    Modifier.drawBehind {
+                        drawRoundRect(
+                            color = c.gold.copy(alpha = 0.16f * t),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f),
+                        )
+                    }
+                } else Modifier,
+            ),
     )
 }
 
@@ -653,4 +749,81 @@ internal fun uthmaniWords(text: String): List<String> {
         else if (out.isNotEmpty()) out[out.lastIndex] = out.lastIndex.let { out[it] } + " " + raw
     }
     return out
+}
+
+
+/**
+ * Sacred geometry behind the passage.
+ *
+ * The recite screen is the one place in the app with no page, no text block and no
+ * list - just a ground and one luminous form. That left the upper two thirds of the
+ * screen empty, which is most of why the first version of this screen read as
+ * unfinished rather than calm.
+ *
+ * An eight-pointed star per cell - two squares, one turned 45 degrees - tiled with
+ * alternate cells offset by half a cell so the stars interlock. 7% opacity, drawn in
+ * the theme's gold. Both numbers are deliberate: a lattice is a texture and at any
+ * higher alpha it competes with the Arabic, which is the one thing on this screen
+ * that must always win. It brightens toward the light, so the pattern belongs to
+ * the same object rather than floating behind it.
+ */
+@Composable
+private fun GirihLattice(
+    colour: Color,
+    phase: Float,
+    brighten: Float,
+    modifier: Modifier = Modifier,
+) {
+    val p = remember { Path() }
+    Canvas(modifier) {
+        val cell = size.minDimension / 8.5f
+        if (cell <= 2f) return@Canvas
+        val step = cell * 1.10f
+        val cols = (size.width / step).toInt() + 2
+        val rows = (size.height / step).toInt() + 2
+        val stroke = (cell * 0.014f).coerceAtLeast(0.6f)
+
+        // Cells nearer the bottom sit closer to the light, so they read slightly
+        // stronger. Without the gradient the pattern looks like wallpaper.
+        fun depthAt(y: Float): Float = (y / size.height).coerceIn(0f, 1f)
+
+        for (r in -1..rows) {
+            // Alternate ROWS, not alternate cells. Offsetting individual cells
+            // diagonally scatters the stars - it reads as loose diamonds rather
+            // than as a pattern, because nothing lines up with its neighbours.
+            // A half-step on alternate rows is the running bond that makes the
+            // stars connect into one continuous lattice.
+            val off = if ((r and 1) == 0) 0f else step * 0.5f
+            for (cc in -1..cols) {
+                val cxp = cc * step + off + step * 0.5f
+                val cyp = r * step + step * 0.5f
+                // Stronger low down, where it approaches the light, then faded
+                // right out over the last fifth so the pattern dissolves into the
+                // glow instead of being cut off by it.
+                val d = depthAt(cyp)
+                val fade = if (d > 0.84f) ((1f - d) / 0.16f).coerceIn(0f, 1f) else 1f
+                val a = colour.copy(
+                    alpha = colour.alpha * (0.5f + 0.5f * d) * fade *
+                        (1f + brighten * 0.45f),
+                )
+                val rad = cell * 0.44f
+                // Square one, axis aligned.
+                p.reset()
+                p.moveTo(cxp - rad, cyp - rad)
+                p.lineTo(cxp + rad, cyp - rad)
+                p.lineTo(cxp + rad, cyp + rad)
+                p.lineTo(cxp - rad, cyp + rad)
+                p.close()
+                // Square two, turned 45 degrees, which with the first makes the star.
+                val q = rad * 0.7071f
+                val wob = 1f + 0.02f * kotlin.math.sin(phase + (cc + r) * 0.7f)
+                p.moveTo(cxp, cyp - q * wob)
+                p.lineTo(cxp + q * wob, cyp)
+                p.lineTo(cxp, cyp + q * wob)
+                p.lineTo(cxp - q * wob, cyp)
+                p.close()
+                drawPath(p, a, style = Stroke(width = stroke))
+            }
+        }
+    }
 }
