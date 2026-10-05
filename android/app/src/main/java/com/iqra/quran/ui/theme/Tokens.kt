@@ -4,6 +4,8 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -130,12 +132,23 @@ data class IqraColors(
     }
 }
 
-/** Shapes. Every radius in the app comes from here. */
+/**
+ * Shapes. Every corner in the app comes from here.
+ *
+ * These are `Shape`s and not bare radii, because that is what every call site
+ * actually wants - a `RoundedCornerShape`, not a `Dp` it has to wrap itself. The
+ * first version of this object held Dp values, mirroring the old
+ * `CardRadius = RoundedCornerShape(16.dp)` / `Pill = RoundedCornerShape(50)`
+ * constants it replaced, and every consumer failed to compile with
+ * "actual type is Dp, but Shape was expected".
+ */
 object IqraShape {
-    val card = 18.dp
-    val panel = 14.dp
-    val pill = 50.dp
-    val sheet = 28.dp
+    val card = RoundedCornerShape(18.dp)
+    val panel = RoundedCornerShape(14.dp)
+    /** 50% on a shape makes a stadium, which is what "pill" has to mean. */
+    val pill = RoundedCornerShape(percent = 50)
+    val sheet = RoundedCornerShape(28.dp)
+    val circle = CircleShape
 }
 
 /**
@@ -413,6 +426,22 @@ fun iqraScheme(c: IqraColors): androidx.compose.material3.ColorScheme =
         surfaceBright = c.surfaceHigh,
         surfaceDim = c.ground,
         surfaceTint = c.accent,
+        // The container roles. Leaving these unset does not make them neutral - it
+        // makes them M3's defaults, which are purple. The Continue card uses
+        // secondaryContainer, so with these missing it came out grey-purple on a
+        // warm theme and looked like a bug rather than an oversight.
+        secondaryContainer = c.accent.copy(alpha = 0.14f),
+        onSecondaryContainer = c.accent,
+        tertiary = c.gold,
+        onTertiary = c.ground,
+        tertiaryContainer = c.gold.copy(alpha = 0.16f),
+        onTertiaryContainer = c.gold,
+        errorContainer = c.chartBad.copy(alpha = 0.16f),
+        onErrorContainer = c.chartBad,
+        inverseSurface = c.ink,
+        inverseOnSurface = c.ground,
+        inversePrimary = c.accent,
+        scrim = Color.Black,
         onSurfaceVariant = c.inkMuted,
         outline = c.hairline,
         outlineVariant = c.hairline,

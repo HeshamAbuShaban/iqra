@@ -550,7 +550,8 @@ private fun RecentSessionsCard(
                     Text(
                         buildString {
                             append("${r.judged} words")
-                            r.durationSec?.let { append(" · ${it}s") }
+                            val dur = r.durationSec
+                            append(if (dur != null) " · ${formatSecs(dur)}" else " · length unknown")
                             if (r.ended) append(" · finished") else append(" · ended early")
                         },
                         fontSize = 10.sp, color = c.inkFaint,
@@ -602,7 +603,9 @@ private fun Hairline(c: IqraColors) {
 fun pct1(v: Float): String = if (v >= 0.995f) "100" else "%.1f".format(v * 100)
 
 fun shortDate(dayKey: Long): String {
-    val y = dayKey / 10000
+    // A record with no start time has no day key, and dayKeyOf(0) is 0, which
+    // formatted as "0 ?" - a date made entirely of placeholders.
+    if (dayKey <= 0L) return "no date"
     val m = (dayKey / 100) % 100
     val d = dayKey % 100
     val mm = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -616,3 +619,7 @@ fun todayKey(): Long {
         (c.get(java.util.Calendar.MONTH) + 1) * 100L +
         c.get(java.util.Calendar.DAY_OF_MONTH))
 }
+
+/** "45s" under a minute, "2m 05s" above. Used wherever a duration is shown. */
+fun formatSecs(s: Int): String =
+    if (s < 60) "${s}s" else "${s / 60}m ${"%02d".format(s % 60)}s"

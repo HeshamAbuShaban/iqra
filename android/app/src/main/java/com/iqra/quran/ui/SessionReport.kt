@@ -218,7 +218,7 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
                 fraction = r.accuracy,
                 accent = c.accent,
                 track = c.chartEmpty,
-                caption = r.accuracy?.let { pct1(it) } ?: "-",
+                caption = r.accuracy?.let { pct1(it) } ?: "—",
                 captionColor = c.ink,
                 accentColor = c.ink,
             )
@@ -226,11 +226,11 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
             Column(Modifier.weight(1f)) {
                 Stat(c.ink, "${r.judged}", "words judged")
                 Spacer(Modifier.height(10.dp))
-                Stat(c.ink, r.durationSec?.let { formatSecs(it) } ?: "-", "duration")
+                Stat(c.ink, r.durationSec?.let { formatSecs(it) } ?: "—", "duration")
                 Spacer(Modifier.height(10.dp))
                 Stat(
                     c.gold,
-                    if (r.wpm > 1.0) "%.0f".format(r.wpm) else "-",
+                    if (r.wpm > 1.0 && r.judged > 0) "%.0f".format(r.wpm) else "—",
                     "words per minute",
                 )
             }
@@ -370,12 +370,20 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
         .take(14)
     if (misses.isEmpty()) {
         Panel(c) {
-            Text("Nothing came out wrong", fontSize = 11.sp, color = c.inkMuted,
-                letterSpacing = 1.1.sp)
+            Text(
+                // Not "nothing came out wrong". On a session where every word was
+                // passed over, that is praise for a session nobody attempted - the
+                // most misleading kind of report, because it reads as success.
+                if (r.judged > 0) "Nothing came out wrong" else "Nothing to report",
+                fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp,
+            )
             Spacer(Modifier.height(8.dp))
             Text(
-                "No word in this session was judged wrong.",
-                fontSize = 13.sp, color = c.ink,
+                if (r.judged > 0) "No word in this session was judged wrong."
+                else "No word was judged in this session, so there is nothing to " +
+                    "score. ${r.skipped} passed over as the lock advanced and " +
+                    "${r.unknown} were not heard by the model.",
+                fontSize = 13.sp, lineHeight = 19.sp, color = c.ink,
             )
         }
         return
@@ -420,9 +428,6 @@ private fun Stat(colour: Color, value: String, label: String) {
         Text(label, fontSize = 10.sp, lineHeight = 13.sp, color = colour.copy(alpha = 0.55f))
     }
 }
-
-private fun formatSecs(s: Int): String =
-    if (s < 60) "${s}s" else "${s / 60}m ${s % 60}s"
 
 /** Plain text, for pasting somewhere. No share intent: nothing here needs one. */
 fun reportText(r: PracticeLog.Record, data: QuranData): String = buildString {

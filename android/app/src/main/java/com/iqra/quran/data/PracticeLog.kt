@@ -182,9 +182,24 @@ object PracticeLog {
         /** The lock passed these without judging. Not a mistake and not an attempt. */
         val skippedOver: Int get() = skipped
 
-        /** Session length in seconds, or null when either timestamp is missing. */
+        /**
+         * Session length in seconds, or null when it cannot be believed.
+         *
+         * `flushedAt - startedAt` is the only duration a record carries, and it is
+         * wrong more often than it is right: a placeholder record has startedAt 0,
+         * which reads as fifty-six years, and a file that was flushed again after
+         * the app was reopened counts the gap as recitation time. So a missing
+         * start, a non-positive length, or anything past four hours is reported as
+         * unknown rather than as a number - a person is not going to sit in one
+         * place reciting for four hours, so a larger figure is a stale file, not a
+         * session.
+         */
         val durationSec: Int?
-            get() = if (flushedAt > startedAt) ((flushedAt - startedAt) / 1000L).toInt() else null
+            get() {
+                if (startedAt <= 0L || flushedAt <= startedAt) return null
+                val secs = (flushedAt - startedAt) / 1000L
+                return if (secs in 1..14400) secs.toInt() else null
+            }
 
         val dayKey: Long get() = dayKeyOf(startedAt)
 
