@@ -97,6 +97,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.ui.draw.drawBehind
@@ -437,6 +438,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onDiag = { screenName = "diag" },
             onData = { screenName = "data" },
             onSettings = { screenName = "settings" },
+            onProgress = { screenName = "progress" },
             onTest = { s, a ->
                 screenSurah = s; screenPage = a; screenCount = 0
                 screenName = "live"
@@ -498,7 +500,7 @@ sealed interface Screen {
     data class Live(val surah: Int, val startAyah: Int, val count: Int) : Screen
 }
 
-enum class HomeTab { Surahs, Juz, Practice, Bookmarks }
+enum class HomeTab { Surahs, Juz, Bookmarks }
 enum class SurahView { List, Grid }
 
 @Composable
@@ -511,6 +513,7 @@ fun HomeScreen(
     onData: () -> Unit = {},
     onSettings: () -> Unit = {},
     onTest: (Int, Int) -> Unit = { _, _ -> },
+    onProgress: () -> Unit = {},
     onResume: () -> Unit = {},
 ) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
@@ -546,6 +549,9 @@ fun HomeScreen(
             }
             IconButton(onClick = onData) {
                 Icon(Icons.Outlined.FolderOpen, "Data files", tint = cs.onSurface.copy(alpha = 0.55f))
+            }
+            IconButton(onClick = onProgress) {
+                Icon(Icons.Outlined.ShowChart, "Your practice", tint = cs.onSurface.copy(alpha = 0.55f))
             }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Outlined.Tune, "Settings", tint = cs.onSurface.copy(alpha = 0.55f))
@@ -615,7 +621,6 @@ fun HomeScreen(
         when (tab) {
             HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs, onTest)
             HomeTab.Juz -> JuzList(vm, data, onOpen)
-            HomeTab.Practice -> PracticeOverview(data, onOpen)
             HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen)
         }
     }
@@ -708,7 +713,6 @@ fun HomeTabRow(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
                     when (t) {
                         HomeTab.Surahs -> "Surahs"
                         HomeTab.Juz -> "Juz"
-                        HomeTab.Practice -> "Practice"
                         HomeTab.Bookmarks -> "Saved"
                     },
                     fontSize = 14.sp,
@@ -773,15 +777,20 @@ fun SurahIndex(
                     Modifier.fillMaxSize().padding(horizontal = 12.dp),
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
+                    item {
+                        val target = continueInfo?.first?.number ?: 1
+                        val targetPage = continueInfo?.second ?: 1
+                        TestHeroCard(
+                            surah = target,
+                            onTest = { onTest(target, anchorOn(target, targetPage)) },
+                        )
+                    }
+
                     continueInfo?.let { (info, page) ->
                         item {
-                            ContinueCard(
-                                info = info,
-                                page = page,
-                                anchorAyah = anchorOn(info.number, page),
-                                onClick = { onOpen(info.number, page) },
-                                onTest = { onTest(info.number, anchorOn(info.number, page)) },
-                            )
+                            ContinueCard(info = info, page = page) {
+                                onOpen(info.number, page)
+                            }
                         }
                     }
                     if (meccan.isNotEmpty()) {
@@ -801,15 +810,20 @@ fun SurahIndex(
                     Modifier.fillMaxSize().padding(horizontal = 12.dp),
                     contentPadding = PaddingValues(bottom = 24.dp, top = 4.dp),
                 ) {
+                    item {
+                        val target = continueInfo?.first?.number ?: 1
+                        val targetPage = continueInfo?.second ?: 1
+                        TestHeroCard(
+                            surah = target,
+                            onTest = { onTest(target, anchorOn(target, targetPage)) },
+                        )
+                    }
+
                     continueInfo?.let { (info, page) ->
                         item {
-                            ContinueCard(
-                                info = info,
-                                page = page,
-                                anchorAyah = anchorOn(info.number, page),
-                                onClick = { onOpen(info.number, page) },
-                                onTest = { onTest(info.number, anchorOn(info.number, page)) },
-                            )
+                            ContinueCard(info = info, page = page) {
+                                onOpen(info.number, page)
+                            }
                         }
                     }
                     items(gridRows, key = { it.first().number }) { row ->
@@ -830,9 +844,7 @@ fun SurahIndex(
 fun ContinueCard(
     info: com.iqra.quran.data.SurahInfo,
     page: Int,
-    anchorAyah: Int,
     onClick: () -> Unit,
-    onTest: () -> Unit,
 ) {
     Card(
         Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -855,23 +867,74 @@ fun ContinueCard(
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            // Testing from memory is a different act from carrying on reading,
-            // so it gets its own target rather than being hidden inside the card
-            // tap: one of them opens the page, the other opens the test, and
-            // guessing which is which would be the wrong guess half the time.
-            OutlinedButton(
-                onClick = onTest,
-                modifier = Modifier.fillMaxWidth(),
-                shape = Pill,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                ),
-            ) {
-                Icon(Icons.Filled.Mic, null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Test from ${anchorAyah}", fontSize = 14.sp)
+        }
+    }
+}
+
+/**
+ * The way into a recitation test, with its own door on the home screen.
+ *
+ * It was buried at the bottom of the Continue card, which is wrong twice over:
+ * testing from memory is a different act from carrying on reading, and a control
+ * that only exists once you have read something is invisible to exactly the
+ * people who most want it. So it is a card of its own, above Continue, and it
+ * says what will happen - "we listen" is the promise, and without it the word
+ * "test" reads like an exam rather than a practice partner.
+ *
+ * The glyph is a still frame of the live orb: the same sphere, drawn once, so
+ * the door looks like what is behind it without running an animation on the home
+ * screen where nobody asked for one.
+ */
+@Composable
+private fun TestHeroCard(surah: Int, onTest: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable(onClick = onTest),
+        shape = CardRadius,
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF12261F)),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Canvas(Modifier.size(48.dp)) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        0f to Color(0xFFFFFFFF),
+                        0.20f to accentColor.copy(alpha = 0.85f),
+                        1f to Color.Transparent,
+                        center = center,
+                        radius = size.minDimension * 0.5f,
+                    ),
+                    radius = size.minDimension * 0.32f,
+                )
+                drawCircle(
+                    color = accentColor.copy(alpha = 0.5f),
+                    radius = size.minDimension * 0.46f,
+                    center = center,
+                    style = Stroke(width = 1.5.dp.toPx()),
+                )
+                drawCircle(
+                    color = goldColor.copy(alpha = 0.32f),
+                    radius = size.minDimension * 0.37f,
+                    center = center,
+                    style = Stroke(width = 1.dp.toPx()),
+                )
             }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Recite from memory",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFEAF3EE),
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "The verse stays hidden until you say it. We listen and " +
+                        "grade each word.",
+                    fontSize = 12.sp,
+                    color = Color(0xFF93A8A0),
+                )
+            }
+            Icon(Icons.Filled.Mic, null, tint = accentColor,
+                modifier = Modifier.size(22.dp))
         }
     }
 }

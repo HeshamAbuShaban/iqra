@@ -1,6 +1,7 @@
 package com.iqra.quran.ui
 
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -11,7 +12,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -110,6 +114,11 @@ fun LiveModeScreen(
     val amp = remember { mutableFloatStateOf(0f) }
     val voice = remember { mutableFloatStateOf(0f) }
     var startedAt by remember { mutableLongStateOf(0L) }
+    // The orb's memory. A plain FloatArray, written by the poll and read inside
+    // the draw lambda - never touched during composition, so it costs one
+    // canvas redraw rather than a recomposition.
+    val history = remember { FloatArray(96) }
+    var head by remember { mutableIntStateOf(0) }
 
     // Amplitude poll. 70 ms is about 14 Hz, fast enough that the orb reads as
     // continuous and slow enough that it is 14 wake-ups a second rather than
@@ -127,6 +136,12 @@ fun LiveModeScreen(
             val next = last + (target - last) * if (target > last) 0.55f else 0.12f
             amp.floatValue = next
             voice.floatValue += (target - voice.floatValue) * 0.25f
+            // A little of the old sample bleeds forward so the ring has
+            // continuity between polls; without it the shape flickers at 14 Hz
+            // instead of undulating.
+            val blended = next * 0.72f + history[(head - 1 + history.size) % history.size] * 0.28f
+            history[head] = blended
+            head = (head + 1) % history.size
             last = next
             delay(70)
         }
@@ -180,10 +195,10 @@ fun LiveModeScreen(
             Spacer(Modifier.height(8.dp))
 
             LiveOrb(
-                amplitude = amp,
-                voice = voice,
+                history = history,
+                level = voice,
                 state = state,
-                modifier = Modifier.size(196.dp)
+                modifier = Modifier.size(188.dp)
                     .pointerInput(Unit) {
                         detectTapGestures {
                             if (!started) {
@@ -195,7 +210,7 @@ fun LiveModeScreen(
                     },
             )
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
                 when (state) {
                     LiveState.Idle -> if (!started) "Tap to begin" else "Listening"
@@ -213,72 +228,68 @@ fun LiveModeScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // ---- the passage, hidden until spoken -----------------------
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF16211D)),
-                modifier = Modifier.fillMaxWidth(),
+            // ---- the passage -------------------------------------------
+            //
+            // Scrollable and given the leftover height, because a test can be a
+            // whole surah and the first version ran the words off the bottom of
+            // the screen with nothing to reach them.
+            Column(
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
             ) {
-                Column(Modifier.padding(18.dp)) {
-                    verses.forEachIndexed { i, v ->
-                        val ayah = startAyah + i
-                        val parts = remember(v.textClean) {
-                            v.textClean.split(Regex("\\s+")).filter { it.isNotEmpty() }
-                        }
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                            verticalAlignment = Alignment.Top,
-                        ) {
-                            Text(
-                                "$ayah",
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                color = Color(0xFF5E716A),
-                                modifier = Modifier.width(28.dp),
+            //
+            // No card. A panel with a border and a fill turns recitation into
+            // form-filling; the words need to be the only thing on the ground,
+            // which is why the orb dims behind them rather than sitting above a
+            // box. Unheard words sit at a whisper rather than vanishing, so the
+            // shape of the ayah is countable - "did I say twelve or thirteen" is
+            // a real question while reciting from memory.
+            verses.forEachIndexed { i, v ->
+                val ayah = startAyah + i
+                val parts = remember(v.textClean) {
+                    v.textClean.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                }
+                Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                    Text(
+                        "$ayah",
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = Color(0xFF3C4A44),
+                        modifier = Modifier.width(26.dp).padding(top = 6.dp),
+                    )
+                    FlowRow(
+                        Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        parts.forEachIndexed { wi, w ->
+                            LiveWord(
+                                w,
+                                statusMap["$surah:$ayah:${wi + 1}"],
+                                "$surah:$ayah:${wi + 1}" == currentKey,
                             )
-                            // Words are placeholders until they are heard. You
-                            // can see there are twelve of them, which is the
-                            // only thing a memoriser needs to be told - not the
-                            // text, which is the thing being tested.
-                            FlowRow(
-                                Modifier.weight(1f),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                parts.forEachIndexed { wi, w ->
-                                    val key = "$surah:$ayah:${wi + 1}"
-                                    val st = statusMap[key]
-                                    LiveWordChip(w, st, key == currentKey)
-                                }
-                            }
                         }
                     }
                 }
             }
+            }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
 
             // ---- ambient diagnostics ------------------------------------
             // The same numbers Diagnostics shows, readable at a glance. A tool
             // that only explains itself on a separate screen has failed the
             // person who most needs the explanation.
             Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                LiveStat("words", "${statusMap.size}")
+                LiveStat("heard", "${statusMap.size}")
                 LiveStat("moving", if (policy.next >= 0f) "%.2f".format(policy.next) else "—")
                 LiveStat("pace", if (policy.stallSec > 0f) "%.0fs".format(policy.stallSec) else "—")
-                LiveStat("total", "$totalWords")
+                LiveStat("in passage", "$totalWords")
             }
 
             Spacer(Modifier.height(10.dp))
-            Text(
-                if (finished) "Session complete" else "Verse by verse, from memory",
-                fontSize = 12.sp,
-                color = Color(0xFF54655F),
-            )
-            Spacer(Modifier.height(8.dp))
         }
     }
 
@@ -325,170 +336,201 @@ fun LiveModeScreen(
 
 private enum class LiveState { Idle, Quiet, Hearing, Thinking }
 
+/** Linear colour mix in ARGB. Short enough to not be worth a dependency. */
+private fun lerp(a: Color, b: Color, t: Float): Color {
+    val u = t.coerceIn(0f, 1f)
+    return Color(
+        red = a.red + (b.red - a.red) * u,
+        green = a.green + (b.green - a.green) * u,
+        blue = a.blue + (b.blue - a.blue) * u,
+        alpha = a.alpha + (b.alpha - a.alpha) * u,
+    )
+}
+
 /** The one warm accent this screen owns, so a stalled lock reads differently. */
 private val amberColor = Color(0xFFE09112)
 
 /**
- * The orb.
+ * The sphere.
  *
- * Drawn entirely in one Canvas from two float states that are read INSIDE the
- * draw lambda. Neither is read during composition, so a change to either
- * invalidates this draw scope and nothing else - the verse behind it is not
- * recomposed sixty times a second.
+ * A filled core, a soft bloom, and four rings whose radius is modulated around
+ * their circumference by a HISTORY of recent microphone levels rather than the
+ * instantaneous one. That distinction is the whole difference between a sphere
+ * and a progress spinner: a ring that scales with the current level jitters,
+ * while a ring carrying five seconds of history has a shape that travels around
+ * it, so speech looks like speech.
  *
- * The waveform is a history of recent amplitudes swept around a circle. A ring
- * that simply scaled with volume would read as a loading spinner; a history
- * reads as breathing, which is what a voice actually looks like.
+ * The history lives in a plain FloatArray that the amplitude poll writes and
+ * this reads INSIDE the draw lambda. Neither is touched during composition, so
+ * sixty frames a second repaints one canvas and never recomposes the verse
+ * behind it.
  */
 @Composable
 private fun LiveOrb(
-    amplitude: androidx.compose.runtime.MutableFloatState,
-    voice: androidx.compose.runtime.MutableFloatState,
+    history: FloatArray,
+    level: androidx.compose.runtime.MutableFloatState,
     state: LiveState,
     modifier: Modifier = Modifier,
 ) {
-    val path = remember { Path() }
+    val p1 = remember { Path() }
+    val p2 = remember { Path() }
+    val p3 = remember { Path() }
+    val p4 = remember { Path() }
     val breath = rememberInfiniteTransition(label = "orb")
     val idle = breath.animateFloat(
         0f, 1f,
-        infiniteRepeatable(tween(4200, easing = LinearEasing), RepeatMode.Reverse),
+        infiniteRepeatable(tween(5200, easing = LinearEasing), RepeatMode.Reverse),
         label = "idle",
     )
     val spin = breath.animateFloat(
         0f, 360f,
-        infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Reverse),
+        infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Reverse),
         label = "spin",
     )
-
-    val tint = when (state) {
-        LiveState.Idle -> Color(0xFF2E6F63)
-        LiveState.Quiet -> Color(0xFF33504A)
-        LiveState.Hearing -> goldColor
-        LiveState.Thinking -> amberColor
-    }
 
     Canvas(modifier) {
         val cx = size.width / 2f
         val cy = size.height / 2f
-        val base = size.minDimension * 0.34f
-        val a = amplitude.floatValue
-        val v = voice.floatValue
-        val breathAmt = if (state == LiveState.Idle) idle.value else 0.5f
+        val R = size.minDimension * 0.30f
+        val lvl = level.floatValue
+        val breathAmt = if (state == LiveState.Idle) idle.value * 0.10f else 0.03f
+        val N = history.size
 
-        // Guide rings. Static, very low alpha: they give the motion something
-        // to be measured against, which is what makes a pulse legible.
-        for (i in 1..3) {
-            drawCircle(
-                color = tint.copy(alpha = 0.10f),
-                radius = base * (0.78f + i * 0.24f),
+        // Colour follows state, and the ring hues walk a small spectrum so the
+        // sphere reads as alive rather than as one accent colour pulsing.
+        val core = when (state) {
+            LiveState.Idle -> Color(0xFF35E0C0)
+            LiveState.Quiet -> Color(0xFF4E7F76)
+            LiveState.Hearing -> Color(0xFFFFC46B)
+            LiveState.Thinking -> Color(0xFFFFA23A)
+        }
+        // Each ring takes a fixed hue of its own rather than a tint of the
+        // state colour. Mixing them towards `core` made all four read teal, and
+        // four teal circles is a loading spinner. The STATE still decides the
+        // centre, so the sphere changes character when the lock stalls.
+        val ringHues = listOf(
+            core,
+            lerp(core, Color(0xFFFF6E9C), 0.72f),
+            lerp(core, Color(0xFF9B7BFF), 0.66f),
+            lerp(core, Color(0xFF52E0FF), 0.74f),
+        )
+
+        // Bloom, then core. Two passes rather than one, because a single
+        // gradient either has a bright middle or a soft edge - not both, and the
+        // soft edge is what stops it looking like a flat sticker.
+        val bloom = R * (2.15f + lvl * 0.55f)
+        drawCircle(
+            brush = Brush.radialGradient(
+                0f to core.copy(alpha = 0.30f + lvl * 0.18f),
+                0.45f to core.copy(alpha = 0.10f),
+                1f to Color.Transparent,
                 center = Offset(cx, cy),
-                style = Stroke(width = 1.dp.toPx()),
+                radius = bloom,
+            ),
+            radius = bloom,
+            center = Offset(cx, cy),
+        )
+        val coreR = R * (0.72f + lvl * 0.20f + breathAmt)
+        drawCircle(
+            brush = Brush.radialGradient(
+                0f to Color.White.copy(alpha = 0.92f),
+                0.28f to core.copy(alpha = 0.80f),
+                0.75f to core.copy(alpha = 0.34f),
+                1f to core.copy(alpha = 0.05f),
+                center = Offset(cx, cy),
+                radius = coreR,
+            ),
+            radius = coreR,
+            center = Offset(cx, cy),
+        )
+
+        // Rings. Each reads the same history at a different phase, so the
+        // wobble travels outward instead of every ring pulsing in unison.
+        val paths = listOf(p1, p2, p3, p4)
+        paths.forEachIndexed { idx, path ->
+            val base = R * (1.12f + idx * 0.26f)
+            val gain = (1.0f - idx * 0.14f) * (0.22f + lvl * 1.55f)
+            val phase = spin.value * (if (idx % 2 == 0) 0.9f else -1.1f) + idx * 71f
+            path.rewind()
+            val steps = 128
+            for (i in 0..steps) {
+                val th = i / steps.toFloat() * (Math.PI * 2).toFloat()
+                // Where in the history this angle samples: the head is the
+                // newest sample, so the tail of the array is the past.
+                val h = history[(i * N / steps) % N]
+                val wob = kotlin.math.sin(th * 3f + phase * 0.02f) * 0.55f +
+                    kotlin.math.sin(th * 5f - phase * 0.013f) * 0.30f +
+                    kotlin.math.sin(th * 2f + phase * 0.007f) * 0.35f
+                val r = base + h * gain * wob + breathAmt * base * 0.5f
+                val x = cx + r * kotlin.math.cos(th)
+                val y = cy + r * kotlin.math.sin(th)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+            drawPath(
+                path = path,
+                color = ringHues[idx].copy(alpha = 0.34f + lvl * 0.40f),
+                style = Stroke(width = (2.4f - idx * 0.35f).dp.toPx(), cap = StrokeCap.Round),
             )
         }
 
-        // Core: a soft radial wash whose radius follows the smoothed level.
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(tint.copy(alpha = 0.42f), Color.Transparent),
-                center = Offset(cx, cy),
-                radius = base * (1.25f + a * 0.85f + breathAmt * 0.10f),
-            ),
-            radius = base * (1.25f + a * 0.85f + breathAmt * 0.10f),
-            center = Offset(cx, cy),
-        )
-
-        // Waveform. 72 samples at 14 Hz is about five seconds of history, which
-        // is long enough to have a shape and short enough to feel immediate.
-        val N = 72
-        path.rewind()
-        for (i in 0 until N) {
-            // The history is carried by `v` rather than a ring buffer: a ring
-            // buffer would mean an IntArray allocation per frame, and this runs
-            // on every frame of a session.
-            val phase = i / N.toFloat() * (Math.PI * 2).toFloat()
-            val wobble = ((i * 37 % N) / N.toFloat() - 0.5f) * 2f
-            val amp = (base * 0.34f) * (0.25f + v * 1.5f) *
-                (0.55f + 0.45f * kotlin.math.sin(phase.toDouble()).toFloat())
-            val r = base + wobble * amp
-            val x = cx + r * kotlin.math.cos(phase.toDouble()).toFloat()
-            val y = cy + r * kotlin.math.sin(phase.toDouble()).toFloat()
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        drawPath(
-            path = path,
-            color = tint.copy(alpha = 0.75f + a * 0.25f),
-            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawCircle(
-            color = tint,
-            radius = base * (0.16f + a * 0.10f + breathAmt * 0.04f),
-            center = Offset(cx, cy),
-        )
-
-        // A lock that has stopped advancing says so, rather than looking idle.
+        // A stalled lock says so, rather than looking like it is still working.
         if (state == LiveState.Thinking) {
             drawArc(
-                color = amberColor.copy(alpha = 0.85f),
-                startAngle = spin.value,
-                sweepAngle = 70f,
+                color = amberColor.copy(alpha = 0.9f),
+                startAngle = spin.value * 2f,
+                sweepAngle = 64f,
                 useCenter = false,
-                topLeft = Offset(cx - base * 1.5f, cy - base * 1.5f),
-                size = androidx.compose.ui.geometry.Size(base * 3f, base * 3f),
-                style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round),
+                topLeft = Offset(cx - bloom * 0.72f, cy - bloom * 0.72f),
+                size = androidx.compose.ui.geometry.Size(bloom * 1.44f, bloom * 1.44f),
+                style = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round),
             )
         }
     }
 }
 
 /**
- * One word, before and after it is heard.
+ * One word, arriving.
  *
- * A placeholder is a low dash, not an empty gap: the shape has to be countable
- * at a glance, because "did I say twelve words or thirteen" is a real question
- * while reciting from memory. Spacing alone makes that unanswerable.
+ * Not a chip. A chip is a form field, and this is a word in a sentence. Unheard,
+ * it is the text at a whisper so the ayah's shape is readable as a whole; heard,
+ * it fades up and takes the colour of its verdict. The fade is animated because
+ * the moment a word resolves IS the feedback, and a hard cut throws it away.
+ *
+ * A word the engine could not hear stays UNKNOWN and is drawn cool and dim. It
+ * is never counted against the reciter - the model failing to produce a phoneme
+ * is a fact about the model.
  */
 @Composable
-private fun LiveWordChip(
-    text: String,
-    status: WordStatus?,
-    isCurrent: Boolean,
-) {
-    val revealed = status != null
-    val bg = when {
-        !revealed -> Color(0xFF23302B)
-        status == WordStatus.WRONG -> wrongColor.copy(alpha = 0.32f)
-        status == WordStatus.SKIPPED -> Color(0xFF3A3026)
-        status == WordStatus.UNKNOWN -> Color(0xFF2C2A22)
-        else -> accentColor.copy(alpha = 0.28f)
+private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean) {
+    val reveal by animateFloatAsState(
+        targetValue = if (status == null) 0f else 1f,
+        animationSpec = tween(420, easing = LinearEasing),
+        label = "reveal",
+    )
+    val fg = when (status) {
+        null -> Color(0xFF6E807A)
+        WordStatus.CORRECT -> Color(0xFFF2EFE4)
+        WordStatus.WRONG -> Color(0xFFF08A80)
+        WordStatus.SKIPPED -> Color(0xFF8A7F63)
+        else -> Color(0xFF5F7A72)
     }
-    Box(
-        Modifier
-            .height(34.dp)
-            .width(if (revealed) (text.length * 13 + 14).dp else 26.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .background(bg)
-            .then(
-                if (isCurrent) Modifier.border(
-                    1.dp, goldColor.copy(alpha = 0.7f), RoundedCornerShape(9.dp)
-                ) else Modifier
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (revealed) {
-            Text(
-                text,
-                fontFamily = quranFont,
-                fontSize = 19.sp,
-                color = Color(0xFFE8F0EA),
-                maxLines = 1,
-            )
-        } else {
-            Box(
-                Modifier.width(12.dp).height(2.dp)
-                    .clip(CircleShape).background(Color(0xFF3C4A44))
-            )
-        }
-    }
+    Text(
+        text,
+        fontFamily = quranFont,
+        fontSize = 30.sp,
+        lineHeight = 46.sp,
+        color = fg.copy(alpha = 0.16f + reveal * 0.84f),
+        fontWeight = if (isCurrent) FontWeight.Medium else FontWeight.Normal,
+        modifier = if (isCurrent && status != null) {
+            Modifier.drawBehind {
+                drawRoundRect(
+                    color = goldColor.copy(alpha = 0.16f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f),
+                )
+            }
+        } else Modifier,
+    )
 }
 
 @Composable
