@@ -47,10 +47,21 @@ fun SettingsScreen(
     onOpenProgress: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
-    // Keyed on the store's change tick: every setter below bumps it, so moving a
-    // slider re-reads what the screen shows instead of relying on the slider's
-    // own local state staying in sync with what was written.
-    ReaderPrefs.tick.collectAsStateWithLifecycle()
+    // The store's change tick, COLLECTED FOR REAL.
+    //
+    // This line used to read `ReaderPrefs.tick.collectAsStateWithLifecycle()`
+    // and throw the result away, which is the worst possible no-op: Compose
+    // only recomposes a composable when the state it reads is actually read
+    // during composition, so subscribing and discarding subscribed to nothing.
+    // Every control below reads its value through a plain getter
+    // (`ReaderPrefs.fontScalePercent(ctx)`), so a write changed the store and
+    // nothing recomposed - the label, the live preview and the slider thumb all
+    // disagreed with what had been written. It read as "the sliders are stuck".
+    //
+    // So the tick is now both collected and used: every getter below is keyed
+    // on it through `remember(tick)`, which is what re-reads the store and
+    // invalidates on a write.
+    val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
 
     var confirmClear by remember { mutableStateOf(false) }
     val log = remember { PracticeLog.load(ctx) }
@@ -79,9 +90,9 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp),
         ) {
             SettingsSection("Reading") {
-                TextSizeRow()
+                TextSizeRow(tick)
                 SettingDivider()
-                NightSettings()
+                NightSettings(tick)
             }
 
             SettingsSection("Practice") {
@@ -89,7 +100,7 @@ fun SettingsScreen(
                     title = "Keep the screen on while reciting",
                     subtitle = "A recitation usually runs past the ~30 s before " +
                         "Android dims the screen. Turn off to save battery.",
-                    checked = ReaderPrefs.keepAwake(ctx),
+                    checked = remember(tick) { ReaderPrefs.keepAwake(ctx) },
                     onChange = { ReaderPrefs.setKeepAwake(ctx, it) },
                 )
             }
@@ -194,9 +205,9 @@ fun SettingsScreen(
 // ---- rows ----------------------------------------------------------------
 
 @Composable
-private fun TextSizeRow() {
+private fun TextSizeRow(tick: Int) {
     val ctx = LocalContext.current
-    val percent = ReaderPrefs.fontScalePercent(ctx)
+    val percent = remember(tick) { ReaderPrefs.fontScalePercent(ctx) }
     val scale = percent / 100f
 
     Row(
@@ -240,27 +251,33 @@ private fun TextSizeRow() {
 }
 
 @Composable
-private fun NightSettings() {
+private fun NightSettings(tick: Int) {
     val ctx = LocalContext.current
+    val night = remember(tick) { ReaderPrefs.nightMode(ctx) }
     SwitchRow(
         title = "Night mode",
         subtitle = "Inverts the page so the mushaf is light text on dark.",
-        checked = ReaderPrefs.nightMode(ctx),
+        checked = night,
         onChange = { ReaderPrefs.setNightMode(ctx, it) },
     )
     // The sliders only mean anything in night mode - in day mode they are not
     // read at all (NightPalette returns fixed colours). Showing them anyway
     // would be two dead controls.
-    if (ReaderPrefs.nightMode(ctx)) {
+    //
+    // Gated on `night` read fresh from the store, which is why the argument
+    // exists: without it the switch appears to do nothing, because the two
+    // sliders below it are decided by a value that is only re-read when
+    // something forces a recomposition.
+    if (night) {
         Spacer(Modifier.height(4.dp))
         NumberSlider(
             "Text brightness",
-            ReaderPrefs.textBrightness(ctx),
+            remember(tick) { ReaderPrefs.textBrightness(ctx) },
             0..255,
         ) { ReaderPrefs.setTextBrightness(ctx, it) }
         NumberSlider(
             "Background brightness",
-            ReaderPrefs.backgroundBrightness(ctx),
+            remember(tick) { ReaderPrefs.backgroundBrightness(ctx) },
             0..64,
         ) { ReaderPrefs.setBackgroundBrightness(ctx, it) }
     }

@@ -1303,10 +1303,11 @@ private fun buildEngineReport(
     )
 
     section("Practice summary")
-    val log1 = runCatching { PracticeLog.summarise(PracticeLog.load(ctx)).let {
+    val log1 = runCatching { PracticeLog.summarise(ctx).let {
         "sessions=${it.sessions} words=${it.judgedWords} " +
             "accuracy=${it.accuracy?.let { a -> "%.1f%%".format(a * 100) } ?: "n/a"} " +
-            "streak=${it.currentStreak}"
+            "streak=${it.currentStreak} records=${it.recordsIngested} " +
+            "hardest=${it.hardest.size}"
     } }.getOrDefault("unavailable")
     b.append(log1).append('\n')
 
