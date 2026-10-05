@@ -392,6 +392,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     var screenSurah by rememberSaveable { mutableStateOf(0) }
     var screenPage by rememberSaveable { mutableStateOf(-1) }
     var screenAnchor by rememberSaveable { mutableStateOf(-1) }
+    var screenCount by rememberSaveable { mutableStateOf(7) }
 
     if (loading || data == null) {
         SplashScreen()
@@ -410,6 +411,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             screenPage.takeIf { it > 0 },
             screenAnchor.takeIf { it > 0 },
         )
+        "live" -> Screen.Live(screenSurah, screenPage.coerceAtLeast(1), screenCount)
         else -> Screen.Picker
     }
     val goReader: (Int, Int?, Int?) -> Unit = { s, p, a ->
@@ -435,6 +437,10 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onDiag = { screenName = "diag" },
             onData = { screenName = "data" },
             onSettings = { screenName = "settings" },
+            onTest = { s, a ->
+                screenSurah = s; screenPage = a; screenCount = 0
+                screenName = "live"
+            },
             onResume = {
                 lastRead?.let { (s, p) ->
                     vm.resumeLastRead()
@@ -442,6 +448,26 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                 }
             },
         )
+        is Screen.Live -> data?.let { d ->
+            LiveModeScreen(
+                vm = vm,
+                data = d,
+                surah = screen.surah,
+                startAyah = screen.startAyah,
+                ayahCount = if (screen.count <= 0) {
+                    (d.surahInfo(screen.surah)?.ayahCount ?: 7) - screen.startAyah + 1
+                } else screen.count,
+                // onRequestMic takes the block to run once permission is
+                // granted, so asking for the mic and starting on that surah are
+                // one gesture - which is what a tap on the orb means.
+                onRequestMic = {
+                    val pg = d.surahInfo(screen.surah)?.startPage ?: 1
+                    onRequestMic { vm.startRecite(pg, screen.surah to screen.startAyah) }
+                },
+                onExit = { screenName = "picker" },
+                onFinished = { screenName = "picker" },
+            )
+        }
         is Screen.Diag -> DiagScreen(vm) { screenName = "picker" }
         is Screen.Reader -> {
             val pages = mushaf
@@ -468,6 +494,8 @@ sealed interface Screen {
     data object Data : Screen
     data object Settings : Screen
     data object Progress : Screen
+    /** Recitation test from memory. Count 0 means "to the end of the surah". */
+    data class Live(val surah: Int, val startAyah: Int, val count: Int) : Screen
 }
 
 enum class HomeTab { Surahs, Juz, Practice, Bookmarks }
@@ -482,6 +510,7 @@ fun HomeScreen(
     onDiag: () -> Unit = {},
     onData: () -> Unit = {},
     onSettings: () -> Unit = {},
+    onTest: (Int, Int) -> Unit = { _, _ -> },
     onResume: () -> Unit = {},
 ) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
@@ -584,7 +613,7 @@ fun HomeScreen(
 
         HomeTabRow(tab) { tab = it }
         when (tab) {
-            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs)
+            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs, onTest)
             HomeTab.Juz -> JuzList(vm, data, onOpen)
             HomeTab.Practice -> PracticeOverview(data, onOpen)
             HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen)
@@ -700,6 +729,7 @@ fun SurahIndex(
     onOpen: (Int, Int) -> Unit,
     surahs: List<com.iqra.quran.data.SurahInfo> =
         data.surahList(),
+    onTest: (Int, Int) -> Unit = { _, _ -> },
 ) {
     // `surahs` arrives prebuilt from HomeScreen. The default keeps this
     // composable usable on its own without forcing every caller to remember it.
@@ -710,6 +740,16 @@ fun SurahIndex(
     val meccan = remember(filtered) { filtered.filter { it.revelationType == "Meccan" } }
     val madani = remember(filtered) { filtered.filter { it.revelationType == "Madani" } }
     val gridRows = remember(filtered) { filtered.chunked(3) }
+    // Where a recitation test should start on this page: the first ayah of this
+    // surah that the page actually contains. Derived from the mushaf rather
+    // than from `lastRead`, which only remembers a surah and a page - testing
+    // from ayah 1 of a surah whose page 50 you were on would be a different
+    // exercise from the one the card is offering.
+    val mushafPages = vm.mushaf.collectAsStateWithLifecycle().value
+    fun anchorOn(surah: Int, page: Int): Int =
+        mushafPages?.getOrNull(page - 1)?.lines
+            ?.flatMap { it.words ?: emptyList() }
+            ?.firstOrNull { it.surah == surah }?.verse ?: 1
     val continueInfo = remember(lastRead, surahs) {
         lastRead?.let { (num, page) -> surahs.firstOrNull { it.number == num }?.let { it to page } }
     }
@@ -734,7 +774,15 @@ fun SurahIndex(
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     continueInfo?.let { (info, page) ->
-                        item { ContinueCard(info, page) { onOpen(info.number, page) } }
+                        item {
+                            ContinueCard(
+                                info = info,
+                                page = page,
+                                anchorAyah = anchorOn(info.number, page),
+                                onClick = { onOpen(info.number, page) },
+                                onTest = { onTest(info.number, anchorOn(info.number, page)) },
+                            )
+                        }
                     }
                     if (meccan.isNotEmpty()) {
                         item { SectionHeader("Meccan", meccan.size, false) }
@@ -754,7 +802,15 @@ fun SurahIndex(
                     contentPadding = PaddingValues(bottom = 24.dp, top = 4.dp),
                 ) {
                     continueInfo?.let { (info, page) ->
-                        item { ContinueCard(info, page) { onOpen(info.number, page) } }
+                        item {
+                            ContinueCard(
+                                info = info,
+                                page = page,
+                                anchorAyah = anchorOn(info.number, page),
+                                onClick = { onOpen(info.number, page) },
+                                onTest = { onTest(info.number, anchorOn(info.number, page)) },
+                            )
+                        }
                     }
                     items(gridRows, key = { it.first().number }) { row ->
                         Row(Modifier.fillMaxWidth()) {
@@ -771,23 +827,50 @@ fun SurahIndex(
 }
 
 @Composable
-fun ContinueCard(info: com.iqra.quran.data.SurahInfo, page: Int, onClick: () -> Unit) {
+fun ContinueCard(
+    info: com.iqra.quran.data.SurahInfo,
+    page: Int,
+    anchorAyah: Int,
+    onClick: () -> Unit,
+    onTest: () -> Unit,
+) {
     Card(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable(onClick = onClick),
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
         shape = CardRadius,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text("Continue", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                Text(
-                    "${info.nameEn}  ·  Page $page  ·  ${info.ayahCount} verses",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
+        Column(Modifier.padding(14.dp)) {
+            Row(Modifier.fillMaxWidth().clickable(onClick = onClick),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Continue", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    Text(
+                        "${info.nameEn}  ·  Page $page  ·  ${info.ayahCount} verses",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            // Testing from memory is a different act from carrying on reading,
+            // so it gets its own target rather than being hidden inside the card
+            // tap: one of them opens the page, the other opens the test, and
+            // guessing which is which would be the wrong guess half the time.
+            OutlinedButton(
+                onClick = onTest,
+                modifier = Modifier.fillMaxWidth(),
+                shape = Pill,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+            ) {
+                Icon(Icons.Filled.Mic, null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Test from ${anchorAyah}", fontSize = 14.sp)
             }
         }
     }
@@ -1440,34 +1523,36 @@ fun ReaderScreen(
 
     // ---- record the result ------------------------------------------------
     //
-    // `statusMap` is cleared the moment a session stops, so the tally has to be
-    // captured while the session is still live; by the time we know it is over
-    // there is nothing left to read. `live` holds the running snapshot and the
-    // stop edge is what writes it out.
-    var live by remember { mutableStateOf<PracticeLog.Session?>(null) }
-    LaunchedEffect(recording, statusMap, activeVerse, wpm) {
+    // This used to snapshot `statusMap` when the session ended. That reads the
+    // wrong thing: the engine prunes verdicts to lock+/-2 every frame and clears
+    // them outright on a surah change, so by the time a session ends the map
+    // holds the last five ayat - the ones after the recitation stopped. Four
+    // recorded sessions came out as 89 SKIPPED and 1 CORRECT, which looks like
+    // "you recited almost nothing right" and is mostly an artefact.
+    //
+    // So the tally holds its own copy and is fed on every emission, keeping only
+    // words whose verdict actually changed. Nothing is lost to pruning, and a
+    // word that passes through UNKNOWN -> SKIPPED -> CORRECT is counted once.
+    val tally = remember { PracticeLog.Tally() }
+    var livePeak by remember { mutableStateOf(0) }
+    LaunchedEffect(recording, statusMap, activeVerse) {
         if (!recording) return@LaunchedEffect
-        val counts = statusMap.values.groupingBy { it }.eachCount()
-        live = PracticeLog.Session(
-            surah = data?.surahAtPage(currentPage ?: (startPage ?: 1))?.number ?: surah,
-            ayahs = activeVerse ?: 1,
-            correct = counts[WordStatus.CORRECT] ?: 0,
-            wrong = counts[WordStatus.WRONG] ?: 0,
-            skipped = counts[WordStatus.SKIPPED] ?: 0,
-            unknown = counts[WordStatus.UNKNOWN] ?: 0,
-            wpm = wpm,
-            millis = System.currentTimeMillis(),
-        )
+        tally.fold(statusMap)
+        livePeak = maxOf(livePeak, activeVerse ?: 0)
     }
     LaunchedEffect(recording) {
-        if (recording) return@LaunchedEffect
-        val s = live
-        live = null
+        if (recording) { tally.reset(); livePeak = 0; return@LaunchedEffect }
+        // The surah comes from the verdict keys rather than from a captured
+        // value, because a captured one goes stale the moment a handoff lands.
+        val surahOf = statusMap.keys.firstOrNull()
+            ?.substringBefore(':')?.toIntOrNull() ?: 0
+        val s = tally.foldAll(statusMap, surahOf, livePeak, wpm)
         if (s != null && PracticeLog.isWorthRecording(s)) {
             // Disk write, off the composition thread. The log is rewritten whole
             // on append, so this is not something to do while laying out.
             scope.launch(Dispatchers.IO) { PracticeLog.append(ctx, s) }
         }
+        tally.reset()
     }
 
     var chromeVisible by remember { mutableStateOf(false) }

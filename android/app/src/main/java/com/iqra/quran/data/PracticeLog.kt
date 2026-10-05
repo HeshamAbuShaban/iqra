@@ -490,16 +490,41 @@ object PracticeLog {
         val totalSkipped = a.skipped + liveSkipped
         val totalJudged = (totalCorrect + totalWrong + totalSkipped).toInt()
 
-        val surahs = a.surahs.entries
-            .filter { it.key > 0 }
-            .map { (s, v) ->
+        // Per-surah mastery is assembled from BOTH stores. Folding only the
+        // engine records left the list empty, because those records carry no
+        // verdicts at all - the live rows are the only place the numbers exist,
+        // so ignoring them meant "By surah" always read zero while the accuracy
+        // tile above it showed a real figure. Two numbers from one screen, one
+        // of them a lie by omission.
+        val bySurah = HashMap<Int, SurahProgress>()
+        a.surahs.entries.filter { it.key > 0 }.forEach { (s, v) ->
+            bySurah[s] = SurahProgress(
+                surah = s, sessions = v[4], ayahs = 0,
+                correct = v[0], wrong = v[1], skipped = v[2],
+                lastPractised = 0L,
+            )
+        }
+        live.forEach { l ->
+            if (l.surah <= 0) return@forEach
+            val p = bySurah[l.surah]
+            bySurah[l.surah] = if (p == null) {
                 SurahProgress(
-                    surah = s, sessions = v[4], ayahs = 0,
-                    correct = v[0], wrong = v[1], skipped = v[2],
-                    lastPractised = 0L,
+                    surah = l.surah, sessions = 1, ayahs = l.ayahs,
+                    correct = l.correct, wrong = l.wrong, skipped = l.skipped,
+                    lastPractised = l.millis,
+                )
+            } else {
+                p.copy(
+                    sessions = p.sessions + 1,
+                    ayahs = p.ayahs + l.ayahs,
+                    correct = p.correct + l.correct,
+                    wrong = p.wrong + l.wrong,
+                    skipped = p.skipped + l.skipped,
+                    lastPractised = maxOf(p.lastPractised, l.millis),
                 )
             }
-            .sortedByDescending { it.judged }
+        }
+        val surahs = bySurah.values.sortedByDescending { it.judged }
 
         val hardest = a.hard.entries
             .filter { it.value[0] > 0 }
@@ -585,6 +610,85 @@ object PracticeLog {
             prev = d
         }
         return best
+    }
+
+    /**
+     * Folds the engine's live verdict map into a tally that survives its pruning.
+     *
+     * ## Why this exists
+     *
+     * The engine keeps verdicts in a map it prunes to `lock +/- 2` on every
+     * frame, and clears outright when the surah changes. So reading that map at
+     * the end of a session does not read the session - it reads the last five
+     * ayat, which by then are the ones after the recitation stopped.
+     *
+     * Measured on the device: four recorded sessions produced 89 SKIPPED and 1
+     * CORRECT, which reads as "you recited almost nothing correctly" and is
+     * almost certainly an artefact. The lock had moved through those ayat; the
+     * words had verdicts; the verdicts were gone before anyone looked.
+     *
+     * So this holds its own copy and updates it on every emission, keeping only
+     * words whose verdict actually CHANGED. Reading a delta rather than a
+     * snapshot is what makes it correct: a word passes through UNKNOWN, SKIPPED
+     * and CORRECT over a recitation, and counting every state it passed through
+     * would triple-count it.
+     */
+    class Tally {
+        private val seen = HashMap<String, WordStatus>()
+
+        /**
+         * Fold one emission. Returns the DELTA - only words whose verdict moved.
+         *
+         * Words that vanished from the map are kept, not dropped: their absence
+         * is the engine's pruning, not a retraction.
+         */
+        fun fold(current: Map<String, WordStatus>): Session? {
+            var correct = 0; var wrong = 0; var skipped = 0; var unknown = 0
+            var touched = 0
+            for ((k, v) in current) {
+                if (seen[k] == v) continue
+                seen[k] = v
+                touched++
+                when (v) {
+                    WordStatus.CORRECT -> correct++
+                    WordStatus.WRONG -> wrong++
+                    WordStatus.SKIPPED -> skipped++
+                    else -> unknown++
+                }
+            }
+            if (touched == 0) return null
+            val judged = correct + wrong + skipped
+            if (judged == 0 && unknown == 0) return null
+            return Session(
+                surah = 0, ayahs = 0,
+                correct = correct, wrong = wrong,
+                skipped = skipped, unknown = unknown,
+                wpm = 0.0, millis = System.currentTimeMillis(),
+            )
+        }
+
+        /** Fold a whole session's worth and report the running totals. */
+        fun foldAll(
+            current: Map<String, WordStatus>,
+            surah: Int, ayahs: Int, wpm: Double,
+        ): Session? {
+            fold(current)
+            var correct = 0; var wrong = 0; var skipped = 0; var unknown = 0
+            for (v in seen.values) {
+                when (v) {
+                    WordStatus.CORRECT -> correct++
+                    WordStatus.WRONG -> wrong++
+                    WordStatus.SKIPPED -> skipped++
+                    else -> unknown++
+                }
+            }
+            if (seen.isEmpty()) return null
+            return Session(surah, ayahs, correct, wrong, skipped, unknown, wpm,
+                System.currentTimeMillis())
+        }
+
+        fun reset() = seen.clear()
+        val size: Int get() = seen.size
     }
 
     /** A session with nothing judged is not worth recording. */
