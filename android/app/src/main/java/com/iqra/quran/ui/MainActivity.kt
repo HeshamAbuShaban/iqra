@@ -435,6 +435,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         )
         "live" -> Screen.Live(screenSurah, screenPage.coerceAtLeast(1), screenCount)
         "report" -> Screen.Report(screenReport)
+        "choose" -> Screen.Choose
         else -> Screen.Picker
     }
     val goReader: (Int, Int?, Int?) -> Unit = { s, p, a ->
@@ -458,6 +459,17 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                 onOpenSession = { name -> screenReport = name; screenName = "report" },
             ) { screenName = "picker" }
         }
+        is Screen.Choose -> data?.let { d ->
+            ChooseScreen(
+                data = d,
+                lastRead = lastRead,
+                onBegin = { s, a, n ->
+                    screenSurah = s; screenPage = a; screenCount = n
+                    screenName = "live"
+                },
+                onBack = { screenName = "picker" },
+            )
+        }
         is Screen.Report -> data?.let { d ->
             SessionReportScreen(d, screenReport) { screenName = "progress" }
         }
@@ -468,10 +480,9 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onData = { screenName = "data" },
             onSettings = { screenName = "settings" },
             onProgress = { screenName = "progress" },
-            onTest = { s, a ->
-                screenSurah = s; screenPage = a; screenCount = 0
-                screenName = "live"
-            },
+            // Opens the door, not the session. Choosing what to train on is a
+            // question this card should not answer on the reader's behalf.
+            onTest = { _, _ -> screenName = "choose" },
             onResume = {
                 lastRead?.let { (s, p) ->
                     vm.resumeLastRead()
@@ -496,7 +507,9 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                     onRequestMic { vm.startRecite(pg, screen.surah to screen.startAyah) }
                 },
                 onExit = { screenName = "picker" },
-                onFinished = { screenName = "picker" },
+                // Straight to the report. Finishing a session and being dumped on
+                // the surah list is how a report screen goes unused.
+                onFinished = { screenName = "progress" },
             )
         }
         is Screen.Diag -> DiagScreen(vm) { screenName = "picker" }
@@ -527,6 +540,8 @@ sealed interface Screen {
     data object Progress : Screen
     /** One session in full, by record file name. */
     data class Report(val name: String) : Screen
+    /** Standalone door for the recitation test. Asks what to train on. */
+    data object Choose : Screen
     /** Recitation test from memory. Count 0 means "to the end of the surah". */
     data class Live(val surah: Int, val startAyah: Int, val count: Int) : Screen
 }
