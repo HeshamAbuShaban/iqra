@@ -402,6 +402,37 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val unjudgeableKeys = linkedSetOf<String>()
 
     /**
+     * Every word verdict this session has reached, kept for the RECORD.
+     *
+     * This exists because [sessionStatuses] was doing two incompatible jobs. It
+     * is the live paint map, so it must forget: it is pruned to the lock's +-2
+     * every frame, it drops UNKNOWN, and `loadSurah` clears it outright - which
+     * meant a surah handoff, the one moment a session spans two surahs, wiped
+     * every verdict the session had produced. The record was then written from
+     * that map and came back nearly empty.
+     *
+     * Painting and archiving want opposite things. The record wants everything,
+     * forever, in order; the screen wants only what is on screen now and nothing
+     * stale. So they are separate stores. This one is cleared once per session
+     * and never otherwise touched.
+     *
+     * First terminal verdict wins, and CORRECT is never downgraded - the same
+     * rule the paint map uses, because the failure it prevents is real: a verse
+     * said perfectly, re-judged from a slice that no longer contains it, came
+     * back as a wall of errors. An archive that made that mistake would be
+     * worse than an empty one, because it would be believed.
+     */
+    private val sessionArchive = LinkedHashMap<String, WordStatus>()
+
+    /** Record a verdict permanently, if this is the first one for the word. */
+    private fun archiveVerdict(key: String, v: WordStatus) {
+        val prev = sessionArchive[key]
+        if (prev == null || (prev == WordStatus.CORRECT && v != WordStatus.CORRECT)) {
+            sessionArchive[key] = v
+        }
+    }
+
+    /**
      * Latch for the surah-end page advance. Set when the reader has been taken
      * to the next surah's opening, cleared when the lock actually moves there.
      * Without it the page follows a noisy coverage threshold and oscillates.
@@ -455,6 +486,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .append(",\"moves\":").append(sessionMoves)
             .append(",\"reversals\":").append(sessionReversals)
             .append(",\"evaluations\":").append(sessionEvaluations)
+            .append(",\"judgedWords\":").append(sessionArchive.size)
             .append(",\"unjudgeableAyahs\":").append(unjudgeableKeys.size)
             .append(",\"unjudgeableKeys\":[\"")
             .append(unjudgeableKeys.joinToString("\",\""))
@@ -464,10 +496,14 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         frameRing.appendJson(sb)
         // Only the words that carry a verdict. CORRECT for a whole surah is
         // thousands of entries and tells us nothing we cannot derive.
+        // Every word the session judged, from the archive - not the paint map,
+        // which forgets. Previously this loop read sessionStatuses and skipped
+        // CORRECT, which made a perfectly clean session record as ZERO verdicts
+        // and read like a wipe. An instrument that reports a filtered view as
+        // though it were the whole is worse than one that reports nothing.
         sb.append(",\"words\":[")
         var first = true
-        for ((k, v) in sessionStatuses) {
-            if (v != WordStatus.WRONG && v != WordStatus.UNKNOWN) continue
+        for ((k, v) in sessionArchive) {
             if (!first) sb.append(',')
             first = false
             sb.append("{\"key\":\"").append(k).append("\",\"st\":\"").append(v.name).append("\"}")
@@ -484,7 +520,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // same handful of keys with a low CORRECT count every session.
         sb.append(",\"ayahStatus\":[")
         val byAyah = LinkedHashMap<String, IntArray>()
-        for ((k, v) in sessionStatuses) {
+        for ((k, v) in sessionArchive) {
             val parts = k.split(":")
             if (parts.size < 3) continue
             val a = byAyah.getOrPut("${parts[0]}:${parts[1]}") { IntArray(4) }
@@ -1249,6 +1285,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         pollsSinceFlush = 0
         sessionEvaluations = 0
         unjudgeableKeys.clear()
+        sessionArchive.clear()
         handoffPageShown = false
         sessionActive = true
         diag("session starts p=$page → s=$s:${lockedAyah}")
@@ -1885,6 +1922,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         sessionStatuses.remove(key)
                     }
                     newMap[key] = s
+                    // Archive every verdict as it is reached, including SKIPPED.
+                    // The paint map will discard most of these within a second;
+                    // the record must not, or a clean session reads as an empty
+                    // one and a busy one is indistinguishable from a broken one.
+                    archiveVerdict(key, s)
                 }
                 if (a == lockedAyah) {
                     val tw = PhonemeMapper.timedWord(al.emitWord, obsTs.toFloatArray(), audioSec)
