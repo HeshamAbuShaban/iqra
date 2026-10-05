@@ -85,6 +85,27 @@ no corpus re-run, no digest to re-derive. 31 surah-opening ayat, where the tajwe
 text and the Mushaf segment the bismillah differently, stay UNKNOWN rather than
 being guessed at.
 
+**2b. Every word of every recited ayah was archived SKIPPED. FIXED.**
+Your 302 s recitation of 2:59-2:76 on the device produced 365 SKIPPED, 24
+UNKNOWN, **0 CORRECT, 0 WRONG** — and the lock tracked you correctly the whole
+way, reaching 0.933 coverage on 2:60. So recognition was never the problem.
+
+The cause was in the verdict-retention chain, not the recogniser. Behind the
+lock, `align()` is asked to score a word against the **next** ayah's audio,
+because the ring buffer no longer holds its units. So SKIPPED there means "the
+evidence has moved on", not "the reciter skipped this". The chain read it as
+unearned and hit a final `else` that called `sessionStatuses.remove(key)` —
+deleting the CORRECT verdict that had been earned a moment earlier. The
+retention window was therefore precisely the window in which it was not needed,
+and it evaporated the instant it was. The comment directly above that code
+describes this exact bug being fixed once before; the fix was defeated again by
+the ordering of the `else`.
+
+Terminal verdicts are now sticky behind the lock, first one wins, the same
+contract the session archive already uses. Ahead-of-lock words are still
+recomputed live. `archive_parity.py` guards it with a retention table and a
+wiring assertion, both mutation-tested.
+
 **3. 30.9% of audio time stalled** across the corpus. Mostly fixed (un-drained
 backlog, dead-band freeze); what remains is the ~38% of ayat that take twice as
 long to confirm. Not yet explained.

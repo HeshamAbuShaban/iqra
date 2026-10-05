@@ -1896,39 +1896,47 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     } else {
                         wrongStreak.remove(key)
                     }
-                    if (a != lockedAyah && s == WordStatus.CORRECT) {
-                        val old = sessionStatuses[key]
-                        if (old == WordStatus.CORRECT) s = WordStatus.CORRECT
-                    }
-                    // Retain CORRECT only for ayat BEHIND the lock (done work).
-                    // WRONG is never retained anywhere: recomputed live every
-                    // frame, so stale red can never freeze. Ahead-of-lock
-                    // words are recomputed live, never kept - EXCEPT after a
-                    // retreat, where the reciter is simply going back over
-                    // something they already recited correctly. Dropping those
-                    // marks repainted the whole ayah from an emission slice
-                    // that no longer contained it, i.e. SKIPPED, which draws as
-                    // red strikethrough: a wall of errors for an ayah that was
-                    // said perfectly. Going back is a cursor move, not a
-                    // retraction.
-                    if (a < lockedAyah && s == WordStatus.CORRECT) {
-                        sessionStatuses[key] = s
-                    } else if (a == lockedAyah) {
-                        // UNKNOWN is a non-verdict, so there is nothing worth
-                        // retaining: it would otherwise stick around as a
-                        // permanent "not quite done" mark.
-                        if (s != WordStatus.SKIPPED && s != WordStatus.UNKNOWN) {
-                            sessionStatuses[key] = s
-                        } else {
-                            sessionStatuses.remove(key)
-                        }
-                    } else if (lastMoveDir < 0 && s == WordStatus.CORRECT &&
-                        sessionStatuses[key] == WordStatus.CORRECT
-                    ) {
+// Retain a verdict the reciter has already earned.
+                //
+                // Behind the lock, `align` is being asked to score these words
+                // against the NEXT ayah's audio: the ring no longer holds their
+                // units. So SKIPPED there means "the evidence has moved on", not
+                // "the reciter skipped this" - and the old chain deleted the
+                // retained verdict on exactly that reading (the final `else`).
+                // The retention window was therefore precisely the window in
+                // which it was not needed, and it evaporated the moment it was.
+                // Every word of every recited ayah ended SKIPPED: 365 SKIPPED,
+                // 0 CORRECT, 0 WRONG over a 302 s recitation of 2:59-2:76 that
+                // reached 0.933 coverage. Recognition was never the problem.
+                //
+                // A terminal verdict is final, first one wins - the same contract
+                // the session archive already uses. Ahead-of-lock words are still
+                // recomputed live, because nothing has been earned there yet.
+                val retained = sessionStatuses[key]
+                if (a < lockedAyah) {
+                    if (retained == WordStatus.CORRECT || retained == WordStatus.WRONG) {
+                        s = retained
+                    } else if (s == WordStatus.CORRECT || s == WordStatus.WRONG) {
                         sessionStatuses[key] = s
                     } else {
                         sessionStatuses.remove(key)
                     }
+                } else if (a == lockedAyah) {
+                    // UNKNOWN is a non-verdict, so there is nothing worth
+                    // retaining: it would otherwise stick around as a
+                    // permanent "not quite done" mark.
+                    if (s != WordStatus.SKIPPED && s != WordStatus.UNKNOWN) {
+                        sessionStatuses[key] = s
+                    } else {
+                        sessionStatuses.remove(key)
+                    }
+                } else if (lastMoveDir < 0 && s == WordStatus.CORRECT &&
+                    retained == WordStatus.CORRECT
+                ) {
+                    sessionStatuses[key] = s
+                } else {
+                    sessionStatuses.remove(key)
+                }
                     newMap[key] = s
                     // Archive every verdict as it is reached, including SKIPPED.
                     // The paint map will discard most of these within a second;

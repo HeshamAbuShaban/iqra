@@ -132,6 +132,86 @@ def check(src, name="PracticeViewModel.kt"):
             "1 (session start). More would forget part of a session; zero would "
             "carry verdicts into the next one.")
 
+    # The verdict-retention chain lives in the same function, and it is what
+    # decides whether a recited word is ever recorded as CORRECT at all. It
+    # gets its own checks because its failure mode is silent: no crash, no
+    # missing colour that looks like a bug, just an archive full of SKIPPED.
+    failures += check_retention()
+    failures += check_retention_is_wired(src)
+
+    return failures
+
+
+# The retention chain, as data. `a` is the ayah a word belongs to, `locked` the
+# lock's ayah, `live` what align() just said, `held` what was retained.
+#
+# Kept as an explicit table because the bug it guards was a control-flow
+# subtlety, not a typo: behind the lock, align() is scoring the word against the
+# NEXT ayah's audio, so `live` degrades to SKIPPED for reasons that have nothing
+# to do with the reciter. An `else` clause read that as "unearned" and deleted
+# the verdict. Modelling it makes the intended behaviour checkable without
+# reimplementing the DP.
+def retention(a, locked, live, held):
+    """(status after the chain, what stays retained)."""
+    if a < locked:                                   # behind the lock: done work
+        if held in ("CORRECT", "WRONG"):
+            return held, held
+        if live in ("CORRECT", "WRONG"):
+            return live, live
+        return live, None
+    if a == locked:                                  # on it: verdicts are provisional
+        if live in ("SKIPPED", "UNKNOWN"):
+            return live, None
+        return live, live
+    return live, None                                # ahead: nothing earned yet
+
+
+RETENTION_CASES = [
+    # (a, locked, live, held, expect_status, expect_held, why)
+    (60, 60, "CORRECT", None, "CORRECT", "CORRECT", "earned on the locked ayah"),
+    (60, 61, "SKIPPED", "CORRECT", "CORRECT", "CORRECT",
+     "the ring moved on; SKIPPED here is missing evidence, not a skipped word"),
+    (60, 61, "SKIPPED", "WRONG", "WRONG", "WRONG",
+     "a wrong word stays wrong after the lock advances"),
+    (60, 61, "CORRECT", None, "CORRECT", "CORRECT",
+     "still inside the ring, so the live verdict stands"),
+    (61, 60, "SKIPPED", None, "SKIPPED", None,
+     "ahead of the lock nothing is earned yet"),
+    (60, 60, "SKIPPED", "CORRECT", "SKIPPED", None,
+     "back on the ayah it may revise: SKIPPED is not a verdict to keep"),
+]
+
+
+def check_retention():
+    failures = []
+    for a, locked, live, held, want_s, want_h, why in RETENTION_CASES:
+        got_s, got_h = retention(a, locked, live, held)
+        if got_s != want_s or got_h != want_h:
+            failures.append(
+                f"retention(ayah={a}, locked={locked}, live={live}, held={held}) "
+                f"-> ({got_s}, {got_h}), expected ({want_s}, {want_h}) [{why}]")
+    # The specific regression, named so the failure is legible.
+    got_s, got_h = retention(60, 61, "SKIPPED", "CORRECT")
+    if got_s == "SKIPPED" or got_h is None:
+        failures.append(
+            "a verdict earned behind the lock is dropped once align() starts "
+            "scoring it against the next ayah's audio. Measured: 365 SKIPPED, "
+            "0 CORRECT, 0 WRONG over a 302 s recitation at 0.933 coverage.")
+    return failures
+
+
+def check_retention_is_wired(src):
+    """The Kotlin chain must still branch on the retained value, not just store it."""
+    failures = []
+    if "val retained = sessionStatuses[key]" not in src:
+        failures.append(
+            "PracticeViewModel.kt: no `val retained = sessionStatuses[key]`. The "
+            "sticky-verdict chain was replaced; update this check deliberately "
+            "rather than letting it go.")
+    if "if (a < lockedAyah) {" not in src:
+        failures.append(
+            "PracticeViewModel.kt: no behind-the-lock branch in the retention "
+            "chain. Without it a retained verdict has nothing keeping it alive.")
     return failures
 
 
