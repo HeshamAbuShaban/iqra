@@ -203,7 +203,7 @@ fun PracticeOverview(
             item { SectionHeader("Recent", s.recent.size, false) }
             items(s.recent.size) { i ->
                 val s = s.recent[i]
-                RecentRow(s, data.surahInfo(s.surah))
+                RecentRow(s, data.surahInfo(s.surahStart))
             }
         }
     }
@@ -483,7 +483,11 @@ private fun SurahProgressRow(p: PracticeLog.SurahProgress, info: SurahInfo?, onO
                         buildString {
                             append("${p.sessions} ")
                             append(if (p.sessions == 1) "session" else "sessions")
-                            append(" · ${p.ayahs} ayat")
+                            // `reached` is distinct ayat in this surah, which is
+                            // what the number always claimed to be. `ayahs` was a
+                            // sum of max-ayah-NUMBERs, so someone reciting 2:255
+                            // twenty times saw "20 sessions · 255 ayat".
+                            if (p.reached > 0) append(" · ${p.reached} ayat")
                             val a = p.accuracy
                             if (a != null) append(" · ${(a * 100).toInt()}% correct")
                         },
@@ -521,14 +525,16 @@ private fun RecentRow(s: PracticeLog.Record, info: SurahInfo?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "${s.surah}:${s.lockAyah}",
+            // Only when start and current surah agree - otherwise the pair is a
+            // position that does not exist. See Record.safePosition.
+            s.safePosition?.let { "${it.first}:${it.second}" } ?: "${s.surahStart}·",
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             color = goldColor,
             modifier = Modifier.width(56.dp),
         )
         Text(
-            info?.nameEn ?: "Surah ${s.surah}",
+            info?.nameEn ?: "Surah ${s.surahStart}",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),

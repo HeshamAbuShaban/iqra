@@ -76,6 +76,31 @@ object ReaderPrefs {
         return if (p == FONT_DEFAULT) "$p% · default" else "$p%"
     }
 
+    // ---- appearance -----------------------------------------------------
+
+    /**
+     * The chosen theme id, stored as an int because SharedPreferences has no
+     * stable enum type and the enum order is not a storage contract.
+     */
+    fun themeId(ctx: Context): Int =
+        prefs(ctx).getInt("themeId", 0)
+
+    fun setThemeId(ctx: Context, v: Int) = write(ctx) { putInt("themeId", v) }
+
+    fun theme(ctx: Context): com.iqra.quran.ui.theme.IqraTheme =
+        com.iqra.quran.ui.theme.IqraTheme.from(themeId(ctx))
+
+    /**
+     * Whether the recitation screen may animate at all.
+     *
+     * Separate from the app-wide motion question because this is the one screen
+     * with a continuously moving element, and someone who finds that distracting
+     * reading a page does not want it switched on for a practice session either.
+     */
+    fun liveAnimation(ctx: Context): Boolean = prefs(ctx).getBoolean("liveAnim", true)
+
+    fun setLiveAnimation(ctx: Context, v: Boolean) = write(ctx) { putBoolean("liveAnim", v) }
+
     // ---- practice --------------------------------------------------------
 
     /**

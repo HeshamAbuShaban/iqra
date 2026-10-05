@@ -22,6 +22,19 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.data.AssetPaths
 import com.iqra.quran.data.PracticeLog
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import com.iqra.quran.ui.theme.IqraTheme
+import com.iqra.quran.ui.theme.IqraPalettes
+import com.iqra.quran.ui.theme.LocalIqraColors
 
 /**
  * The app's settings screen.
@@ -95,7 +108,23 @@ fun SettingsScreen(
                 NightSettings(tick)
             }
 
+            // Scoped separately from the app theme on purpose. The recitation screen
+            // has the only continuously moving element in the app, and someone who
+            // wants that still off while reading a page does not want it switched on
+            // for a practice session either.
+            SettingsSection("Theme") {
+                ThemeChooser(tick)
+            }
+
             SettingsSection("Practice") {
+                SwitchRow(
+                    title = "Animate the recitation light",
+                    subtitle = "The horizon on the recitation screen moves " +
+                        "continuously. Turn off for a still image.",
+                    checked = remember(tick) { ReaderPrefs.liveAnimation(ctx) },
+                    onChange = { ReaderPrefs.setLiveAnimation(ctx, it) },
+                )
+                SettingDivider()
                 SwitchRow(
                     title = "Keep the screen on while reciting",
                     subtitle = "A recitation usually runs past the ~30 s before " +
@@ -389,3 +418,96 @@ private fun SettingDivider() {
 private fun fmtMb(b: Long): String =
     if (b >= 1_000_000) String.format("%.1f MB", b / 1_000_000.0)
     else String.format("%.0f KB", b / 1_000.0)
+
+/**
+ * Four themes, each previewed with its own colours rather than described.
+ *
+ * A row of names cannot tell you whether "Ink and silver" is too cold for reading
+ * at night, and the only honest way to choose between four palettes is to see them.
+ * Each swatch is that theme's ground, surface, accent and gold, with a line of
+ * Arabic set in the real typeface - so the choice is made on the thing that will
+ * actually be on screen.
+ */
+@Composable
+private fun ThemeChooser(tick: Int) {
+    val ctx = LocalContext.current
+    val current = remember(tick) { ReaderPrefs.theme(ctx) }
+    val live = LocalIqraColors.current
+
+    Column {
+        IqraTheme.entries.forEach { t ->
+            val pal = IqraPalettes.of(t)
+            val on = t == current
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (on) pal.accent.copy(alpha = 0.12f) else Color.Transparent)
+                    .toggleable(
+                        value = on,
+                        onValueChange = { if (it) ReaderPrefs.setThemeId(ctx, t.id) },
+                        role = Role.RadioButton,
+                    )
+                    .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // The swatch: this theme's own ground, surface, accent and gold.
+                Box(
+                    Modifier
+                        .size(width = 52.dp, height = 52.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(pal.ground),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(pal.surface),
+                    ) {
+                        Box(
+                            Modifier
+                                .padding(horizontal = 6.dp, vertical = 5.dp)
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(pal.accent),
+                        )
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(start = 6.dp, bottom = 6.dp)
+                                .width(16.dp).height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(pal.gold),
+                        )
+                    }
+                    if (on) {
+                        Box(
+                            Modifier.fillMaxSize().background(pal.ground.copy(alpha = 0.45f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "\u2713",
+                                color = pal.ink,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        t.label,
+                        fontSize = 14.sp,
+                        color = live.ink,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                    Text(t.blurb, fontSize = 11.sp, color = live.inkFaint)
+                }
+            }
+        }
+    }
+}

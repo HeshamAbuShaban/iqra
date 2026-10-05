@@ -136,6 +136,12 @@ import com.iqra.quran.data.HighlightLayer
 import com.iqra.quran.data.PracticeLog
 import com.iqra.quran.data.WordStatus
 import com.iqra.quran.data.GlyphCoords
+import androidx.compose.runtime.CompositionLocalProvider
+import com.iqra.quran.ui.theme.IqraPalettes
+import com.iqra.quran.ui.theme.LocalIqraColors
+import com.iqra.quran.ui.theme.LocalLiveColors
+import com.iqra.quran.ui.theme.iqraScheme
+import com.iqra.quran.ui.theme.liveColorsFor
 
 class MainActivity : ComponentActivity() {
     private val vm by lazy {
@@ -154,7 +160,19 @@ class MainActivity : ComponentActivity() {
         // never briefly the old one on screen.
         ReaderPrefs.migrate(this)
         setContent {
-            MaterialTheme(colorScheme = darkMushafScheme(), shapes = mushafShapes()) {
+            // The theme is read here, above everything, so a change repaints the
+            // whole app and every CompositionLocal below it - including the charts
+            // and the horizon, which are drawn on a Canvas and never consult
+            // MaterialTheme for themselves.
+            val themeState = ReaderPrefs.tick.collectAsStateWithLifecycle()
+            val t = remember(themeState.value) { ReaderPrefs.theme(this) }
+            val cols = remember(t) { IqraPalettes.of(t) }
+            val liveCols = remember(cols) { liveColorsFor(cols) }
+            CompositionLocalProvider(
+                LocalIqraColors provides cols,
+                LocalLiveColors provides liveCols,
+            ) {
+            MaterialTheme(colorScheme = iqraScheme(cols), shapes = mushafShapes()) {
                 App(
                     vm,
                     onRequestMic = { block ->
@@ -169,6 +187,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 )
+            }
             }
         }
     }
@@ -394,6 +413,8 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     var screenPage by rememberSaveable { mutableStateOf(-1) }
     var screenAnchor by rememberSaveable { mutableStateOf(-1) }
     var screenCount by rememberSaveable { mutableStateOf(7) }
+    // Session record file name for the single-session report route.
+    var screenReport by rememberSaveable { mutableStateOf("") }
 
     if (loading || data == null) {
         SplashScreen()
@@ -413,6 +434,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             screenAnchor.takeIf { it > 0 },
         )
         "live" -> Screen.Live(screenSurah, screenPage.coerceAtLeast(1), screenCount)
+        "report" -> Screen.Report(screenReport)
         else -> Screen.Picker
     }
     val goReader: (Int, Int?, Int?) -> Unit = { s, p, a ->
@@ -427,10 +449,17 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onOpenData = { screenName = "data" },
             onOpenProgress = { screenName = "progress" },
         )
+        // The practice surface. Replaces the old ProgressScreen, which reported
+        // lock advances and audio polls as though they were a score.
         is Screen.Progress -> data?.let { d ->
-            ProgressScreen(d, onOpen = { s, p -> goReader(s, p, null) }) {
-                screenName = "picker"
-            }
+            PracticeScreen(
+                data = d,
+                onOpen = { s, p -> goReader(s, p, null) },
+                onOpenSession = { name -> screenReport = name; screenName = "report" },
+            ) { screenName = "picker" }
+        }
+        is Screen.Report -> data?.let { d ->
+            SessionReportScreen(d, screenReport) { screenName = "progress" }
         }
         Screen.Picker -> HomeScreen(vm, lastRead,
             onOpen = { surah, page -> goReader(surah, page, null) },
@@ -496,6 +525,8 @@ sealed interface Screen {
     data object Data : Screen
     data object Settings : Screen
     data object Progress : Screen
+    /** One session in full, by record file name. */
+    data class Report(val name: String) : Screen
     /** Recitation test from memory. Count 0 means "to the end of the surah". */
     data class Live(val surah: Int, val startAyah: Int, val count: Int) : Screen
 }

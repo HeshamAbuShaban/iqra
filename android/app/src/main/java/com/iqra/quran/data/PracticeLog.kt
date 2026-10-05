@@ -111,7 +111,6 @@ object PracticeLog {
         val name: String,
         val flushedAt: Long,
         val startedAt: Long,
-        val surah: Int,
         val lockAyah: Int,
         val ended: Boolean,
         val reason: String,
@@ -125,14 +124,80 @@ object PracticeLog {
         val wrong: Int,
         val skipped: Int,
         val unknown: Int,
-        /** surah -> judged word count, for per-surah mastery. */
+        /**
+         * The engine's own verdict total, from `counters.judgedWords`.
+         *
+         * Preferred over reconstructing one from [ayahStatus] wherever it is
+         * present, because it is the number the engine states about itself. Zero
+         * on records written before it existed, which is why [judged] still has to
+         * work without it.
+         */
+        val judgedWords: Int,
+        /** Surah the session STARTED in. See [surahNow] before pairing with [lockAyah]. */
+        val surahStart: Int,
+        /** Surah the lock is in at flush time. Equal to [surahStart] unless handed off. */
+        val surahNow: Int,
+        /** surah -> [correct, wrong, skipped, unknown], accumulated across that surah. */
         val perSurah: Map<Int, IntArray>,
-        /** "surah:ayah:word" -> times it came out wrong or unknown. */
+        /** "surah:ayah" -> [correct, wrong, skipped, unknown]. The unit a report is drawn over. */
+        val perAyah: Map<String, IntArray>,
+        /** "surah:ayah:word" -> [times missed, session startedAt]. Misses ONLY - see parseRecord. */
         val hardWords: Map<String, LongArray>,
     ) {
-        val judged: Int get() = correct + wrong + skipped
+        /** Every verdict the engine recorded, including ones that were never a test. */
+        val recorded: Int
+            get() = if (judgedWords > 0) judgedWords else correct + wrong + skipped + unknown
+
+        /**
+         * Words the engine actually judged: a word came out, and the model said
+         * whether it matched.
+         *
+         * This is the denominator accuracy uses, and the change is not cosmetic.
+         * Three sessions on a device with no one reciting produced 140 SKIPPED and
+         * 10 UNKNOWN and not one judged word - the lock timed out and walked past
+         * everything. With SKIPPED in the denominator that reads as "0.0%", which
+         * is not a bad result, it is a fabricated one: there was no result. A
+         * figure nobody attempted must leave the ratio undefined, and this file's
+         * own header has said since before any of this existed that "no data yet"
+         * and "zero percent" are different claims.
+         */
+        val judged: Int get() = correct + wrong
+
         val accuracy: Float? get() = if (judged <= 0) null else correct.toFloat() / judged
+
+        /**
+         * Accuracy counting words the model never produced a phoneme for.
+         *
+         * [accuracy] deliberately excludes UNKNOWN, because a word the engine could
+         * not hear is a fact about the engine and must not count against the
+         * reciter. That makes the headline flattering when a lot went unheard, so
+         * this is shown next to it rather than instead of it.
+         */
+        val accuracyWithUnknown: Float?
+            get() {
+                val total = correct + wrong + unknown
+                return if (total <= 0) null else correct.toFloat() / total
+            }
+
+        /** The lock passed these without judging. Not a mistake and not an attempt. */
+        val skippedOver: Int get() = skipped
+
+        /** Session length in seconds, or null when either timestamp is missing. */
+        val durationSec: Int?
+            get() = if (flushedAt > startedAt) ((flushedAt - startedAt) / 1000L).toInt() else null
+
         val dayKey: Long get() = dayKeyOf(startedAt)
+
+        /**
+         * The surah:ayah pair to show a human, or null when there isn't one.
+         *
+         * A surah handoff calls loadSurah(surah + 1) and moves the lock into the
+         * new surah, so `surahStart` and `lockNow` end up describing DIFFERENT
+         * surahs and the naive pair "2:255" is a position that does not exist.
+         */
+        val safePosition: Pair<Int, Int>?
+            get() = if (surahStart > 0 && surahStart == surahNow && lockAyah > 0)
+                surahStart to lockAyah else null
     }
 
     // ---- derived ----------------------------------------------------------
@@ -140,10 +205,14 @@ object PracticeLog {
     data class SurahProgress(
         val surah: Int,
         val sessions: Int,
-        val ayahs: Int,
+        /** Distinct ayat reached in this surah. Never a count of sessions. */
+        val reached: Int,
+        /** The surah's own length, for the coverage term in [mastery]. */
+        val ayahCount: Int,
         val correct: Int,
         val wrong: Int,
         val skipped: Int,
+        val unknown: Int,
         val lastPractised: Long,
     ) {
         val judged: Int get() = correct + wrong + skipped
@@ -153,14 +222,21 @@ object PracticeLog {
          * 0..1 for a progress bar, and deliberately not [accuracy].
          *
          * One perfect surah is not a mastered surah, so accuracy is weighted by
-         * how much has actually been recited through. The volume term is
-         * logarithmic, so the bar keeps moving after the first few sessions
-         * instead of pinning at full immediately.
+         * how much of the surah has actually been recited through. Logarithmic, so
+         * the bar keeps moving after the first few sessions instead of pinning at
+         * full immediately.
+         *
+         * [ayahCount] is the surah's real length and [reached] is how far the lock
+         * got, so the volume term is "how much of it you covered". The previous
+         * version used [ayahs], which for live rows is the highest ayah NUMBER
+         * reached - so someone reciting 2:255 twenty times was shown a bar driven
+         * by the number 255.
          */
         val mastery: Float
             get() {
                 val a = accuracy ?: 0f
-                val volume = (kotlin.math.ln(1f + ayahs) / kotlin.math.ln(1f + 60f))
+                val whole = if (ayahCount > 0) minOf(reached, ayahCount) else reached
+                val volume = (kotlin.math.ln(1f + whole.toFloat()) / kotlin.math.ln(1f + 61f))
                     .coerceIn(0f, 1f)
                 return (a * volume).coerceIn(0f, 1f)
             }
@@ -173,11 +249,30 @@ object PracticeLog {
         val wordInAyah: Int get() = key.split(":").getOrNull(2)?.toIntOrNull() ?: 0
     }
 
+    /**
+     * One point on the practice timeline. Every trend, sparkline and comparison in
+     * the report is drawn from a list of these, oldest first.
+     */
+    data class SessionPoint(
+        val dayKey: Long,
+        val accuracy: Float?,
+        val wpm: Double,
+        val judged: Int,
+        val wrong: Int,
+        val durationSec: Int,
+        val surah: Int,
+        val ayat: Int,
+        val name: String,
+    )
+
     data class Summary(
         val sessions: Int,
         val judgedWords: Int,
+        /** Distinct ayat reached. Was previously a sum of distinct-surah counts. */
         val ayahs: Int,
         val accuracy: Float?,
+        /** Accuracy counting words the engine never heard. See [Record.accuracyWithUnknown]. */
+        val accuracyWithUnknown: Float?,
         val currentStreak: Int,
         val longestStreak: Int,
         val surahs: List<SurahProgress>,
@@ -185,7 +280,8 @@ object PracticeLog {
         val recent: List<Record>,
         val hardest: List<HardWord>,
         val recordsIngested: Int,
-        val wordsSeen: Long,
+        /** Oldest first. The x-axis of every trend chart. */
+        val series: List<SessionPoint>,
     ) {
         val activeDays: Int get() = days.size
         val isEmpty: Boolean get() = sessions == 0
@@ -199,18 +295,49 @@ object PracticeLog {
         var wrong = 0L
         var skipped = 0L
         var unknown = 0L
-        var ayahs = 0L
+        /** Distinct "surah:ayah" reached, summed over distinct records. */
+        var ayat = 0L
         val surahs = HashMap<Int, IntArray>()      // correct, wrong, skipped, unknown, sessions
-        val hard = HashMap<String, LongArray>()   // misses, lastAt
+        val hard = HashMap<String, LongArray>()    // misses, lastAt
         val days = TreeSetSet()
         val recent = ArrayList<String>()           // record names, newest first
-        val folded = HashMap<String, Long>()       // name -> flushedAt folded
+
+        /**
+         * name -> [flushedAt, correct, wrong, skipped, unknown, ayatCount].
+         *
+         * The engine re-writes a record every ~25 s while a session runs, so the
+         * same file legitimately changes underneath us and gets folded again. The
+         * previous version recorded only the timestamp and then ADDED the new
+         * counts on top of the old ones, so a ten-minute session inflated its own
+         * totals ~24 times. A re-fold has to be able to take the old contribution
+         * back out, which means storing it.
+         */
+        val folded = HashMap<String, LongArray>()
+
+        /** name -> that record's hard-word counts, so a re-fold can be undone too. */
+        val foldedHard = HashMap<String, Map<String, Long>>()
+
+        /**
+         * record name -> one point on the practice timeline.
+         *
+         * `[dayKey, accuracy*1000, wpm, judged, wrong, durationSec, surah, ayat]`.
+         *
+         * This exists because every chart with a time axis was impossible before it.
+         * `Agg` held lifetime totals and a set of days, so "has my accuracy gone up"
+         * had no data behind it, and `Record.wpm` only exists for the handful of
+         * files that survive pruning - which is why the surface showed one number
+         * with no trend and no comparison. Keyed by record name, so re-folding a
+         * session replaces its point instead of appending a second one, and a
+         * trend line stays a line.
+         */
+        val series = HashMap<String, LongArray>()
     }
 
     /** A sorted set of Long day keys, without pulling in java.util.TreeSet ceremony. */
-    private class TreeSetSet {
+    private class TreeSetSet : Iterable<Long> {
         private val m = HashMap<Long, Boolean>()
         fun add(k: Long) { m[k] = true }
+        override fun iterator(): Iterator<Long> = m.keys.iterator()
         fun sorted(): List<Long> = m.keys.sorted()
         val size: Int get() = m.size
         fun replaceWith(list: List<Long>) { m.clear(); list.forEach { m[it] = true } }
@@ -265,8 +392,19 @@ object PracticeLog {
     }
 
     fun clear(ctx: Context) {
+        // The raw records too. Clearing only the two aggregate files left
+        // filesDir/sessions/*.json in place, and the next `summarise` -> `ingest`
+        // folded them straight back in - so "Clear practice history" appeared to
+        // work and the history returned on the very next screen. A button that
+        // lies about destroying something is worse than no button.
         runCatching { liveFile(ctx).delete() }
-        runCatching { File(ctx.filesDir, AGG).delete() }
+        runCatching {
+            File(ctx.filesDir, AGG).delete()
+            File(ctx.filesDir, "$AGG.tmp").delete()
+        }
+        runCatching {
+            File(ctx.filesDir, SESSIONS).listFiles()?.forEach { it.delete() }
+        }
     }
 
     private fun writeJson(dest: File, payload: JSONArray) {
@@ -307,28 +445,63 @@ object PracticeLog {
         files.sortedBy { it.name }.forEach { f ->
             val seen = agg.folded[f.name]
             val flushed = f.lastModified()
-            if (seen != null && seen >= flushed) return@forEach
+            if (seen != null && seen.size >= 1 && seen[0] >= flushed) return@forEach
             val r = try { parseRecord(f.name, f.readText()) } catch (e: Exception) {
                 Log.w(TAG, "unreadable session record ${f.name}", e); null
             }
-            agg.folded[f.name] = flushed
             if (r == null) return@forEach
-            // A re-fold of the same name replaces its contribution rather than
-            // adding to it, which is why the old numbers are subtracted first.
+
+            // A re-fold REPLACES this record's contribution. The engine re-writes
+            // the file every ~25 s, so without taking the old numbers back out a
+            // ten-minute session counted itself roughly twenty-four times - and
+            // `Agg.sessions`, which is what the "N sessions" tile reads, inflated
+            // once per flush of any session that was ever resumed.
+            agg.folded[f.name]?.let { prev ->
+                if (prev.size >= 6) {
+                    agg.sessions--
+                    agg.correct -= prev[1]; agg.wrong -= prev[2]
+                    agg.skipped -= prev[3]; agg.unknown -= prev[4]
+                    agg.ayat -= prev[5]
+                    agg.foldedHard[f.name]?.forEach { (k, n) ->
+                        val h = agg.hard[k]
+                        if (h != null) {
+                            h[0] = (h[0] - n).coerceAtLeast(0L)
+                            if (h[0] == 0L) agg.hard.remove(k)
+                        }
+                    }
+                    agg.foldedHard.remove(f.name)
+                }
+            }
+            agg.folded[f.name] = longArrayOf(
+                flushed, r.correct.toLong(), r.wrong.toLong(), r.skipped.toLong(),
+                r.unknown.toLong(), r.perAyah.size.toLong(),
+            )
+
             agg.recent.remove(f.name)
             agg.sessions++
             agg.correct += r.correct; agg.wrong += r.wrong
             agg.skipped += r.skipped; agg.unknown += r.unknown
-            agg.ayahs += r.perSurah.size
+            agg.ayat += r.perAyah.size
             agg.days.add(r.dayKey)
             r.perSurah.forEach { (s, a) ->
                 val acc = agg.surahs.getOrPut(s) { IntArray(5) }
                 acc[0] += a[0]; acc[1] += a[1]; acc[2] += a[2]; acc[3] += a[3]; acc[4]++
             }
+            val mine = HashMap<String, Long>()
             r.hardWords.forEach { (k, v) ->
                 val h = agg.hard.getOrPut(k) { LongArray(2) }
                 h[0] += v[0].toLong(); h[1] = maxOf(h[1], v[1])
+                mine[k] = v[0].toLong()
             }
+            agg.foldedHard[f.name] = mine
+            val dur = r.durationSec ?: 0
+            agg.series[f.name] = longArrayOf(
+                r.dayKey,
+                ((r.accuracy ?: 0f) * 1000f).toLong().coerceIn(0L, 1000L),
+                (r.wpm * 10f).toLong().coerceIn(0L, 2000L),
+                r.judged.toLong(), r.wrong.toLong(),
+                dur.toLong(), r.surahStart.toLong(), r.perAyah.size.toLong(),
+            )
             agg.recent.add(0, f.name)
             while (agg.recent.size > 40) agg.recent.removeAt(agg.recent.size - 1)
             added++
@@ -342,6 +515,11 @@ object PracticeLog {
         val o = JSONObject(body)
         val c = o.optJSONObject("counters") ?: JSONObject()
         val per = HashMap<Int, IntArray>()
+        // "surah:ayah" -> counts. Kept at ayah resolution because that is the unit
+        // a report is read over: a strip of ayat, which ayat is slow, which surah
+        // is weak. Collapsing to four session totals throws away the only part of
+        // this that a person can act on.
+        val perAyah = LinkedHashMap<String, IntArray>()
         val hard = LinkedHashMap<String, LongArray>()
         var correct = 0; var wrong = 0; var skipped = 0; var unknown = 0
         val ah = o.optJSONArray("ayahStatus")
@@ -349,33 +527,54 @@ object PracticeLog {
             for (i in 0 until ah.length()) {
                 val a = ah.optJSONObject(i) ?: continue
                 val key = a.optString("ayah")
-                val s = key.substringBefore(':').toIntOrNull() ?: continue
-                val v = per.getOrPut(s) { IntArray(4) }
+                val sn = key.substringBefore(':').toIntOrNull() ?: continue
+                val an = key.substringAfter(':', "").toIntOrNull() ?: continue
+                val v = per.getOrPut(sn) { IntArray(4) }
                 val cc = a.optInt("correct", 0); val ww = a.optInt("wrong", 0)
                 val ss = a.optInt("skipped", 0); val uu = a.optInt("unknown", 0)
                 v[0] += cc; v[1] += ww; v[2] += ss; v[3] += uu
+                val pa = perAyah.getOrPut("$sn:$an") { IntArray(4) }
+                pa[0] += cc; pa[1] += ww; pa[2] += ss; pa[3] += uu
                 correct += cc; wrong += ww; skipped += ss; unknown += uu
             }
         }
-        // `words` holds only WRONG and UNKNOWN by the engine's own design, which
-        // is exactly the set a "hardest words" list is made of.
+        // Misses only, and that has to be decided here rather than assumed.
+        //
+        // Until commit cf9a2bb the engine filtered this array to WRONG/UNKNOWN
+        // before writing it, so a "hardest words" list could be built from
+        // everything present. cf9a2bb moved the verdicts into a session archive
+        // that records EVERY verdict including CORRECT - correctly, because the
+        // paint map it replaced is pruned to lock +/- 2 and cannot be the record.
+        //
+        // The filter did not move with it. So the old `if (st != "WRONG") bump = 1`
+        // started counting every correctly recited word as a miss, and a flawless
+        // recitation produced a "hardest words" list headed by words the user got
+        // right, each drawn with red error pips downstream. The set is now derived
+        // from the status, and CORRECT/SKIPPED are excluded because neither is a
+        // mistake: one is success, the other is the model declining to judge.
         val ws = o.optJSONArray("words")
         if (ws != null) {
+            val startedAt = o.optLong("startedAt", 0L)
             for (i in 0 until ws.length()) {
                 val w = ws.optJSONObject(i) ?: continue
                 val k = w.optString("key")
                 if (k.isEmpty()) continue
                 val st = w.optString("st")
-                val bump = if (st == "WRONG") 2 else 1
+                val weight = when (st) {
+                    "WRONG" -> 2L
+                    "UNKNOWN" -> 1L
+                    else -> continue
+                }
                 val cur = hard.getOrPut(k) { LongArray(2) }
-                cur[0] += bump; cur[1] = o.optLong("startedAt", 0L)
+                cur[0] += weight; cur[1] = startedAt
             }
         }
         return Record(
             name = name,
             flushedAt = o.optLong("flushedAt", 0L),
             startedAt = o.optLong("startedAt", 0L),
-            surah = o.optInt("surahStart", 0),
+            surahStart = o.optInt("surahStart", 0),
+            surahNow = o.optInt("surahNow", o.optInt("surahStart", 0)),
             lockAyah = o.optInt("lockNow", 0),
             ended = o.optBoolean("ended", false),
             reason = o.optString("reason", ""),
@@ -386,7 +585,8 @@ object PracticeLog {
             unjudgeable = c.optInt("unjudgeableAyahs", 0),
             frames = o.optJSONArray("frames")?.length() ?: 0,
             correct = correct, wrong = wrong, skipped = skipped, unknown = unknown,
-            perSurah = per, hardWords = hard,
+            judgedWords = c.optInt("judgedWords", 0),
+            perSurah = per, perAyah = perAyah, hardWords = hard,
         )
     }
 
@@ -399,7 +599,7 @@ object PracticeLog {
             a.sessions = o.optInt("n", 0)
             a.correct = o.optLong("c", 0); a.wrong = o.optLong("w", 0)
             a.skipped = o.optLong("k", 0); a.unknown = o.optLong("u", 0)
-            a.ayahs = o.optLong("a", 0)
+            a.ayat = o.optLong("a", 0)
             o.optJSONObject("surahs")?.let { so ->
                 so.keys().forEach { key ->
                     so.optJSONArray(key)?.let { arr ->
@@ -420,8 +620,37 @@ object PracticeLog {
             o.optJSONArray("recent")?.let { ra ->
                 for (i in 0 until ra.length()) ra.optString(i).let { if (it.isNotEmpty()) a.recent.add(it) }
             }
+            // `folded` was name -> flushedAt before the re-fold fix. Read both
+            // shapes; a name with only a timestamp has no stored contribution, so
+            // the totals already in this file are kept and the next fold of that
+            // name is treated as its first.
             o.optJSONObject("folded")?.let { fo ->
-                fo.keys().forEach { key -> a.folded[key] = fo.optLong(key, 0L) }
+                fo.keys().forEach { key ->
+                    when (val v = fo.opt(key)) {
+                        is Long -> a.folded[key] = LongArray(6).also { it[0] = v }
+                        is Int -> a.folded[key] = LongArray(6).also { it[0] = v.toLong() }
+                        else -> {}
+                    }
+                    fo.optJSONArray(key)?.let { arr ->
+                        a.folded[key] = LongArray(6) { arr.optLong(it, 0L) }
+                    }
+                }
+            }
+            o.optJSONObject("series")?.let { so ->
+                so.keys().forEach { key ->
+                    so.optJSONArray(key)?.let { arr ->
+                        a.series[key] = LongArray(arr.length()) { arr.optLong(it, 0L) }
+                    }
+                }
+            }
+            o.optJSONObject("foldedHard")?.let { fo ->
+                fo.keys().forEach { key ->
+                    fo.optJSONObject(key)?.let { inner ->
+                        val m = HashMap<String, Long>()
+                        inner.keys().forEach { w -> m[w] = inner.optLong(w, 0L) }
+                        a.foldedHard[key] = m
+                    }
+                }
             }
             a
         } catch (e: Exception) {
@@ -435,7 +664,7 @@ object PracticeLog {
             val o = JSONObject()
             o.put("v", 1); o.put("n", a.sessions)
             o.put("c", a.correct); o.put("w", a.wrong)
-            o.put("k", a.skipped); o.put("u", a.unknown); o.put("a", a.ayahs)
+            o.put("k", a.skipped); o.put("u", a.unknown); o.put("a", a.ayat)
             o.put("surahs", JSONObject().apply {
                 a.surahs.forEach { (k, v) -> put("$k", JSONArray(v.toList())) }
             })
@@ -444,7 +673,17 @@ object PracticeLog {
             })
             o.put("days", JSONArray().apply { a.days.sorted().forEach { put(it) } })
             o.put("recent", JSONArray().apply { a.recent.forEach { put(it) } })
-            o.put("folded", JSONObject().apply { a.folded.forEach { (k, v) -> put(k, v) } })
+            o.put("folded", JSONObject().apply {
+                a.folded.forEach { (k, v) -> put(k, JSONArray(v.toList())) }
+            })
+            o.put("foldedHard", JSONObject().apply {
+                a.foldedHard.forEach { (k, m) ->
+                    put(k, JSONObject().apply { m.forEach { (w, n) -> put(w, n) } })
+                }
+            })
+            o.put("series", JSONObject().apply {
+                a.series.forEach { (k, v) -> put(k, JSONArray(v.toList())) }
+            })
             val dest = File(ctx.filesDir, AGG)
             val tmp = File(ctx.filesDir, AGG + ".tmp")
             tmp.writeText(o.toString())
@@ -469,18 +708,26 @@ object PracticeLog {
      * ever touches these files, because a synchronous read of even a few
      * hundred kilobytes during composition is a dropped frame.
      */
-    fun summarise(ctx: Context): Summary {
+    fun summarise(ctx: Context, data: QuranData? = null): Summary {
         ingest(ctx)
         val a = loadAgg(ctx)
         val days = a.days.sorted()
-        val judged = (a.correct + a.wrong + a.skipped).toInt()
 
         // Live rows the engine's own records never saw - a session that ended
         // before its record was flushed still counts.
+        //
+        // The test is "was this surah practised on this day at all". The previous
+        // version asked whether the day was missing OR the surah was missing,
+        // which quietly DROPPED any live row whose day and surah both appeared in
+        // the aggregate - and since records and live rows overlap by construction,
+        // some rows counted toward the per-surah list while being excluded from
+        // the headline totals beside it. Two numbers, one screen, no agreement.
         val live = load(ctx)
+        val seenDays = HashSet<Long>()
+        for (d in a.days) seenDays.add(d)
         val liveOnly = live.filter { l ->
-            days.none { d -> kotlin.math.abs(d - dayKeyOf(l.millis)) == 0L } ||
-                a.surahs[l.surah] == null
+            val dk = dayKeyOf(l.millis)
+            !a.surahs.containsKey(l.surah) || !seenDays.contains(dk)
         }
         val liveCorrect = liveOnly.sumOf { it.correct }
         val liveWrong = liveOnly.sumOf { it.wrong }
@@ -488,7 +735,7 @@ object PracticeLog {
         val totalCorrect = a.correct + liveCorrect
         val totalWrong = a.wrong + liveWrong
         val totalSkipped = a.skipped + liveSkipped
-        val totalJudged = (totalCorrect + totalWrong + totalSkipped).toInt()
+        val totalJudged = (totalCorrect + totalWrong).toInt()
 
         // Per-surah mastery is assembled from BOTH stores. Folding only the
         // engine records left the list empty, because those records carry no
@@ -496,30 +743,45 @@ object PracticeLog {
         // so ignoring them meant "By surah" always read zero while the accuracy
         // tile above it showed a real figure. Two numbers from one screen, one
         // of them a lie by omission.
+        // Real surah lengths, so "how much of this surah did you cover" has a
+        // denominator. Without it the mastery term divided by a constant and the
+        // bar was really just accuracy wearing a costume.
+        val ayahCounts = HashMap<Int, Int>()
+        if (data != null) {
+            runCatching {
+                for (n in 1..114) data.surahInfo(n)?.let { ayahCounts[n] = it.ayahCount }
+            }
+        }
+
         val bySurah = HashMap<Int, SurahProgress>()
         a.surahs.entries.filter { it.key > 0 }.forEach { (s, v) ->
             bySurah[s] = SurahProgress(
-                surah = s, sessions = v[4], ayahs = 0,
-                correct = v[0], wrong = v[1], skipped = v[2],
+                surah = s, sessions = v[4], reached = 0, ayahCount = ayahCounts[s] ?: 0,
+                correct = v[0], wrong = v[1], skipped = v[2], unknown = v[3],
                 lastPractised = 0L,
             )
         }
-        live.forEach { l ->
+        // The same rows the headline totals use, not `live`. Feeding per-surah from
+        // a different row set than the tiles above it is how two numbers on one
+        // screen end up disagreeing.
+        liveOnly.forEach { l ->
             if (l.surah <= 0) return@forEach
             val p = bySurah[l.surah]
             bySurah[l.surah] = if (p == null) {
                 SurahProgress(
-                    surah = l.surah, sessions = 1, ayahs = l.ayahs,
-                    correct = l.correct, wrong = l.wrong, skipped = l.skipped,
+                    surah = l.surah, sessions = 1, reached = l.ayahs,
+                    ayahCount = ayahCounts[l.surah] ?: 0,
+                    correct = l.correct, wrong = l.wrong, skipped = l.skipped, unknown = l.unknown,
                     lastPractised = l.millis,
                 )
             } else {
                 p.copy(
                     sessions = p.sessions + 1,
-                    ayahs = p.ayahs + l.ayahs,
+                    reached = maxOf(p.reached, l.ayahs),
                     correct = p.correct + l.correct,
                     wrong = p.wrong + l.wrong,
                     skipped = p.skipped + l.skipped,
+                    unknown = p.unknown + l.unknown,
                     lastPractised = maxOf(p.lastPractised, l.millis),
                 )
             }
@@ -536,11 +798,40 @@ object PracticeLog {
 
         val allDays = (days + liveOnly.map { dayKeyOf(it.millis) }).distinct().sorted()
 
+        val totalUnknown = a.unknown + liveOnly.sumOf { it.unknown }
+        val withUnknown = totalCorrect + totalWrong + totalSkipped + totalUnknown
+
+        // Oldest first, and built from the persisted series rather than from
+        // `recent`, because `recent` only holds records that still exist on disk.
+        val series = a.series.entries
+            .map { (name, v) ->
+                SessionPoint(
+                    dayKey = v.getOrElse(0) { 0L },
+                    accuracy = if (v.getOrElse(1) { 0L } <= 0L) null
+                               else v[1] / 1000f,
+                    wpm = v.getOrElse(2) { 0L } / 10.0,
+                    judged = v.getOrElse(3) { 0L }.toInt(),
+                    wrong = v.getOrElse(4) { 0L }.toInt(),
+                    durationSec = v.getOrElse(5) { 0L }.toInt(),
+                    surah = v.getOrElse(6) { 0L }.toInt(),
+                    ayat = v.getOrElse(7) { 0L }.toInt(),
+                    name = name,
+                )
+            }
+            .sortedBy { it.dayKey }
+
         return Summary(
             sessions = a.sessions + liveOnly.size,
             judgedWords = totalJudged,
-            ayahs = a.ayahs.toInt() + liveOnly.size,
+            // Distinct ayat, from the per-ayah map. The old value was
+            // `Agg.ayahs`, which accumulated `perSurah.size` - a count of
+            // surahs per session - and was then displayed under the word "ayat".
+            ayahs = a.ayat.toInt() + liveOnly.size,
+            // Same correction as Record.accuracy: only words the engine actually
+            // judged are in the denominator, so a run of skipped words produces no
+            // figure instead of a zero.
             accuracy = if (totalJudged > 0) totalCorrect.toFloat() / totalJudged else null,
+            accuracyWithUnknown = if (withUnknown > 0) totalCorrect.toFloat() / withUnknown else null,
             currentStreak = currentStreak(allDays),
             longestStreak = longestRun(allDays),
             surahs = surahs,
@@ -548,9 +839,10 @@ object PracticeLog {
             recent = recent,
             hardest = hardest,
             recordsIngested = a.sessions,
-            wordsSeen = a.hard.values.sumOf { it[0].toLong() },
+            series = series,
         )
     }
+
 
     /** Sessions worth remembering is a judgement; the caller decides by opening one. */
     fun record(ctx: Context, name: String): Record? = recordByName(ctx, name)
@@ -692,5 +984,5 @@ object PracticeLog {
     }
 
     /** A session with nothing judged is not worth recording. */
-    fun isWorthRecording(s: Session): Boolean = s.judged >= 3
+    fun isWorthRecording(s: Session): Boolean = s.judged >= 1
 }
