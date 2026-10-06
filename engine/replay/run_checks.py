@@ -37,6 +37,9 @@ CHECKS = [
      "optimised DP is value-identical to the shipped one (5473 alignments)"),
     ("archive_parity", "none",
      "the session record is not pruned by the paint window or wiped by a handoff"),
+    ("evidence_window_parity", "none",
+     "each ayah is judged against its own audio, red means a real WRONG, and the "
+     "lock policy is unchanged"),
     ("ui_state_parity", "none",
      "every reader remember() keys the navigation values it reads"),
     ("word_alignment_parity", "none",

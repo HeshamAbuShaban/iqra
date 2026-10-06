@@ -430,6 +430,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (prev == null || (prev == WordStatus.CORRECT && v != WordStatus.CORRECT)) {
             sessionArchive[key] = v
         }
+        // First terminal verdict wins, so this counts each judged word once.
+        if (v == WordStatus.CORRECT || v == WordStatus.WRONG) {
+            if (prev != WordStatus.CORRECT && prev != WordStatus.WRONG) {
+                sessionTerminalCount++
+            }
+        }
     }
 
     /**
@@ -486,7 +492,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .append(",\"moves\":").append(sessionMoves)
             .append(",\"reversals\":").append(sessionReversals)
             .append(",\"evaluations\":").append(sessionEvaluations)
-            .append(",\"judgedWords\":").append(sessionArchive.size)
+            // Three counts, because one number cannot answer the question.
+            //
+            // `judgedWords` used to be the archive SIZE, so it counted SKIPPED
+            // and UNKNOWN as if they were verdicts. Over a 302 s recitation that
+            // reported 389 judged words while recording 0 CORRECT and 0 WRONG,
+            // and accuracy divided by words nobody attempted - a headline that
+            // looked like a measurement and was an artefact of the denominator.
+            .append(",\"evaluatedWords\":").append(sessionArchive.size)
+            .append(",\"judgedWords\":").append(sessionTerminalCount)
             .append(",\"unjudgeableAyahs\":").append(unjudgeableKeys.size)
             .append(",\"unjudgeableKeys\":[\"")
             .append(unjudgeableKeys.joinToString("\",\""))
@@ -757,6 +771,107 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var sliceStart = 0
     private var rebaseSlice = false
 
+    /** Consecutive frames the next surah's opening has looked like the target. */
+    private var handoffFrames = 0
+
+    /** CORRECT + WRONG words recorded this session. What "judged" has to mean. */
+    private var sessionTerminalCount = 0
+
+    /** The emission list from the last successful decode; the windows index into it. */
+    private var lastSymbols: List<String> = emptyList()
+
+    // ---- per-ayah evidence windows -------------------------------------
+    //
+    // Why this exists, measured on the device. The lock advances when the
+    // reciter is ADVANCE_COVERAGE (0.60) through the target ayah, so the last
+    // ~40% of every ayah is still being spoken when the lock leaves it. The
+    // old code judged words against `obs`, which is rebased to zero on every
+    // lock move, so the moment the lock left an ayah the audio that would judge
+    // its trailing words was gone - and behind-lock words were re-aligned
+    // against the NEXT ayah's audio instead. Result over a 302 s recitation of
+    // 2:59-2:76 that the lock followed correctly to 0.933 coverage:
+    // 365 SKIPPED, 24 UNKNOWN, 0 CORRECT, 0 WRONG, every word painted red.
+    //
+    // The lock itself is fine and stays exactly as it is. What was broken is
+    // WHICH AUDIO each ayah is judged against. So record where the lock
+    // ARRIVED at each ayah, and judge that ayah against
+    //
+    //     symbols[arrival(N) .. arrival(N+1))
+    //
+    // which by construction contains all of N's speech: the lock only leaves N
+    // once the reciter is 60% into N+1, so N is already finished inside that
+    // span. No policy change, so the corpus result still holds.
+    private val ayahArrival = LinkedHashMap<String, Int>()
+
+    /** Set by a lock move, consumed at the next poll where the slice rebases. */
+    private var pendingArrivalKey: String? = null
+
+    /** Bound on one window, so a long ayah cannot make the DP per-frame cost blow up. */
+    private fun ayahWindowLimit() = 480
+
+    /**
+     * The audio to judge [ayah] of [surah] against: everything the reciter said
+     * from the moment the lock arrived here until it arrived at the next ayah.
+     *
+     * Empty when the lock has not been here yet - ahead of the lock there is
+     * nothing earned, and that must read as no evidence rather than as a
+     * judgement against borrowed audio.
+     */
+    private fun ayahObs(symbols: List<String>, surah: Int, ayah: Int): List<String> {
+        val key = "$surah:$ayah"
+        val own = ayahArrival[key] ?: return emptyList()
+        // START AT THE PREVIOUS AYAH'S ARRIVAL, not at our own.
+        //
+        // The lock advances when the reciter is ADVANCE_COVERAGE (0.60) through
+        // the target, so on ARRIVING at ayah N you are already 60% of the way
+        // through it: N's first 60% is still in the PREVIOUS slice. Measured over
+        // 1,045 real words, judging N against [arrival(N), arrival(N+1)):
+        //
+        //     reached the CORRECT bar    5.3%
+        //     under the SKIPPED bar    89.5%   <- the red wall
+        //
+        // and against [arrival(N-1), arrival(N+1)), which does contain all of
+        // N's speech:
+        //
+        //     reached the CORRECT bar   93.4%
+        //
+        // So the window is three ayat wide: from when the lock arrived at N-1 to
+        // when it arrives at N+1. The overlap is deliberate - it is N-1's tail
+        // and N+1's opening, and the DP aligns N's expected units inside it.
+        val from = ayahArrival["$surah:${ayah - 1}"] ?: 0
+        val until = ayahArrival["$surah:${ayah + 1}"] ?: symbols.size
+        if (own < from) return emptyList()
+        val end = minOf(until, symbols.size)
+        if (end <= from) return emptyList()
+        val start = maxOf(from, end - ayahWindowLimit())
+        return symbols.subList(start, end)
+    }
+
+    /**
+     * How complete [ayah] of [surah] looks in its OWN window, or -1 if the lock
+     * has not been there. Used by the handoff so a surah change cannot happen
+     * while the surah being left is still being recited.
+     */
+    private fun lastAyahObsCoverage(surah: Int, ayah: Int): Float {
+        val symbols = lastSymbols ?: return -1f
+        val w = ayahObs(symbols, surah, ayah)
+        if (w.isEmpty()) return -1f
+        val exp = PhonemeMapper.expected(surah, ayah) ?: return -1f
+        return PhonemeMapper.align(w, exp).coverage
+    }
+
+    /** Drops windows the lock has left well behind, so neither map grows forever. */
+    private fun pruneAyahWindows(surah: Int, around: Int) {
+        val keepFrom = around - 3
+        val keepTo = around + 3
+        ayahArrival.keys.removeAll { k ->
+            val parts = k.split(":")
+            val s = parts.getOrNull(0)?.toIntOrNull()
+            val a = parts.getOrNull(1)?.toIntOrNull()
+            s != surah || a == null || a < keepFrom || a > keepTo
+        }
+    }
+
     // When the lock last moved, on the wall clock. Used ONLY by the pinned-lock
     // escape below; nothing else reads it.
     private var lastLockMoveMs = 0L
@@ -847,6 +962,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (kind == "jump") sessionJumps++
         _wpmFlow.value = wpmEma
         diag("lock $prev → $next")
+        // Consumed at the next slice rebase, which is where a symbol index exists.
+        pendingArrivalKey = "$activeSurah:$next"
         pendingNextAyah = null; pendingNextFrames = 0
         pendingBackAyah = null; pendingBackFrames = 0
         lastLockMoveMs = System.currentTimeMillis()
@@ -1522,8 +1639,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // ayat's history. Kills cross-ayah ghost matches.
             if (rebaseSlice) {
                 sliceStart = res.symbols.size
+                // The lock arrived somewhere in the interval since the last
+                // poll, and this is the first frame where that arrival has a
+                // symbol index. Same instant as the old slice rebase, so the
+                // window boundary cannot drift from the lock boundary.
+                pendingArrivalKey?.let { ayahArrival[it] = sliceStart }
+                pendingArrivalKey = null
                 rebaseSlice = false
             }
+            lastSymbols = res.symbols
             val base = sliceStart.coerceAtMost(res.symbols.size)
             val obs = res.symbols.drop(base)
             if (obs.isEmpty()) {
@@ -1560,14 +1684,32 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // to 2:286 before it will ever consider a surah change. So the
             // boundary is the last ayah that is present on the current page.
             val lastAyah = scopeEndAyah() ?: (verseWords.keys.maxOrNull() ?: lockedAyah)
+            if (lockedAyah < lastAyah) handoffFrames = 0
             if (lockedAyah >= lastAyah && activeSurah < 114) {
                 val next = PhonemeMapper.expected(activeSurah + 1, 1)
-                if (next != null) {
+                // The surah you are leaving has to be FINISHED first.
+                //
+                // Measured: `handoff -> s=2:1 coverage=0.63` fired 35 s into
+                // Al-Fatiha, while 1:7 was still being recited, because the only
+                // test was the next surah's opening against whatever was in the
+                // slice. Al-Fatiha's opening and Al-Baqarah's share units, so
+                // that coverage climbed on Fatiha audio. The reciter then had to
+                // fight the lock back ("it does not care, I fight nothing still,
+                // once I almost finish an ayah it might allow me").
+                //
+                // So require the surah being left to be judged complete in its
+                // OWN audio window, and require it to hold for a few
+                // consecutive frames - the same discipline the forward advance
+                // uses, because a single frame is not evidence of intent.
+                val hereDone = lastAyahObsCoverage(activeSurah, lastAyah)
+                if (next != null && hereDone >= HANDOFF_SURAH_DONE) {
                     val cov = PhonemeMapper.align(obs, next).coverage
-                    if (cov >= HANDOFF_COVERAGE) {
+                    if (cov >= HANDOFF_COVERAGE) handoffFrames++ else handoffFrames = 0
+                    if (handoffFrames >= HANDOFF_FRAMES) {
                         loadSurah(activeSurah + 1)
                         handoffPageShown = false
                         lockedAyah = 1
+                        pendingArrivalKey = "$activeSurah:1"
                         lastLockMoveMs = System.currentTimeMillis()
                         rebaseSlice = true
                         lastAdvanceAt = System.currentTimeMillis()
@@ -1842,6 +1984,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 val ws = verseWords[a] ?: emptyList()
                 if (ws.isEmpty()) continue
                 val pw = PhonemeMapper.expected(activeSurah, a) ?: continue
+                // THIS ayah's audio, not the lock's slice. Judging a
+                // behind-the-lock ayah against `obs` is what re-aligned its
+                // words against the next ayah's speech and produced SKIPPED
+                // for a word the reciter had said perfectly.
+                val aObs = ayahObs(res.symbols, activeSurah, a)
                 if (pw.wordCount != ws.size) {
                     // The recognition phoneme table segments an ayah into words
                     // on phoneme-pHRASE boundaries and the Mushaf on
@@ -1868,8 +2015,17 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     for (i in ws.indices) newMap[keyOf(ws[i])] = WordStatus.UNKNOWN
                     continue
                 }
-                val al = PhonemeMapper.align(obs, pw, obsProbs.toFloatArray())
+                // Empty window (ahead of the lock, or not yet visited): no
+                // evidence at all, which is UNKNOWN - not an accusation and
+                // not SKIPPED, which paints as a red strike.
+                val al = if (aObs.isEmpty()) null
+                    else PhonemeMapper.align(aObs, pw, null)
                 for (i in ws.indices) {
+                    if (al == null) {
+                        newMap[keyOf(ws[i])] = WordStatus.UNKNOWN
+                        archiveVerdict(keyOf(ws[i]), WordStatus.UNKNOWN)
+                        continue
+                    }
                     val key = keyOf(ws[i])
                     var s = al.statuses.getOrElse(i) { WordStatus.SKIPPED }
                     if (s == WordStatus.WRONG) {
@@ -1944,11 +2100,22 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     // one and a busy one is indistinguishable from a broken one.
                     archiveVerdict(key, s)
                 }
-                if (a == lockedAyah) {
-                    val tw = PhonemeMapper.timedWord(al.emitWord, obsTs.toFloatArray(), audioSec)
+                if (a == lockedAyah && al != null) {
+                    // The play-head must be derived from the SAME window the
+                    // verdict came from. Timing it against `obs` while the
+                    // verdict came from aObs indexes two different spans, which
+                    // is how the pointer drifts onto a neighbouring word.
+                    val aFrom = ayahArrival["$activeSurah:$a"]
+                    val tOff = if (aFrom != null) (aFrom - sliceStart) else 0
+                    val aTs = if (tOff >= 0 && obsTs.size > tOff)
+                        FloatArray(obsTs.size - tOff) { obsTs[tOff + it] }
+                    else FloatArray(0)
+                    val tw = if (aTs.isNotEmpty())
+                        PhonemeMapper.timedWord(al.emitWord, aTs, audioSec) else null
                     if (tw != null && tw < ws.size) timedKey = keyOf(ws[tw])
                 }
             }
+            pruneAyahWindows(activeSurah, lockedAyah)
             // Expire verdicts outside lock±2: stale paint can never freeze.
             // WRONG is never retained: recomputed live every frame.
             val keep = (lockedAyah - 2)..(lockedAyah + 2)
@@ -2222,6 +2389,17 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         private const val JUMP_COVERAGE = 0.92f
         private const val BACK_COVERAGE = 0.80f
         private const val HANDOFF_COVERAGE = 0.60f
+
+        /**
+         * How complete the surah being LEFT must look before a handoff is even
+         * considered. The next surah's opening is not sufficient evidence on its
+         * own: neighbouring surahs share units, so its coverage can climb on
+         * audio from the surah the reciter is still in.
+         */
+        private const val HANDOFF_SURAH_DONE = 0.85f
+
+        /** Frames the whole handoff case must hold, so one lucky frame cannot move it. */
+        private const val HANDOFF_FRAMES = 3
         // The lock only yields BACKWARDS when the ayah it holds is clearly not
         // what is being recited. Without this the lock ping-pongs mid-session.
         // It doubles as the long jump's "the lock is not being recited" test,

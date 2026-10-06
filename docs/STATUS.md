@@ -106,6 +106,46 @@ contract the session archive already uses. Ahead-of-lock words are still
 recomputed live. `archive_parity.py` guards it with a retention table and a
 wiring assertion, both mutation-tested.
 
+**2c. The evidence window was destroying every verdict. FIXED.**
+Reading the session records off the phone: a 302 s recitation of 2:59-2:76 that
+the lock followed correctly to **0.933 coverage** recorded **365 SKIPPED, 24
+UNKNOWN, 0 CORRECT, 0 WRONG**, and `SKIPPED` painted `wrongColor` with a
+strikethrough — so "no evidence" was drawn as "you got this wrong". That was the
+red masking, and it was never a wrong verdict.
+
+Words were judged against `obs`, the emission slice since the last lock move, and
+that slice is rebased on **every** move. So the audio that would judge an ayah's
+words was discarded the instant the lock left it, and behind-lock words were
+re-aligned against the *next* ayah's speech.
+
+Each ayah now gets its own window, and finding the right bounds took two attempts
+worth recording:
+
+| window | words reaching the CORRECT bar |
+|---|---|
+| `[arrival(N), arrival(N+1))` — the obvious one | **5.3%** |
+| `[arrival(N-1), arrival(N+1))` — the correct one | **93.4%** |
+
+The lock advances when the reciter is 60% through the *target*, so on arriving at
+N you are already 60% of the way through it: **N's first 60% is still in the
+previous slice.** The obvious window holds only N's tail, which is why the first
+version was still 89.5% SKIPPED.
+
+Measured with the shipped rule over 1,378 real words (Al-Dosari, 4 surahs):
+
+    CORRECT 94.8%   WRONG 3.8%   UNKNOWN 1.2%   SKIPPED 0.2%
+
+**The lock policy is unchanged**, so the 26 h corpus result still holds and no
+re-run is owed. `evidence_window_parity.py` guards the window, the palette, the
+handoff gate and the advance threshold; `word_window_yield.py` re-measures the
+yield on demand (too slow for CI).
+
+Also fixed here: `SKIPPED`/`UNKNOWN` no longer paint red at all; the handoff needs
+the surah being *left* to be 85% complete for 3 frames (it fired at `coverage=0.63`
+35 s into Al-Fatiha, which you then had to fight); and `judgedWords` now counts
+CORRECT+WRONG instead of the archive size, which is what made accuracy read 0.0%
+over a session nobody attempted.
+
 **3. 30.9% of audio time stalled** across the corpus. Mostly fixed (un-drained
 backlog, dead-band freeze); what remains is the ~38% of ayat that take twice as
 long to confirm. Not yet explained.

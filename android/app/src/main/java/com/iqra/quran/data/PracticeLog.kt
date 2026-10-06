@@ -144,9 +144,13 @@ object PracticeLog {
         /** "surah:ayah:word" -> [times missed, session startedAt]. Misses ONLY - see parseRecord. */
         val hardWords: Map<String, LongArray>,
     ) {
-        /** Every verdict the engine recorded, including ones that were never a test. */
+        /**
+         * Every word the engine recorded a status for, including SKIPPED and
+         * UNKNOWN - which are the ABSENCE of a verdict, not one. This is the
+         * population, not the score. `judgedWords` is the score.
+         */
         val recorded: Int
-            get() = if (judgedWords > 0) judgedWords else correct + wrong + skipped + unknown
+            get() = if (judgedWords > 0) correct + wrong else correct + wrong + skipped + unknown
 
         /**
          * Words the engine actually judged: a word came out, and the model said

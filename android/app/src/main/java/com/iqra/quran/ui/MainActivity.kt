@@ -1806,14 +1806,21 @@ private fun resolveWordStyle(
         HighlightLayer.WRONG -> WordStyle(wrongColor, wrongColor.copy(alpha = 0.25f), wrongColor, 0.40f, true, false)
         HighlightLayer.RECITATION_WORD -> WordStyle(accentColor, accentColor.copy(alpha = 0.40f), accentColor, 0.55f, true, false)
         HighlightLayer.SELECTION -> WordStyle(accentColor, accentColor.copy(alpha = 0.30f), accentColor, 0.30f, true, false)
+        // SKIPPED means "no evidence for this word" - the reciter has not got
+        // to it, or the audio window has moved past it. It is the ABSENCE of a
+        // judgement, and it used to paint wrongColor with a strikethrough: a
+        // red wall over ayah the reciter had not even started, which reads as
+        // "you got this wrong" and is the opposite of the truth. Red is now
+        // reserved for a real WRONG verdict, which resolveLayer only produces
+        // for WordStatus.WRONG. No evidence is simply muted.
         HighlightLayer.RECITATION_AYAH ->
-            if (st == WordStatus.SKIPPED) WordStyle(
-                onSurface.copy(alpha = 0.55f),
-                wrongColor.copy(alpha = 0.12f),
-                wrongColor,
-                0.15f,
+            if (st == WordStatus.SKIPPED || st == WordStatus.UNKNOWN) WordStyle(
+                onSurface.copy(alpha = 0.45f),
+                Color.Transparent,
+                Color.Transparent,
+                0f,
                 false,
-                true,
+                false,
             )
             else WordStyle(onSurface, accentColor.copy(alpha = 0.10f), accentColor, 0.10f, false, false)
         HighlightLayer.NONE,
