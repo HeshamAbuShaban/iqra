@@ -237,6 +237,31 @@ This did not fix the missing colouring, which is still the emission log freezing
 (`noWindowWords=11408`, `emptyWindows=922` in your session). But it means the next
 attempt at that fix can be *verified*, which the previous three could not.
 
+**2f. The emission log froze. FIXED, and proved from the user's own recording.**
+The screen showed no colouring, no grey, nothing. Found and confirmed with the
+device's own poll sequence rather than a model of it:
+
+```
+613 polls, 28 stream resets
+BEFORE   202 symbols logged, 529 of 613 polls skipped (86%)
+AFTER  1,660 symbols logged,   0 skipped
+```
+
+`emissionHighWater` was one global mark, but `getResult()` returns tokens **since
+the last `reset()`** — so index 5 means "the 6th token of THIS stream", and a mark
+that survives a reset compares indices from two streams, always against the
+longer. The freeze began at the first reset following a poll that reached 26
+symbols; from then on the log never grew, every ayah got a shorter window than
+the last, and arrivals eventually ran past the end of the log entirely. That is
+`noWindowWords=11408`, `emptyWindows=922`.
+
+The high-water is now cleared on a stream reset, detected by the list being
+shorter than the mark or the cursor going backwards. `emission_log_replay.py`
+gates this over a committed fixture of the real recording — the check this whole
+failure class had no coverage for, because every other check reads token dumps
+and dumps contain no stream resets. That gap is why two fixes passed offline and
+left the screen empty. Gate is now **17 checks**.
+
 **3. 30.9% of audio time stalled** across the corpus. Mostly fixed (un-drained
 backlog, dead-band freeze); what remains is the ~38% of ayat that take twice as
 long to confirm. Not yet explained.

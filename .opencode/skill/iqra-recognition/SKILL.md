@@ -29,6 +29,8 @@ result depends on how a human actually recites, say so.
 | `docs/LESSONS.md` | Before changing any threshold, metric or gate. 13 lessons, each earned. |
 | `docs/TAJWEED_AND_MEMORISATION.md` | Before anything touching expected phonemes. What the engine cannot judge, and why. |
 | `docs/HARNESS_FIDELITY_AUDIT.md` | Before trusting any offline test result. 22 harness-vs-device divergences. |
+| `engine/replay/emission_log_replay.py` | When verdicts are missing on the device. Replays a real session's polls through the log rule. |
+| `engine/replay/fixtures/` | Real device recordings kept as gate input. Prefer these to any simulation. |
 | `docs/DEFECTS_AND_METHOD.md` | When a symptom looks familiar. Catalogue with the instrument that caught each. |
 | `docs/ASK_mic_bands.md` | Only for mic spectrum work; it explains the one-method ask. |
 | `docs/REVERSE_ENGINEERING.md` | Only for Tarteel's architecture and its network endpoints. |
@@ -63,6 +65,35 @@ To add or trust a check:
 
 Run it: `engine/.venv-replay/bin/python engine/replay/run_checks.py`.
 Add `--only <name>` for one check. Some need token dumps under `engine/corpus/out/`.
+
+**17 checks.** A check that cannot fail measures nothing — see the failure
+section below before trusting any of them.
+
+## The failure that cost the most time
+
+**sherpa's `getResult()` returns tokens since the last `reset()` — not cumulative
+since the stream started.** Anything that stores an index into that list must
+survive a reset, and `resetAudioPipeline()` runs on **every lock move and every
+starvation recovery**, roughly 20–30 times per session.
+
+This presented as an app that simply produced no verdicts: 0 CORRECT, 0 WRONG,
+every word UNKNOWN, which renders as nothing at all. It was found only by
+replaying the **user's own recorded poll sequence** — the phone writes
+`(symbols, lock)` per poll, so the failure was reproducible from a file. Measured
+on that recording: 202 symbols logged, 529 of 613 polls skipped.
+
+Two fixes failed this way before the cause was isolated, because every harness
+check read *token dumps*, which contain no stream resets at all. If a bug can
+only happen on the device, the check has to be fed a device recording.
+
+Rules that follow:
+
+- **A per-stream index is not a session index.** A high-water mark or cursor that
+  survives a reset will compare against the longer of two streams.
+- When a counter's value is a *position*, ask what resets it. If nothing does, it
+  is wrong.
+- Prefer `run_checks.py --only <name>` against a **committed fixture of real
+  input** over any simulation of it. `engine/replay/fixtures/` exists for this.
 
 ## The five rules that keep recurring
 
