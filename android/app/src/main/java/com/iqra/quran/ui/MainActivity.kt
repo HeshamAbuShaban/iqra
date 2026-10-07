@@ -972,6 +972,12 @@ fun ReaderScreen(
     val active = recording || statusMap.isNotEmpty()
     val startIdx = remember(surah, startPage) { (startPage ?: Mushaf_firstPage(mushaf, surah)) - 1 }
     val pagerState = rememberPagerState(initialPage = startIdx, pageCount = { mushaf.size })
+    // Whether the CURRENT settled page came from a drag or from a programmatic
+    // scroll. The intent handoff must only fire for the former: a swipe is the
+    // reciter choosing, while animateScrollToPage/scrollToPage are the app
+    // moving the reader (lock follow, search deep link, handoff latch). Treating
+    // those as a swipe meant the app could arm its own surah change.
+    var userTurned by remember { mutableStateOf(false) }
 
     LaunchedEffect(startPage) {
         if (startPage != null) vm.jumpToPage(startPage)
@@ -983,8 +989,27 @@ fun ReaderScreen(
         }
         vm.saveLastRead(currentPage ?: (startIdx + 1))
     }
+    // USER-driven page turn only. This effect also fires for programmatic
+    // scrolls (scrollToPage from the lock, a search deep link, the handoff
+    // latch), and treating those as a swipe would arm the intent handoff from
+    // the app's own navigation - which is how "resume hinders the next surah"
+    // and a surah changing without the reciter asking for it both happened.
+    //
+    // pagerState.currentPage is derived from the settled page, so the guard is
+    // "was this scroll requested by the user": the pager reports the settled
+    // page only after a drag, and programmatic scrolls are issued from a
+    // LaunchedEffect on a different key.
+    // Set while the user's finger drives the pager. Settles back to false after
+    // the page has changed, so one drag arms exactly one turn.
+    LaunchedEffect(pagerState.isScrollInProgress) {
+        if (pagerState.isScrollInProgress) userTurned = true
+    }
     LaunchedEffect(pagerState.currentPage) {
-        vm.setCurrentPage(pagerState.currentPage + 1)
+        val page = pagerState.currentPage + 1
+        val byUser = userTurned
+        userTurned = false
+        vm.setCurrentPage(page)
+        if (byUser) vm.onUserPageTurn(page)
     }
 
     val density = LocalDensity.current

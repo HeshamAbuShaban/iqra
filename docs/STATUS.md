@@ -146,6 +146,47 @@ the surah being *left* to be 85% complete for 3 frames (it fired at `coverage=0.
 CORRECT+WRONG instead of the archive size, which is what made accuracy read 0.0%
 over a session nobody attempted.
 
+**2d. My own fix made every word UNKNOWN. FIXED — and this is the second time.**
+The 6,205-ayat table landed and the red went away. It went away because every
+word became **UNKNOWN**, not because judging worked. Six sessions recorded
+`0 CORRECT, 0 WRONG, 0 SKIPPED, 29–333 UNKNOWN` and the report showed no data.
+
+`sherpa-onnx`'s `rec.getResult()` returns the tokens emitted **since the last
+`reset()`**, and `resetAudioPipeline()` calls `resetStream()` on **every lock
+move** — 19 times in one session, 29 in another. So `res.symbols` restarts near
+zero about once per ayah, the arrival indices from the previous round pointed into
+a list that had been discarded, every window computed `end <= from`, and empty
+reads as UNKNOWN. That is also why Al-Baqarah never started: the handoff needs the
+surah being *left* judged complete in its own window, and that window was
+permanently empty.
+
+The harness never caught it because it accumulated symbols forever and so never
+simulated the reset at all — 94.8% offline, 0% on the phone.
+
+Fixed with a **session-scoped emission log** (bounded at 4000, trimmed O(n) once,
+base advanced with the trim) that arrivals index in absolute terms. One subtlety
+cost a second round: `emissionBase + sliceStart` looks absolute but is not,
+because `sliceStart` is per-stream and restarts near zero. The end of the log,
+`emissionBase + emissionLog.size`, is the only true position. With the wrong form
+measured, CORRECT collapses to **3.6%**; with the right form:
+
+    CORRECT 94.8%   WRONG 3.8%   UNKNOWN 1.2%   SKIPPED 0.2%
+    measured with stream resets ON, which is what the device does
+
+`word_window_yield.py` now models the reset and **fails** if the yield collapses,
+so this cannot be invisible again. `evidence_window_parity.py` grew to pin the
+log's append/read/clear/trim, the absolute arrival form, and the null-vs-empty
+distinction; `handoff_boundary.py` grew to pin the outgoing-surah gate. Between
+them, 19 mutations were tried and 5 of the checks passed vacuously at first —
+each was rewritten to assert structure rather than a substring.
+
+Also this round: `judged` no longer counts SKIPPED (it made a session that tested
+nothing report a large "words judged"); a stale `pendingAnchor` can no longer
+block the next surah; the handoff can be armed by an explicit page turn, and only
+by a user drag — not by the app's own scrolls. And `noWindowWords` is now in
+every session record, so a collapsed window is visible in data rather than
+invisible in the UI.
+
 **3. 30.9% of audio time stalled** across the corpus. Mostly fixed (un-drained
 backlog, dead-band freeze); what remains is the ~38% of ayat that take twice as
 long to confirm. Not yet explained.

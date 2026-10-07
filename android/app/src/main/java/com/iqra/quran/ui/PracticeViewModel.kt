@@ -501,6 +501,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // looked like a measurement and was an artefact of the denominator.
             .append(",\"evaluatedWords\":").append(sessionArchive.size)
             .append(",\"judgedWords\":").append(sessionTerminalCount)
+            .append(",\"noWindowWords\":").append(sessionNoWindowWords)
+            .append(",\"emptyWindows\":").append(sessionEmptyWindows)
             .append(",\"unjudgeableAyahs\":").append(unjudgeableKeys.size)
             .append(",\"unjudgeableKeys\":[\"")
             .append(unjudgeableKeys.joinToString("\",\""))
@@ -777,8 +779,89 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** CORRECT + WRONG words recorded this session. What "judged" has to mean. */
     private var sessionTerminalCount = 0
 
-    /** The emission list from the last successful decode; the windows index into it. */
-    private var lastSymbols: List<String> = emptyList()
+    /**
+     * Words abandoned because their window was empty although the lock had been
+     * there. Non-zero means the stale-index failure is back, and every one of
+     * these words reaches the reader as UNKNOWN - invisible, which is why it
+     * needs its own counter rather than being inferred from the totals.
+     */
+    private var sessionNoWindowWords = 0
+
+    /** How many times that happened, so a repeated trigger is distinguishable. */
+    private var sessionEmptyWindows = 0
+
+    // ---- session-scoped emission log ------------------------------------
+    //
+    // THE BUG THAT MADE EVERY WORD UNKNOWN, found on the device.
+    //
+    // `sherpa-onnx`'s `rec.getResult()` returns the tokens emitted SINCE THE
+    // LAST `reset()`. `resetAudioPipeline()` calls `resetStream()` on EVERY lock
+    // move - 19 times in one recorded session, 29 in another - so
+    // `res.symbols` restarts near zero roughly once per ayah.
+    //
+    // The per-ayah window indexed `res.symbols` and stored absolute arrival
+    // indices. After the first reset those indices pointed into a list that had
+    // been discarded, so `end <= from` and `ayahObs` returned EMPTY for every
+    // ayah. The paint loop correctly reads an empty window as "no evidence", so
+    // every word became UNKNOWN. Six sessions recorded:
+    //
+    //     0 CORRECT, 0 WRONG, 0 SKIPPED, 29-333 UNKNOWN
+    //
+    // and the report showed no data at all. Reproduced offline: CORRECT yield
+    // collapses from 29.5% to 0.0% when symbols reset on lock moves.
+    //
+    // The stream still has to be reset on every lock move - that is what keeps
+    // the lock responsive, and it is not the bug. The bug was indexing a
+    // per-stream list with session-scoped indices. So keep the session's own
+    // log, append only what each poll NEWLY produced, and let the windows index
+    // that. Stream resets stop mattering, because a reset no longer changes
+    // where anything lives.
+    private val emissionLog = ArrayList<String>()
+
+    /** Index in [emissionLog] of the first symbol, so arrivals are absolute. */
+    private var emissionBase = 0
+
+    /** Highest poll index already appended, so restarts never re-append. */
+    private var emissionHighWater = -1
+
+    /**
+     * Append tokens this poll produced for the first time.
+     *
+     * `since` is the index within the CURRENT stream, so it restarts at zero
+     * whenever the stream was reset. Anything at or below the high-water mark is
+     * already in the log and is skipped, which is what makes a stream reset
+     * harmless.
+     */
+    private fun appendEmissions(symbols: List<String>, since: Int) {
+        if (since < emissionHighWater) return          // restart: already logged
+        for (i in (emissionHighWater + 1)..<symbols.size) {
+            emissionLog.add(symbols[i])
+        }
+        emissionHighWater = symbols.size - 1
+        // Bounded: a long session must not grow without limit. Trimming shifts
+        // the base, and arrivals are stored as ABSOLUTE indices, so a stale
+        // arrival below the base is clamped by ayahObs rather than silently
+        // pointing at the wrong audio.
+        val cap = EMISSION_LOG_CAP
+        if (emissionLog.size > cap) {
+            val drop = emissionLog.size - cap
+            // removeAt(0) in a loop is O(n) PER ELEMENT, so trimming a 4000-entry
+            // log by 100 entries copies 4000 references 100 times - on the audio
+            // path, every poll, on the main thread. A subList view plus an
+            // explicit base advance does it once.
+            val kept = emissionLog.subList(drop, emissionLog.size)
+            emissionLog.clear()
+            emissionLog.addAll(kept)
+            emissionBase += drop
+        }
+    }
+
+    private fun clearEmissionLog() {
+        emissionLog.clear()
+        emissionBase = 0
+        emissionHighWater = -1
+        ayahArrival.clear()
+    }
 
     // ---- per-ayah evidence windows -------------------------------------
     //
@@ -793,33 +876,42 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     // 365 SKIPPED, 24 UNKNOWN, 0 CORRECT, 0 WRONG, every word painted red.
     //
     // The lock itself is fine and stays exactly as it is. What was broken is
-    // WHICH AUDIO each ayah is judged against. So record where the lock
-    // ARRIVED at each ayah, and judge that ayah against
-    //
-    //     symbols[arrival(N) .. arrival(N+1))
-    //
-    // which by construction contains all of N's speech: the lock only leaves N
-    // once the reciter is 60% into N+1, so N is already finished inside that
-    // span. No policy change, so the corpus result still holds.
+    // WHICH AUDIO each ayah is judged against.
     private val ayahArrival = LinkedHashMap<String, Int>()
 
     /** Set by a lock move, consumed at the next poll where the slice rebases. */
     private var pendingArrivalKey: String? = null
 
+    /**
+     * Page-turn scenario 3: an explicit swipe onto a page that opens a NEW
+     * surah is a statement of intent, so the lock follows it without demanding
+     * that the surah being left be finished.
+     *
+     * Zero means "no intent pending". Set by [onUserPageTurn], consumed by the
+     * handoff gate. Scenario 1 (mid-surah swipe) never sets it, so navigating
+     * within a surah still cannot move the lock.
+     */
+    private var intentHandoffAyah = 0
+
+    /** Last diag's intent flag, so the gate logs only when the reason changes. */
+    private var intentWasHonoured = false
+
     /** Bound on one window, so a long ayah cannot make the DP per-frame cost blow up. */
     private fun ayahWindowLimit() = 480
 
     /**
-     * The audio to judge [ayah] of [surah] against: everything the reciter said
-     * from the moment the lock arrived here until it arrived at the next ayah.
+     * The audio to judge [ayah] of [surah] against.
      *
-     * Empty when the lock has not been here yet - ahead of the lock there is
-     * nothing earned, and that must read as no evidence rather than as a
-     * judgement against borrowed audio.
+     * Returns NULL - not an empty list - only when the lock has never been
+     * there, because "never visited" and "visited but the window degenerated"
+     * are different claims and the second one is a bug. An empty window used to
+     * be the silent form of that bug: it read as UNKNOWN on every word, so the
+     * failure looked like the reciter was silent rather than like the index was
+     * stale.
      */
-    private fun ayahObs(symbols: List<String>, surah: Int, ayah: Int): List<String> {
+    private fun ayahObs(surah: Int, ayah: Int): List<String>? {
         val key = "$surah:$ayah"
-        val own = ayahArrival[key] ?: return emptyList()
+        ayahArrival[key] ?: return null            // never visited
         // START AT THE PREVIOUS AYAH'S ARRIVAL, not at our own.
         //
         // The lock advances when the reciter is ADVANCE_COVERAGE (0.60) through
@@ -838,13 +930,22 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // So the window is three ayat wide: from when the lock arrived at N-1 to
         // when it arrives at N+1. The overlap is deliberate - it is N-1's tail
         // and N+1's opening, and the DP aligns N's expected units inside it.
-        val from = ayahArrival["$surah:${ayah - 1}"] ?: 0
-        val until = ayahArrival["$surah:${ayah + 1}"] ?: symbols.size
-        if (own < from) return emptyList()
-        val end = minOf(until, symbols.size)
-        if (end <= from) return emptyList()
-        val start = maxOf(from, end - ayahWindowLimit())
-        return symbols.subList(start, end)
+        //
+        // Arrivals are ABSOLUTE emissionLog indices, so trim them into the
+        // surviving range. Clamping is what keeps a long session honest once the
+        // log has rolled: without it, an arrival below the base yields
+        // end <= from and the window collapses to nothing.
+        val lo = maxOf(ayahArrival["$surah:${ayah - 1}"] ?: 0, emissionBase)
+        val hi = minOf(
+            ayahArrival["$surah:${ayah + 1}"] ?: (emissionBase + emissionLog.size),
+            emissionBase + emissionLog.size,
+        )
+        if (hi <= lo) return emptyList()            // clamped to nothing: genuinely no audio yet
+        val from = maxOf(lo, hi - ayahWindowLimit())
+        val a = from - emissionBase
+        val b = hi - emissionBase
+        if (a < 0 || b > emissionLog.size || b <= a) return emptyList()
+        return emissionLog.subList(a, b)
     }
 
     /**
@@ -853,14 +954,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * while the surah being left is still being recited.
      */
     private fun lastAyahObsCoverage(surah: Int, ayah: Int): Float {
-        val symbols = lastSymbols ?: return -1f
-        val w = ayahObs(symbols, surah, ayah)
+        val w = ayahObs(surah, ayah) ?: return -1f
         if (w.isEmpty()) return -1f
         val exp = PhonemeMapper.expected(surah, ayah) ?: return -1f
         return PhonemeMapper.align(w, exp).coverage
     }
 
-    /** Drops windows the lock has left well behind, so neither map grows forever. */
+    /** Drops windows the lock has left well behind, so the map cannot grow forever. */
     private fun pruneAyahWindows(surah: Int, around: Int) {
         val keepFrom = around - 3
         val keepTo = around + 3
@@ -1061,6 +1161,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         sessionBackMoves = 0
         sessionJumps = 0
         lastMoveDir = 0
+        // Counted, not just cleared: a session that reports judged words must
+        // not have inherited the previous session's total.
+        sessionTerminalCount = 0
+        // Counts of the two failure modes this round exists for, so a session
+        // record can distinguish them without needing the phone back:
+        //   noWindowWords - words whose window was empty although the lock had
+        //     been there. This is the stale-index bug; it should be ZERO.
+        //   emptyWindows - how often it happened.
+        sessionNoWindowWords = 0
+        sessionEmptyWindows = 0
+        // The handoff streak is per surah change. Carried across sessions it let
+        // the FIRST qualifying frame after a restart complete a handoff, which
+        // is how a surah could change without the surah being finished.
+        handoffFrames = 0
+        intentHandoffAyah = 0
     }
 
     /**
@@ -1305,6 +1420,49 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Page-turn scenario 1 and 3, decided HERE so the three cases stay legible
+     * in one place instead of being spread across the pager and the lock.
+     *
+     * - mid-surah swipe, still reciting: **pure navigation.** The lock does not
+     *   move and no intent is recorded. If the lock's ayah ends up off-screen
+     *   the reader can scroll back to it; that is a rendering concern and must
+     *   not be solved by moving the lock, which would teleport it off a word
+     *   mid-recitation.
+     * - a swipe onto a page that opens the next surah: **intent.** Recorded,
+     *   and the handoff gate honours it. Without this, deliberately choosing
+     *   the next surah meant finishing the current one first, which is what you
+     *   described as having to fight.
+     */
+    fun onUserPageTurn(toPage: Int) {
+        if (!sessionActive) return
+        val pages = _mushaf.value ?: return
+        if (toPage < 1 || toPage > pages.size) return
+        val surahsOnPage = pages[toPage - 1].lines
+            .filter { it.type == "text" }
+            .flatMap { it.words ?: emptyList() }
+            .map { it.surah }
+            .distinct()
+        val opensNewSurah = surahsOnPage.any { it > activeSurah }
+        if (opensNewSurah) {
+            intentHandoffAyah = activeSurah + 1
+            diag("page turn onto s=$opensNewSurah: intent handoff armed")
+        } else {
+            diag("page turn within s=$activeSurah: navigation only, lock untouched")
+        }
+    }
+
+    /** The lock's ayah when it is not on the page being viewed, for scroll-back. */
+    fun lockOffCurrentPage(): Boolean {
+        val pages = _mushaf.value ?: return false
+        if (pageNumber < 1 || pageNumber > pages.size) return false
+        val onPage = pages[pageNumber - 1].lines
+            .filter { it.type == "text" }
+            .flatMap { it.words ?: emptyList() }
+            .any { it.surah == activeSurah && it.verse == lockedAyah }
+        return !onPage
+    }
+
     fun toggleHide() { _hideVerse.value = !_hideVerse.value }
 
     /** Pager bookkeeping only: records which page the user is viewing.
@@ -1411,6 +1569,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         sessionEvaluations = 0
         unjudgeableKeys.clear()
         sessionArchive.clear()
+        // Arrivals and the emission log are SESSION state: an arrival index from
+        // the previous session points into a log that no longer holds those
+        // symbols, which is the same stale-index failure that made every word
+        // UNKNOWN. Cleared together, before the first poll of the new session.
+        clearEmissionLog()
         handoffPageShown = false
         sessionActive = true
         diag("session starts p=$page → s=$s:${lockedAyah}")
@@ -1643,11 +1806,26 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 // poll, and this is the first frame where that arrival has a
                 // symbol index. Same instant as the old slice rebase, so the
                 // window boundary cannot drift from the lock boundary.
-                pendingArrivalKey?.let { ayahArrival[it] = sliceStart }
+                pendingArrivalKey?.let {
+                    // ABSOLUTE index in the SESSION log. Deliberately NOT
+                    // `emissionBase + sliceStart`: sliceStart is a per-stream
+                    // cursor that restarts near zero whenever the stream is reset,
+                    // so adding it to the trim offset does not give a position in
+                    // the log. The end of the log is the only true absolute
+                    // position at this instant, and measuring it that way is what
+                    // makes the yield survive the resets - reproduced in
+                    // word_window_yield.py, where the wrong form collapsed CORRECT
+                    // from 94.8% to 3.6%.
+                    ayahArrival[it] = emissionBase + emissionLog.size
+                }
                 pendingArrivalKey = null
                 rebaseSlice = false
             }
-            lastSymbols = res.symbols
+            // Everything this stream has produced, logged ONCE against the
+            // session log. `base` is the per-stream cursor, so a stream reset
+            // (lower `base`) is recognised by appendEmissions and skipped rather
+            // than re-appended or lost.
+            appendEmissions(res.symbols, sliceStart.coerceAtMost(res.symbols.size))
             val base = sliceStart.coerceAtMost(res.symbols.size)
             val obs = res.symbols.drop(base)
             if (obs.isEmpty()) {
@@ -1702,10 +1880,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 // consecutive frames - the same discipline the forward advance
                 // uses, because a single frame is not evidence of intent.
                 val hereDone = lastAyahObsCoverage(activeSurah, lastAyah)
-                if (next != null && hereDone >= HANDOFF_SURAH_DONE) {
+                // Scenario 3: an explicit swipe onto the next surah. The reciter
+                // has said "I am moving on", so requiring the surah being left to
+                // be finished is the wrong gate - it is what made choosing a new
+                // surah feel like having to earn it first. Intent needs only the
+                // next surah's opening to be heard, over the same frame streak.
+                val byIntent = intentHandoffAyah == activeSurah + 1
+                val surahDone = byIntent || hereDone >= HANDOFF_SURAH_DONE
+                // Logged every time the boundary is reached, so a session record
+                // can say WHY a handoff did or did not happen.
+                if (handoffFrames == 0 || byIntent != intentWasHonoured) {
+                    diag("handoff gate: hereDone=${"%.2f".format(hereDone)} " +
+                        "intent=$byIntent streak=$handoffFrames")
+                }
+                intentWasHonoured = byIntent
+                if (next != null && surahDone) {
                     val cov = PhonemeMapper.align(obs, next).coverage
                     if (cov >= HANDOFF_COVERAGE) handoffFrames++ else handoffFrames = 0
-                    if (handoffFrames >= HANDOFF_FRAMES) {
+                    if (handoffFrames >= if (byIntent) INTENT_FRAMES else HANDOFF_FRAMES) {
                         loadSurah(activeSurah + 1)
                         handoffPageShown = false
                         lockedAyah = 1
@@ -1720,9 +1912,23 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         // qualifying frame advanced the lock.
                         pendingNextAyah = null; pendingNextFrames = 0
                         pendingBackAyah = null; pendingBackFrames = 0
+                        // Arrivals belong to the surah being LEFT; the new surah
+                        // starts a fresh window rather than inheriting indices
+                        // that were recorded against a different ayah sequence.
+                        ayahArrival.clear()
+                        intentHandoffAyah = 0
+                        handoffFrames = 0
+                        // A pending anchor names an ayah in the surah being
+                        // LEFT. After loadSurah it would be applied to the new
+                        // surah, so finishing Al-Fatiha could pin the entry point
+                        // of Al-Baqarah and make the second surah awkward to
+                        // reach. Reported as "if I finished another surah,
+                        // resuming hinders the second one".
+                        pendingAnchor = null
                         resetAudioPipeline()
                         refreshWindow()
-                        diag("handoff → s=${activeSurah}:1 coverage=${"%.2f".format(cov)}")
+                        diag("handoff → s=${activeSurah}:1 coverage=${"%.2f".format(cov)} " +
+                            (if (byIntent) "via=page-turn-intent" else "via=evidence"))
                         // Second early return around the decision block, and
                         // the one that changes the world. surah and lock in
                         // this row are already the NEW surah's, and nextCov
@@ -1988,7 +2194,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 // behind-the-lock ayah against `obs` is what re-aligned its
                 // words against the next ayah's speech and produced SKIPPED
                 // for a word the reciter had said perfectly.
-                val aObs = ayahObs(res.symbols, activeSurah, a)
+                val aObs = ayahObs(activeSurah, a)
                 if (pw.wordCount != ws.size) {
                     // The recognition phoneme table segments an ayah into words
                     // on phoneme-pHRASE boundaries and the Mushaf on
@@ -2018,8 +2224,17 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 // Empty window (ahead of the lock, or not yet visited): no
                 // evidence at all, which is UNKNOWN - not an accusation and
                 // not SKIPPED, which paints as a red strike.
-                val al = if (aObs.isEmpty()) null
+                // null means never visited; empty means visited with no audio
+                // yet. Both are "no verdict", but only the second can be a bug,
+                // so they are kept apart deliberately.
+                val al = if (aObs == null || aObs.isEmpty()) null
                     else PhonemeMapper.align(aObs, pw, null)
+                if (al == null && aObs != null) {
+                    // Visited, yet no usable audio. That is not "the reciter was
+                    // quiet" - it is an index that no longer points at anything.
+                    sessionEmptyWindows++
+                    sessionNoWindowWords += ws.size
+                }
                 for (i in ws.indices) {
                     if (al == null) {
                         newMap[keyOf(ws[i])] = WordStatus.UNKNOWN
@@ -2105,8 +2320,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     // verdict came from. Timing it against `obs` while the
                     // verdict came from aObs indexes two different spans, which
                     // is how the pointer drifts onto a neighbouring word.
+                    // Arrivals are absolute log indices; the timestamp array is
+                    // indexed from the current stream's start, so convert.
                     val aFrom = ayahArrival["$activeSurah:$a"]
-                    val tOff = if (aFrom != null) (aFrom - sliceStart) else 0
+                    val tOff = if (aFrom != null) (aFrom - emissionBase - sliceStart) else 0
                     val aTs = if (tOff >= 0 && obsTs.size > tOff)
                         FloatArray(obsTs.size - tOff) { obsTs[tOff + it] }
                     else FloatArray(0)
@@ -2328,6 +2545,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         /** Rolling context replayed after a lock move: 1.5s at 16kHz. */
         private const val TAIL_SAMPLES = 24000
+
+        /**
+         * Session emission log capacity, in symbols.
+         *
+         * A surah's worth of symbols is a few hundred; this holds several surahs
+         * of history, which is far more than the lock+/-3 window the paint loop
+         * ever asks for. Bounded so a long session cannot grow without limit.
+         */
+        private const val EMISSION_LOG_CAP = 4000
         /** Consecutive zero-token recoveries before we stop and report failure
          *  rather than looping a recovery that cannot succeed. */
         private const val MAX_STARVATION_RECOVERIES = 3
@@ -2400,6 +2626,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
         /** Frames the whole handoff case must hold, so one lucky frame cannot move it. */
         private const val HANDOFF_FRAMES = 3
+
+        /**
+         * Frames an INTENT handoff needs, versus HANDOFF_FRAMES for the
+         * evidence gate. Lower because the user already stated the intent by
+         * swiping: the remaining question is only whether they have begun, and
+         * one frame of the next surah's opening is a real signal. Still not one
+         * frame, because a single frame of noise can score coverage.
+         */
+        private const val INTENT_FRAMES = 2
         // The lock only yields BACKWARDS when the ayah it holds is clearly not
         // what is being recited. Without this the lock ping-pongs mid-session.
         // It doubles as the long jump's "the lock is not being recited" test,

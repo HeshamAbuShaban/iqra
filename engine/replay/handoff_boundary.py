@@ -124,7 +124,6 @@ def main() -> int:
         print(f"      handoff {m.from_surah}:{m.from_ayah} -> "
               f"{m.to_surah}:{m.to_ayah} at t={m.t:.1f}s cov={m.coverage:.3f}")
 
-    failures = []
     if not handoffs(with_open):
         failures.append("handoff never fired even with the next surah's opening "
                         "recited - the branch is still unreachable")
@@ -151,6 +150,58 @@ def main() -> int:
                 f"{len(after)} forward move(s) within 0.75 s of the handoff - a "
                 "pending counter survived the surah change, which is exactly the "
                 "bug the counter reset in the handoff branch prevents")
+
+    failures = []
+
+    # ---- the surah-being-left gate, which is what the device never had
+    #
+    # The policy above proves a handoff CAN fire when the next surah's opening is
+    # recited. It says nothing about the gate added after the phone reported
+    # `handoff -> s=2:1 coverage=0.63` firing 35 s into Al-Fatiha: that gate
+    # requires the surah being LEFT to be judged complete in its own window. So
+    # it gets the same treatment as the page-advance half - the constant, the
+    # condition that uses it, and the intent escape are each asserted, because a
+    # gate whose constant exists but is unused passes a substring check while the
+    # rule is dead.
+    src0 = VM.read_text(encoding="utf-8")
+    src0_nc = re.sub(r"//[^\n]*", "", src0)
+    print()
+    print("  outgoing-surah gate:")
+    gates = {
+        "HANDOFF_SURAH_DONE is defined":
+            re.search(r"HANDOFF_SURAH_DONE = [0-9.]+f", src0_nc) is not None,
+        "the condition combines completeness with intent":
+            "val surahDone = byIntent || hereDone >= HANDOFF_SURAH_DONE" in src0_nc,
+        "completeness is measured in the surah's OWN window":
+            "lastAyahObsCoverage(activeSurah, lastAyah)" in src0_nc,
+        "intent only applies to the NEXT surah":
+            re.search(r"val byIntent = intentHandoffAyah == activeSurah \+ 1", src0_nc) is not None,
+        "intent needs a frame streak, not one frame":
+            "handoffFrames >= if (byIntent) INTENT_FRAMES else HANDOFF_FRAMES" in src0_nc,
+        "the handoff clears arrivals for the new surah":
+            "ayahArrival.clear()" in src0_nc.split("if (next != null && surahDone)")[-1][:2600],
+        "the handoff clears the stale anchor":
+            "pendingAnchor = null" in src0_nc.split("if (next != null && surahDone)")[-1][:2600],
+        "a user page turn can arm intent":
+            "fun onUserPageTurn(" in src0_nc,
+    }
+    for name, ok in gates.items():
+        print(f"      {name}: {'yes' if ok else 'NO'}")
+        if not ok:
+            failures.append(
+                f"PracticeViewModel: the outgoing-surah gate is incomplete - "
+                f"{name}. Without it a surah change can fire while the surah "
+                "being left is still being recited, which is what the reciter "
+                "had to fight.")
+
+    # And the intent path must be reachable ONLY from a user turn.
+    ma = ROOT / "android/app/src/main/java/com/iqra/quran/ui/MainActivity.kt"
+    ma_nc = re.sub(r"//[^\n]*", "", ma.read_text(encoding="utf-8"))
+    if "if (byUser) vm.onUserPageTurn(page)" not in ma_nc:
+        failures.append(
+            "MainActivity: onUserPageTurn is not gated on a user drag, so the "
+            "app's own scrolls arm the intent handoff and a surah can change "
+            "without the reciter asking.")
 
     # ---- presentation half
     src = VM.read_text(encoding="utf-8")

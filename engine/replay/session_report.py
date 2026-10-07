@@ -20,6 +20,7 @@ Usage:
 """
 import argparse
 import json
+from collections import Counter
 import re
 import subprocess
 import sys
@@ -110,6 +111,30 @@ def main() -> int:
     print(f"  counters: fed={c.get('fedSess')} gateClosed={c.get('gateClosed')} "
           f"moves={c.get('moves')} reversals={c.get('reversals')} "
           f"evaluations={c.get('evaluations')}")
+
+    # The two numbers that say whether this build is working at all, and the
+    # per-word tally that says what it saw.
+    words = rec.get("words", [])
+    tally = Counter(w.get("st") for w in words)
+    judged = tally["CORRECT"] + tally["WRONG"]
+    ev = c.get("evaluatedWords")
+    nw = c.get("noWindowWords")
+    print("\n  VERDICTS")
+    print(f"     judged (CORRECT+WRONG): {judged}"
+          + (f"   engine says {c.get('judgedWords')}" if "judgedWords" in c else ""))
+    for k in ("CORRECT", "WRONG", "UNKNOWN", "SKIPPED"):
+        if tally.get(k):
+            print(f"       {k:<8} {tally[k]}")
+    if ev is not None:
+        print(f"     evaluated (has a status): {ev}")
+    if judged:
+        print(f"     accuracy: {100.0 * tally['CORRECT'] / judged:.1f}% of judged words")
+    else:
+        print("     accuracy: - (nothing was judged)")
+    if nw is not None:
+        flag = "  <-- STALE-INDEX BUG, windows collapsed" if nw else "  ok"
+        print(f"     words with no usable window: {nw} "
+              f"(empty windows: {c.get('emptyWindows')}){flag}")
     print("  thresholds: " + " ".join(f"{k}={v}" for k, v in sorted(th.items())))
 
     print("\n  lock moves (from the diag tail):")

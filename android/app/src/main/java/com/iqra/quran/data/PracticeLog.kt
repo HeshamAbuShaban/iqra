@@ -65,7 +65,19 @@ object PracticeLog {
         val wpm: Double,
         val millis: Long,
     ) {
-        val judged: Int get() = correct + wrong + skipped
+        /**
+         * Words the engine actually decided: a word came out and the model had
+         * something to say about it.
+         *
+         * SKIPPED is deliberately NOT counted. It is the ABSENCE of a verdict -
+         * "the evidence window did not cover this word" - and including it made
+         * `judged` equal the surah's whole word count whenever a session produced
+         * nothing else. The report then showed a large number under "words
+         * judged" and a percentage derived from it, which reads as a score and is
+         * in fact the population: with accuracy = correct / judged, a session that
+         * tested nothing looked like a session that failed everything.
+         */
+        val judged: Int get() = correct + wrong
 
         /**
          * Share of judged words marked CORRECT, or null when nothing was judged.
@@ -234,7 +246,19 @@ object PracticeLog {
         val unknown: Int,
         val lastPractised: Long,
     ) {
-        val judged: Int get() = correct + wrong + skipped
+        /**
+         * Words the engine actually decided: a word came out and the model had
+         * something to say about it.
+         *
+         * SKIPPED is deliberately NOT counted. It is the ABSENCE of a verdict -
+         * "the evidence window did not cover this word" - and including it made
+         * `judged` equal the surah's whole word count whenever a session produced
+         * nothing else. The report then showed a large number under "words
+         * judged" and a percentage derived from it, which reads as a score and is
+         * in fact the population: with accuracy = correct / judged, a session that
+         * tested nothing looked like a session that failed everything.
+         */
+        val judged: Int get() = correct + wrong
         val accuracy: Float? get() = if (judged <= 0) null else correct.toFloat() / judged
 
         /**
@@ -968,7 +992,8 @@ object PracticeLog {
                 }
             }
             if (touched == 0) return null
-            val judged = correct + wrong + skipped
+            // Same rule as Session.judged: SKIPPED is not a decision.
+            val judged = correct + wrong
             if (judged == 0 && unknown == 0) return null
             return Session(
                 surah = 0, ayahs = 0,
