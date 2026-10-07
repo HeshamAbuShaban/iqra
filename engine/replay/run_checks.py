@@ -37,6 +37,8 @@ CHECKS = [
      "optimised DP is value-identical to the shipped one (5473 alignments)"),
     ("archive_parity", "none",
      "the session record is not pruned by the paint window or wiped by a handoff"),
+    ("emission_log_replay", "none",
+     "the emission log grows across the stream resets a real session performs"),
     ("evidence_window_parity", "none",
      "each ayah is judged against its own audio, red means a real WRONG, and the "
      "lock policy is unchanged"),

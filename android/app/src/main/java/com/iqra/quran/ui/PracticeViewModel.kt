@@ -821,7 +821,37 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Index in [emissionLog] of the first symbol, so arrivals are absolute. */
     private var emissionBase = 0
 
-    /** Highest poll index already appended, so restarts never re-append. */
+    /**
+     * Absolute log position corresponding to index 0 of the CURRENT stream.
+     *
+     * Distinct from [emissionBase], which moves only when the log is TRIMMED. A
+     * stream reset rewrites the meaning of index 0, so it needs its own record -
+     * without it, a stream that restarts would map its first symbol onto whatever
+     * the log happened to hold at position 0.
+     */
+    private var emissionStreamBase = 0
+
+    /**
+     * Highest index already appended **within the current stream**, or -1.
+     *
+     * This MUST be reset whenever the stream resets. Measured from the user's
+     * own recording (613 polls, 28 stream resets): with a global high-water the
+     * guard `since < emissionHighWater` became permanently true after the first
+     * reset that followed a poll which had reached 26 symbols, so **529 of 613
+     * polls appended nothing** and the log stopped growing at 202 symbols. Every
+     * later ayah therefore had a shorter window than the last, until arrivals
+     * ran past the end of the log and `ayahObs` returned nothing - which reads
+     * as UNKNOWN on every word.
+     *
+     * That is `noWindowWords=11408` and `emptyWindows=922` in that session, and
+     * the reason the screen showed no colouring at all.
+     *
+     * The hazard is specific and worth stating: sherpa's `getResult()` returns
+     * tokens since the last `reset()`, so index 5 means "the 6th token of THIS
+     * stream". A high-water mark that survives a reset is comparing indices from
+     * two different streams, and it will always compare against the longer of
+     * the two.
+     */
     private var emissionHighWater = -1
 
     /**
@@ -833,6 +863,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * harmless.
      */
     private fun appendEmissions(symbols: List<String>, since: Int) {
+        // A stream reset is visible in one of three ways: the list is shorter
+        // than the high-water, or the consumed cursor went backwards. Either way
+        // the high-water describes a stream that no longer exists, so it has to
+        // go with it.
+        if (symbols.size <= emissionHighWater || since < emissionHighWater) {
+            emissionHighWater = -1
+            // The replayed tail is already in the log from before the reset, so
+            // start from where the cursor says the live audio begins.
+            emissionStreamBase = emissionLog.size
+            // Through diag(), not logcat: this is the evidence a session record
+            // needs. A frozen log is otherwise invisible - every word just reads
+            // UNKNOWN - and "the instrument failed" is the most expensive class
+            // of defect in this project.
+            diag("emission log: stream reset at index $since, log now ${emissionLog.size}")
+        }
         if (since < emissionHighWater) return          // restart: already logged
         for (i in (emissionHighWater + 1)..<symbols.size) {
             emissionLog.add(symbols[i])
@@ -859,6 +904,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private fun clearEmissionLog() {
         emissionLog.clear()
         emissionBase = 0
+        emissionStreamBase = 0
         emissionHighWater = -1
         ayahArrival.clear()
     }
@@ -1820,6 +1866,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     // makes the yield survive the resets - reproduced in
                     // word_window_yield.py, where the wrong form collapsed CORRECT
                     // from 94.8% to 3.6%.
+                    // Absolute position in the session log. The log now keeps
+                    // growing across stream resets, so this advances properly
+                    // per ayah instead of stalling at the first reset.
                     ayahArrival[it] = emissionBase + emissionLog.size
                 }
                 pendingArrivalKey = null
