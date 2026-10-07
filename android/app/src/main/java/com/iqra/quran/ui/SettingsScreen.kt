@@ -35,6 +35,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import com.iqra.quran.ui.theme.IqraTheme
 import com.iqra.quran.ui.theme.IqraPalettes
 import com.iqra.quran.ui.theme.LocalIqraColors
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.layout.ColumnScope
 
 /**
  * The app's settings screen.
@@ -131,6 +136,141 @@ fun SettingsScreen(
                         "Android dims the screen. Turn off to save battery.",
                     checked = remember(tick) { ReaderPrefs.keepAwake(ctx) },
                     onChange = { ReaderPrefs.setKeepAwake(ctx, it) },
+                )
+            }
+
+            // ----------------------------------------------------------------
+            // Recognition
+            //
+            // This section answers a question the app could not previously
+            // answer at all: what is this engine actually able to judge?
+            //
+            // The numbers in the model card are measured, not estimated, from
+            // the tajweed register over all 51,395 madd sites - see
+            // docs/TAJWEED_AND_MEMORISATION.md. They are here because a tool that
+            // can accuse someone of misreading their scripture owes them the
+            // list of things it cannot see.
+            // ----------------------------------------------------------------
+            SettingsSection("Recognition") {
+                Card(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    ),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            "What this engine cannot judge",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        ModelCardGap(
+                            "Madd length",
+                            "9,706 of 51,395 madd sites are free choice, where Hafs " +
+                                "permits more than one length. The engine holds only " +
+                                "the canonical one.",
+                        )
+                        ModelCardGap(
+                            "Stopping on a waqf mark",
+                            "The expected text is one realisation: waqf at each ayah " +
+                                "end, continuing inside. The mushaf has 9,950 mid-ayah " +
+                                "stop marks. Stopping is legal and read as a mismatch.",
+                        )
+                        ModelCardGap(
+                            "Idgham boundaries",
+                            "A word-final sound merges into the next word. Where the " +
+                                "engine cannot separate them, no verdict is given.",
+                        )
+                        ModelCardGap(
+                            "Silent letters and ta marbuta",
+                            "The exception lists for these are not in any data asset. " +
+                                "Those words cannot be judged.",
+                        )
+                    }
+                }
+
+                Text(
+                    "Never accuse on",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+                )
+                SwitchRow(
+                    title = "Madd length",
+                    subtitle = "Holding a madd for 2, 4 or 6 counts where more than " +
+                        "one is legal is never an error.",
+                    checked = remember(tick) { ReaderPrefs.maddNeverAccuses(ctx) },
+                    onChange = { ReaderPrefs.setMaddNeverAccuses(ctx, it) },
+                )
+                SettingDivider()
+                SwitchRow(
+                    title = "Stopping on a waqf mark",
+                    subtitle = "Pausing where the text shows a stop mark is a legal " +
+                        "recitation choice, not a mistake.",
+                    checked = remember(tick) { ReaderPrefs.waqfNeverAccuses(ctx) },
+                    onChange = { ReaderPrefs.setWaqfNeverAccuses(ctx, it) },
+                )
+                SettingDivider()
+                Text(
+                    "How strict to be",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+                )
+                ChoiceRow(
+                    label = "Evidence needed before a word can be called wrong",
+                    options = ReaderPrefs.Strictness.entries.map { it.label },
+                    selected = remember(tick) { ReaderPrefs.strictness(ctx).label },
+                    onSelect = { label ->
+                        ReaderPrefs.setStrictness(
+                            ctx,
+                            ReaderPrefs.Strictness.entries.first { it.label == label },
+                        )
+                    },
+                )
+                Text(
+                    remember(tick) {
+                        "A word must have ${(ReaderPrefs.heardFloor(ctx) * 100).toInt()}% " +
+                            "of its own sounds heard before a mismatch counts against you. " +
+                            "Lower means more warnings."
+                    },
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                SettingDivider()
+                Text(
+                    "What \"accuracy\" means",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+                )
+                ChoiceRow(
+                    label = "Shown in the session report",
+                    options = ReaderPrefs.Metric.entries.map { it.label },
+                    selected = remember(tick) { ReaderPrefs.metric(ctx).label },
+                    onSelect = { label ->
+                        ReaderPrefs.setMetric(
+                            ctx,
+                            ReaderPrefs.Metric.entries.first { it.label == label },
+                        )
+                    },
+                )
+                Text(
+                    remember(tick) { ReaderPrefs.metric(ctx).explain },
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                SettingDivider()
+                SwitchRow(
+                    title = "Recognition diagnostics",
+                    subtitle = "Show engine state in the session report: whether the " +
+                        "audio window is healthy, and when the decoder stalled. " +
+                        "Silence on screen is not a diagnosis.",
+                    checked = remember(tick) { ReaderPrefs.diagnostics(ctx) },
+                    onChange = { ReaderPrefs.setDiagnostics(ctx, it) },
                 )
             }
 
@@ -391,6 +531,66 @@ private fun KeyValue(k: String, v: String) {
 // ---- layout --------------------------------------------------------------
 
 private val SectionShape = RoundedCornerShape(16.dp)
+
+/** One "the engine cannot judge this" line: a bold claim and why it is bounded. */
+@Composable
+private fun ModelCardGap(title: String, detail: String) {
+    Column(Modifier.padding(bottom = 8.dp)) {
+        Text(title, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Text(
+            detail,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * A small horizontal set of mutually exclusive choices, as chips.
+ *
+ * Used for the metric and strictness settings, where a slider would be wrong:
+ * these are discrete named choices, and the label matters more than the position.
+ */
+@Composable
+private fun ChoiceRow(
+    label: String,
+    options: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(Modifier.padding(vertical = 6.dp)) {
+        if (label.isNotEmpty()) {
+            Text(
+                label,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            options.forEach { opt ->
+                val on = opt == selected
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            if (on) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .clickable { onSelect(opt) }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Text(
+                        opt,
+                        fontSize = 12.sp,
+                        color = if (on) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {

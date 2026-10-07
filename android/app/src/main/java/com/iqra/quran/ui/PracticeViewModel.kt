@@ -1505,6 +1505,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 diag("engine files missing: ${SherpaZipformer.fileReport(app)}")
                 return false
             }
+            // Once per session, before any verdict is produced. See
+            // PhonemeMapper.setHeardCoverageFloor: never mid-session, or two
+            // frames of one session would be judged by different rules.
+            PhonemeMapper.setHeardCoverageFloor(ReaderPrefs.heardFloor(app))
             val ok = SherpaZipformer.ensure(app) &&
                 PhonemeMapper.ensureTable(com.iqra.quran.data.AssetPaths.file(app, "ordered_quran_phonemes.json")) &&
                 // Bundled, not fetched: it is the difference between 31 ayat and

@@ -33,11 +33,30 @@ import java.io.File
 internal const val WRONG_MIN_HEARD_COVERAGE = 0.80f
 
 object PhonemeMapper {
-    /** The WRONG evidence floor, so a session record carries the threshold the
-     *  verdicts in that session were actually produced under. */
-    const val WRONG_MIN_HEARD = WRONG_MIN_HEARD_COVERAGE
-
     private const val TAG = "PhonemeMapper"
+
+    /**
+     * The evidence floor in force right now, which the user's strictness setting
+     * can lower. Read from [heardCoverageFloor], set once at engine start.
+     *
+     * It is a `var` rather than a `const` because a setting must be able to
+     * change it, and the recorded constant stays the validated default: a session
+     * record carries the floor actually in force, so a number produced under a
+     * lowered floor is never mistaken for one produced under the validated one.
+     */
+    @Volatile var WRONG_MIN_HEARD: Float = WRONG_MIN_HEARD_COVERAGE
+        private set
+
+    /**
+     * Apply the user's strictness. Called once when the engine starts, never
+     * mid-session: changing the floor between two frames of one session would
+     * make the verdicts incomparable, which is worse than a strict setting.
+     */
+    fun setHeardCoverageFloor(floor: Float) {
+        WRONG_MIN_HEARD = floor.coerceIn(0.30f, 0.95f)
+        Log.i(TAG, "WRONG evidence floor set to $WRONG_MIN_HEARD (validated default $WRONG_MIN_HEARD_COVERAGE)")
+    }
+
     @Volatile private var table: Map<String, List<String>>? = null
 
     /** Model unit inventory, longest-first for greedy matching. */
@@ -386,7 +405,7 @@ object PhonemeMapper {
                 // nothing was heard, so nothing contradicts.
                 ok * 2 < total ->
                     if (bad > 0) {
-                        if (ok >= (total * WRONG_MIN_HEARD_COVERAGE)) WordStatus.WRONG
+                        if (ok >= (total * WRONG_MIN_HEARD)) WordStatus.WRONG
                         else WordStatus.UNKNOWN
                     } else {
                         WordStatus.SKIPPED
@@ -395,7 +414,7 @@ object PhonemeMapper {
                 // WRONG_MIN_HEARD_COVERAGE. Below the floor this falls through
                 // to UNKNOWN, which already means "no verdict", and the caller's
                 // streak never accumulates because UNKNOWN is not WRONG.
-                bad > 0 && ok >= (total * WRONG_MIN_HEARD_COVERAGE) -> WordStatus.WRONG
+                bad > 0 && ok >= (total * WRONG_MIN_HEARD) -> WordStatus.WRONG
                 // Partly covered, nothing contradicted: no verdict. This used
                 // to be WRONG, which is what made a skipped word paint its
                 // neighbour red.

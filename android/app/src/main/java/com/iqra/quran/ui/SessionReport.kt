@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -177,8 +178,26 @@ fun SessionReportScreen(
                             DetailLine(c, "lock reversals", "${r.reversals}")
                             DetailLine(c, "audio polls", "${r.evaluations}")
                             DetailLine(c, "unjudgeable ayat", "${r.unjudgeable}")
+                            // The failure that presents as silence. Every one of
+                            // these words renders UNKNOWN - muted, no highlight -
+                            // which looks exactly like a word the reciter has not
+                            // reached. Saying so is the whole point of the panel.
+                            if (r.noWindowWords > 0) {
+                                DetailLine(
+                                    c,
+                                    "words the engine could not hear",
+                                    "${r.noWindowWords} (${r.emptyWindows} empty windows)",
+                                )
+                            }
                             DetailLine(c, "trace frames", "${r.frames}")
-                            DetailLine(c, "words judged", "${r.judgedWords}")
+                            // Two different numbers, deliberately not merged:
+                            // `recorded` is every word the engine gave a status
+                            // to (including "no verdict"), `judged` is how many it
+                            // actually decided. Labelling the first as "judged"
+                            // is what made a session that tested nothing report a
+                            // large score.
+                            DetailLine(c, "words with a status", "${r.recorded}")
+                            DetailLine(c, "words decided", "${r.judged}")
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 "\"Audio polls\" is how many times the engine looked at " +
@@ -210,21 +229,68 @@ private fun Panel(c: IqraColors, content: @Composable ColumnScope.() -> Unit) {
     ) { content() }
 }
 
+/**
+ * The headline number, chosen by the reader.
+ *
+ * The metric is a setting because no single figure is honest for everyone. A
+ * session where the engine judged nothing is not a 0% session and not a 100%
+ * one, and which of those it looks like depends entirely on the denominator:
+ * counting SKIPPED as judged made an untested session report a large score; as a
+ * fraction of CORRECT it reads as total failure. Both are wrong in opposite
+ * directions, which is the tell that the choice belongs to the reader.
+ *
+ * Null is always rendered "—", never 0%, because an empty numerator and a failed
+ * test are different events.
+ */
 @Composable
 private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
+    val ctx = LocalContext.current
+    val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
+    val metric = remember(tick) { ReaderPrefs.metric(ctx) }
+
+    val reached = r.judged + r.unknown
+    val coverage = if (reached > 0) r.judged.toFloat() / reached else null
+    val headlineValue: String
+    val headlineLabel: String
+    val headlineFraction: Float?
+    when (metric) {
+        ReaderPrefs.Metric.ACCURACY -> {
+            headlineValue = r.accuracy?.let { pct1(it) } ?: "—"
+            headlineLabel = "accuracy"
+            headlineFraction = r.accuracy
+        }
+        ReaderPrefs.Metric.COVERAGE -> {
+            headlineValue = coverage?.let { pct1(it) } ?: "—"
+            headlineLabel = "coverage"
+            headlineFraction = coverage
+        }
+        ReaderPrefs.Metric.DECIDED -> {
+            headlineValue = "${r.judged}"
+            headlineLabel = "words decided"
+            headlineFraction = null
+        }
+        ReaderPrefs.Metric.NET -> {
+            headlineValue = "${r.correct}/${r.wrong}"
+            headlineLabel = "correct / wrong"
+            headlineFraction = null
+        }
+    }
+
     Panel(c) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AccuracyRing(
-                fraction = r.accuracy,
+                fraction = headlineFraction,
                 accent = c.accent,
                 track = c.chartEmpty,
-                caption = r.accuracy?.let { pct1(it) } ?: "—",
+                caption = headlineValue,
                 captionColor = c.ink,
                 accentColor = c.ink,
             )
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
-                Stat(c.ink, "${r.judged}", "words judged")
+                Text(headlineLabel, fontSize = 11.sp, color = c.inkMuted)
+                Spacer(Modifier.height(4.dp))
+                Stat(c.ink, "${r.judged}", "words decided")
                 Spacer(Modifier.height(10.dp))
                 Stat(c.ink, r.durationSec?.let { formatSecs(it) } ?: "—", "duration")
                 Spacer(Modifier.height(10.dp))

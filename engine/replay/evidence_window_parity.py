@@ -52,18 +52,66 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 VM = os.path.join(ROOT, "android/app/src/main/java/com/iqra/quran/ui/PracticeViewModel.kt")
 MA = os.path.join(ROOT, "android/app/src/main/java/com/iqra/quran/ui/MainActivity.kt")
 LOG = os.path.join(ROOT, "android/app/src/main/java/com/iqra/quran/data/PracticeLog.kt")
+RP = os.path.join(ROOT, "android/app/src/main/java/com/iqra/quran/ui/ReaderPrefs.kt")
+REP = os.path.join(ROOT, "android/app/src/main/java/com/iqra/quran/ui/SessionReport.kt")
+SET = os.path.join(ROOT, "android/app/src/main/java/com/iqra/quran/ui/SettingsScreen.kt")
+# The verdict rule lives here, NOT in PracticeViewModel. Two checks were wired to
+# VM for it and so read the wrong file - which is how "the live floor is read 0
+# times" was reported against a file that does not contain the rule at all.
+MAPPER = os.path.join(ROOT, "android/app/src/main/java/com/iqra/quran/ml/PhonemeMapper.kt")
 
 
 def strip_comments(src):
-    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    """Remove comments WITHOUT truncating string literals.
+
+    The first version did `line[:line.find("//")]` on every line, with a comment
+    claiming the only `//` in these files are comments. They are not: the Kotlin
+    carries JSON built with escaped quotes and URL literals, and a plain find
+    truncated every such line. Measured: it silently removed 40 KB of
+    PhonemeMapper.kt, which is why several checks here passed while looking at
+    half a file - including one that could not see the verdict rule it existed
+    to guard.
+
+    So: a tiny scanner that tracks whether it is inside a string, and treats `//`
+    and the block form as a comment only when it is not.
+    """
     out = []
-    for line in src.split("\n"):
-        # not a string-safe strip, but the only // in these files are comments
-        i = line.find("//")
-        if i >= 0:
-            line = line[:i]
-        out.append(line)
-    return "\n".join(out)
+    i, n = 0, len(src)
+    in_str = False
+    while i < n:
+        c = src[i]
+        if in_str:
+            out.append(c)
+            if c == "\\":                      # escaped backslash
+                if i + 1 < n:
+                    out.append(src[i + 1])
+                    i += 2
+                    continue
+                i += 1
+                continue
+            if c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n:
+            if src[i + 1] == "/":
+                while i < n and src[i] != "\n":
+                    i += 1
+                continue
+            if src[i + 1] == "*":
+                i += 2
+                while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
+                    i += 1
+                i += 2
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def check_window_semantics():
@@ -126,6 +174,11 @@ def check_sources():
     vm = strip_comments(open(VM, encoding="utf-8").read())
     ma = strip_comments(open(MA, encoding="utf-8").read())
     log = strip_comments(open(LOG, encoding="utf-8").read())
+    rp = strip_comments(open(RP, encoding="utf-8").read())
+    ma_src = strip_comments(open(MA, encoding="utf-8").read())
+    ma_rep = strip_comments(open(REP, encoding="utf-8").read())
+    st = strip_comments(open(SET, encoding="utf-8").read())
+    mapper = strip_comments(open(MAPPER, encoding="utf-8").read())
 
     # 1. the window must exist and be used for painting
     if "private fun ayahObs(" not in vm:
@@ -337,7 +390,81 @@ def check_sources():
     else:
         failures.append("PracticeViewModel.kt: cannot find the handoff body.")
 
-    # 9. judged must not count SKIPPED
+    # 9. the recognition panel must actually reach the engine and the report
+    #
+    # A setting that changes nothing is decoration. Each of these exists because
+    # the alternative is a control the user can move and see no change, which is
+    # worse than not offering it: it looks like the app is responding.
+    if "setHeardCoverageFloor(" not in vm:
+        failures.append(
+            "PracticeViewModel.kt: the strictness setting never reaches the engine. "
+            "ReaderPrefs.heardFloor() would be read by nothing, so moving the "
+            "control would change no verdict.")
+    if "setHeardCoverageFloor(ReaderPrefs.heardFloor(app))" not in vm:
+        failures.append(
+            "PracticeViewModel.kt: the floor is set from a constant rather than the "
+            "user's setting.")
+    if "ReaderPrefs.metric(" not in ma_rep:
+        failures.append(
+            "SessionReport.kt: the metric selector is never read, so the headline "
+            "number is the same whatever the user picks.")
+    if "maddNeverAccuses" not in st or "maddNeverAccuses" not in rp:
+        failures.append(
+            "the madd prohibition is not reachable from Settings, so a legal "
+            "madd length stays accusable.")
+    # The EMITTER, the CARRIER and the PARSE. Checking only that the name appears
+    # anywhere passes when the field is declared but never read from the JSON -
+    # which is what the first version of this check allowed.
+    # The EMITTER specifically, not the name: `noWindowWords` also appears in a
+    # comment and in a field declaration, so testing for the name anywhere passed
+    # with the emission deleted - the check could not see its own target removed.
+    # A raw-string literal cannot carry the escaped quotes the Kotlin uses, so
+    # this matches the shape around it: a JSON key immediately followed by the
+    # counter being appended.
+    # The emitted line is
+    #     .append(",\"noWindowWords\":").append(sessionNoWindowWords)
+    # so the key and the counter are ~26 characters apart. The first version
+    # allowed 12, which matched nothing - and a check that matches nothing is
+    # indistinguishable from a check that is passing.
+    if not re.search(r'noWindowWords.{0,40}sessionNoWindowWords', vm, re.S):
+        failures.append(
+            "PracticeViewModel.kt: the collapsed-window counter is not written to "
+            "the session record, so the failure that presents as silence cannot "
+            "be diagnosed after the fact.")
+    if 'noWindowWords = c.optInt("noWindowWords"' not in log:
+        failures.append(
+            "PracticeLog.kt: noWindowWords is declared but never parsed from the "
+            "record, so it is always 0 and the diagnostic always reads healthy.")
+    if "noWindowWords" not in ma_rep and "could not hear" not in ma_rep:
+        failures.append(
+            "the collapse counter is never shown, so it changes no decision and "
+            "only accumulates.")
+    # The engine must read the LIVE floor at both decision sites, not the
+    # validated constant. Reading the constant makes the setting a no-op while
+    # still looking correct in the source.
+    # A verdict site that compares against the validated CONSTANT instead of the
+    # live value makes the strictness setting a no-op while still reading
+    # correctly in the source. Two mutations of this check passed vacuously
+    # before it was written this way: once because the regex was over-escaped and
+    # matched nothing, and once because it only looked at one of the two sites.
+    #
+    # So: count BOTH, and require exactly zero - while requiring the live value to
+    # appear at least twice. A file with one of each is the mutation, not a
+    # halfway refactor.
+    n_const = mapper.count("* WRONG_MIN_HEARD_COVERAGE")
+    n_live = mapper.count("* WRONG_MIN_HEARD)")
+    if n_const:
+        failures.append(
+            f"PhonemeMapper.kt: {n_const} verdict site(s) still compare against "
+            "WRONG_MIN_HEARD_COVERAGE instead of the live WRONG_MIN_HEARD, so the "
+            "user's strictness setting does nothing.")
+    if n_live < 2:
+        failures.append(
+            f"PhonemeMapper.kt: the live WRONG_MIN_HEARD is read at {n_live} site(s), "
+            "expected 2. The SKIPPED/WRONG branch and the WRONG branch must both "
+            "read it, or one of them silently ignores the setting.")
+
+    # 10. judged must not count SKIPPED
     if "val judged: Int get() = correct + wrong + skipped" in log:
         failures.append(
             "PracticeLog.kt: Session.judged counts SKIPPED, so a session that "
@@ -365,7 +492,7 @@ def check_sources():
 
 
 def main():
-    for f in (VM, MA, LOG):
+    for f in (VM, MA, LOG, RP, REP, SET, MAPPER):
         if not os.path.isfile(f):
             print(f"FAIL: {f} not found")
             return 1

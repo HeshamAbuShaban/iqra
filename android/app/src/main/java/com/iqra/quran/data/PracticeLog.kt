@@ -132,6 +132,19 @@ object PracticeLog {
         val evaluations: Int,
         val unjudgeable: Int,
         val frames: Int,
+        /**
+         * Words abandoned because the lock had visited their ayah but the audio
+         * window was empty - an index pointing at nothing. Zero normally.
+         *
+         * Non-zero is not a judgement-quality problem, it is the engine failing to
+         * see anything, and it is invisible on screen because every such word
+         * renders as UNKNOWN: muted, no highlight, indistinguishable from a word
+         * the reciter has not reached yet. That is why it is carried explicitly.
+         * Absent from records written before it existed, so 0 then.
+         */
+        val noWindowWords: Int = 0,
+        /** How many times that happened, so a repeated trigger is distinguishable. */
+        val emptyWindows: Int = 0,
         val correct: Int,
         val wrong: Int,
         val skipped: Int,
@@ -161,8 +174,17 @@ object PracticeLog {
          * UNKNOWN - which are the ABSENCE of a verdict, not one. This is the
          * population, not the score. `judgedWords` is the score.
          */
-        val recorded: Int
-            get() = if (judgedWords > 0) correct + wrong else correct + wrong + skipped + unknown
+        /**
+         * Every word the engine recorded a status for, including SKIPPED and
+         * UNKNOWN - which are the ABSENCE of a verdict, not one. This is the
+         * population, not the score.
+         *
+         * It used to fall back to the CORRECT+WRONG sum whenever the engine had
+         * written a `judgedWords` count, so the same field meant two different
+         * things depending on record age. A record always describes its words, so
+         * the population is always derivable.
+         */
+        val recorded: Int get() = correct + wrong + skipped + unknown
 
         /**
          * Words the engine actually judged: a word came out, and the model said
@@ -626,6 +648,8 @@ object PracticeLog {
             reversals = c.optInt("reversals", 0),
             evaluations = c.optInt("evaluations", 0),
             unjudgeable = c.optInt("unjudgeableAyahs", 0),
+            noWindowWords = c.optInt("noWindowWords", 0),
+            emptyWindows = c.optInt("emptyWindows", 0),
             frames = o.optJSONArray("frames")?.length() ?: 0,
             correct = correct, wrong = wrong, skipped = skipped, unknown = unknown,
             judgedWords = c.optInt("judgedWords", 0),
