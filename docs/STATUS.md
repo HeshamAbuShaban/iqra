@@ -187,6 +187,56 @@ by a user drag — not by the app's own scrolls. And `noWindowWords` is now in
 every session record, so a collapsed window is visible in data rather than
 invisible in the UI.
 
+**2e. The gate could not fail. FIXED — and it hid two real defects.**
+An audit (`docs/HARNESS_FIDELITY_AUDIT.md`, 22 findings) of where the Python
+harness and the Kotlin app disagree found that three checks could not report
+failure. Two mattered, and both had been green the whole time.
+
+**The gate was decorative.** `lock_trace` was tested for the substring
+`oscillations=0`, which the script prints unconditionally, and its own message
+was the literal "28/28 ayat, 0 reversals". Proved by fault injection: with the
+forward-advance branch disabled in `PracticeViewModel`, and again with the
+harness's `advance_coverage` at 0.99 where nothing can advance, it still passed.
+`word_verdicts` parsed only the *checked* count from a two-number line and
+printed a literal "0 failed" of its own — so hardcoding the failure count to
+zero left the suite green.
+
+Both now assert on measured quantities: the final lock per clip against the
+ayah it must reach, and both numbers of the cases line. Verified failing by
+disabling the advance branch ("s001: ended at 1:1, expected 1:7").
+
+**The check could not detect a wrong word.** Its substitution test replaced a
+word in the emission with a neighbouring word from the same ayah — a near
+neighbour, which the DP absorbs. It also counted a substitution "flagged"
+whenever the verdict was WRONG **or SKIPPED**, with the failure branch
+unreachable. So detection was structurally 0 and the gate reported it as a pass.
+
+The mutation now substitutes a **distant** sound at each consonant, and the
+detection ratio is reported and gated. That exposed a real mapper defect.
+
+**A substituted word was recorded as SKIPPED.** Expected `ررَ ح مَ اا نِ` against
+emitted `قرَ ك كَ با مِ` — every unit replaced with a distant sound — gives
+`ok = 0, wrong = 5 of 5`. The rule tested `ok * 2 < total` before `bad > 0`, so
+it returned SKIPPED: "not said". The reciter *did* say something, and it was not
+that word. Anyone substituting through a word was recorded as having skipped it,
+and the error was invisible.
+
+Contradiction now takes precedence over bare coverage in both the Kotlin mapper
+and the harness. Detection went from 0 to complete:
+
+    SUBSTITUTION DETECTION: 81 flagged of 81 cases
+    SKIP DETECTION:         81 clean of 81 cases
+    314 word-verdict cases across 6 clips, 0 failed
+
+An emission count per word was tried as a second signal and **removed** — fault
+injection showed it changed no verdict, because the DP fills every expectation
+slot whenever audio is available. Leaving it in would have been decoration of the
+same kind.
+
+This did not fix the missing colouring, which is still the emission log freezing
+(`noWindowWords=11408`, `emptyWindows=922` in your session). But it means the next
+attempt at that fix can be *verified*, which the previous three could not.
+
 **3. 30.9% of audio time stalled** across the corpus. Mostly fixed (un-drained
 backlog, dead-band freeze); what remains is the ~38% of ayat that take twice as
 long to confirm. Not yet explained.

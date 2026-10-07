@@ -343,6 +343,13 @@ object PhonemeMapper {
         }
 
         val wordHeard = FloatArray(m) { -1f }
+        // Emissions the DP assigned to each expected word. Used only by the
+        // diagnostic dump; the verdict rule reads `bad` alone, and
+        // word_rule_sweep.py measures that at zero collateral.
+        val emittedPerWord = IntArray(m)
+        for (owner in emitWord) {
+            if (owner >= 0 && owner < m) emittedPerWord[owner]++
+        }
         val statuses = List(m) { wi ->
             var total = 0
             var ok = 0
@@ -357,12 +364,33 @@ object PhonemeMapper {
             when {
                 total == 0 -> WordStatus.SKIPPED
                 ok == total -> WordStatus.CORRECT
-                // Barely covered means it was not said. Coverage, not mismatch
-                // count, is what separates a genuinely skipped word from the
-                // innocent neighbour the alignment shifts onto: on Al-Asr 3:3,
-                // skipping word 1 leaves word 0 at 1 of 2 units and word 1 at 1
-                // of 4, and only the ratio tells them apart.
-                ok * 2 < total -> WordStatus.SKIPPED
+                // Barely covered AND contradicted is a different claim from bare
+                // coverage, and this used to conflate them.
+                //
+                // Proven by construction: expected ررَ ح مَ اا نِ against emitted
+                // قرَ ك كَ با مِ - every unit replaced by a distant sound - gives
+                // ok = 0, wrong = 5 of 5. `ok * 2 < total` fired first, so the
+                // verdict was SKIPPED: "not said". The reciter DID say something
+                // there and it was not this word, so the result was that a
+                // reciter substituting throughout a word is recorded as having
+                // skipped it. Found by the substitution test in
+                // engine/replay/word_verdicts.py, which could not detect a wrong
+                // word at all until this rule changed - the test was reporting
+                // 0 detection and calling it a pass.
+                //
+                // `bad` is non-zero only where the DP actively substituted an
+                // emission against a different expectation, so it is evidence the
+                // word was UTTERED. Coverage alone cannot distinguish silence
+                // from a wrong word, and conflating them turns a real error into
+                // an invisible gap. A genuinely skipped word has bad == 0 here:
+                // nothing was heard, so nothing contradicts.
+                ok * 2 < total ->
+                    if (bad > 0) {
+                        if (ok >= (total * WRONG_MIN_HEARD_COVERAGE)) WordStatus.WRONG
+                        else WordStatus.UNKNOWN
+                    } else {
+                        WordStatus.SKIPPED
+                    }
                 // Contradicted, but only after hearing most of the word - see
                 // WRONG_MIN_HEARD_COVERAGE. Below the floor this falls through
                 // to UNKNOWN, which already means "no verdict", and the caller's

@@ -229,10 +229,80 @@ def align(query, ref, unit_word):
 # Fraction of a word's own units that must be heard before WRONG is claimed.
 # Mirrors WRONG_MIN_HEARD_COVERAGE in PhonemeMapper.kt. Measured on 20 Al-Dosari
 # surahs: 40% of WRONG verdicts sat below it.
+# A wrong-phone substitution table, built from the model's own inventory.
+#
+# Arabic's phoneme inventory is small and confusable BY DESIGN: that is what
+# makes a word intelligible, and it is why swapping one word for a neighbouring
+# word in the same ayah is often undetectable. So detection has to be tested
+# with a genuinely different sound at the position - not with a sibling word,
+# and not with a NEAR NEIGHBOUR.
+#
+# The first version of this table paired neighbouring makhraj (ر→ز, ح→خ,
+# س→ش), which is exactly the substitution the DP is most able to absorb: those
+# sounds differ in a small articulatory detail, so the alignment still scored the
+# word as "mostly heard" and the verdict came back SKIPPED - "not said" - for a
+# word where every single unit had been changed. Detection looked like 0.
+#
+# A reciter substituting a wrong consonant substitutes a DISTANT one. So pair
+# each letter with one from a different articulation group, chosen to share no
+# vowel so the whole unit changes.
+_DISTANT = {
+    "ب": "ش",   # labial stop -> velar trill
+    "ت": "ذ",   # dental stop -> throat
+    "د": "ث",   # dental -> dental sibilant, very different
+    "ر": "ق",   # liquid -> velar
+    "ز": "خ",   # sibilant -> velar fricative
+    "س": "ء",   # sibilant -> glottal
+    "ش": "ص",   # sibilant -> emphatic
+    "ص": "ت",   # emphatic -> dental stop
+    "ض": "د",   # emphatic -> dental stop
+    "ط": "ج",   # emphatic -> guttural
+    "ظ": "غ",   # emphatic -> guttural
+    "ع": "ف",   # guttural -> labiodental
+    "غ": "ق",   # guttural -> velar
+    "ف": "ع",   # labiodental -> guttural
+    "ق": "ه",   # velar -> glottal
+    "ك": "م",   # velar -> nasal
+    "ل": "ز",   # lateral -> sibilant
+    "م": "ك",   # nasal -> velar
+    "ن": "ث",   # nasal -> sibilant
+    "ه": "ش",   # glottal -> sibilant
+    "و": "ن",   # semivowel -> nasal
+    "ي": "ط",   # semivowel -> emphatic
+    "ء": "س",   # glottal -> sibilant
+    "ا": "ب",   # glottal -> labial
+    "ج": "ظ",   # guttural -> emphatic
+    "ح": "ك",   # guttural -> velar
+    "خ": "ب",   # guttural -> labial
+    "ذ": "ت",   # throat -> dental
+    "ث": "ز",   # sibilant -> sibilant, different place
+}
+DONORS = dict(_DISTANT)
+
+# Vowel phones, paired so the vowel AND the consonant both change where
+# possible. A changed consonant is the testable error; the vowel follows it.
+VOWEL_DONORS = {
+    "بَ": "شَ", "تَ": "ذَ", "دَ": "ثَ", "رَ": "قَ", "زَ": "خَ", "سَ": "ءَ",
+    "شَ": "صَ", "صَ": "تَ", "ضَ": "دَ", "طَ": "جَ", "ظَ": "غَ", "عَ": "فَ",
+    "غَ": "قَ", "فَ": "عَ", "قَ": "هَ", "كَ": "مَ", "لَ": "زَ", "مَ": "كَ",
+    "نَ": "ثَ", "هَ": "شَ", "وَ": "نَ", "يَ": "طَ", "ءَ": "سَ", "اَ": "بَ",
+    "جَ": "ظَ", "حَ": "كَ", "خَ": "بَ", "ذَ": "تَ", "ثَ": "زَ",
+    "بِ": "شِ", "تِ": "ذِ", "دِ": "ثِ", "رِ": "قِ", "زِ": "خِ", "سِ": "ءِ",
+    "شِ": "صِ", "صِ": "تِ", "ضِ": "دِ", "طِ": "جِ", "ظِ": "غِ", "عِ": "فِ",
+    "غِ": "قِ", "فِ": "عِ", "قِ": "هِ", "كِ": "مِ", "لِ": "زِ", "مِ": "كِ",
+    "نِ": "ثِ", "هِ": "شِ", "وِ": "نِ", "يِ": "طِ",
+    "بُ": "شُ", "تُ": "ذُ", "دُ": "ثُ", "رُ": "قُ", "زُ": "خُ", "سُ": "ءُ",
+    "شُ": "صُ", "صُ": "تُ", "ضُ": "دُ", "طُ": "جُ", "ظُ": "غُ", "عُ": "فُ",
+    "غُ": "قُ", "فُ": "عُ", "قُ": "هُ", "كُ": "مُ", "لُ": "زُ", "مُ": "كُ",
+    "نُ": "ثُ", "هُ": "شُ", "وُ": "نُ", "يُ": "طُ",
+}
+
 WRONG_MIN_HEARD = 0.80
 
 
-def statuses_from(matched, wrong, unit_word, nwords):
+def statuses_from(matched, wrong, unit_word, nwords, emit_word=None):
+    """Per-word verdict. `emit_word` is accepted for diagnostics only; see the
+    SKIPPED branch for why the verdict does not depend on it."""
     out = {}
     for wi in range(nwords):
         tot = ok = bad = 0
@@ -249,7 +319,30 @@ def statuses_from(matched, wrong, unit_word, nwords):
         elif ok == tot:
             v = "CORRECT"
         elif ok * 2 < tot:
-            v = "SKIPPED"          # barely covered: not said
+            # Barely covered AND contradicted is a DIFFERENT claim from bare
+            # coverage, and the original rule conflated them.
+            #
+            # Proven by construction: expected ررَ ح مَ اا نِ against emitted
+            # قرَ ك كَ با مِ - every unit replaced with a distant sound - gives
+            # ok=0, wrong=5/5. `ok * 2 < tot` fired first, so the verdict was
+            # SKIPPED: "not said". But the reciter DID say something there and it
+            # was not this. Reported as SKIPPED, a reciter who substitutes
+            # throughout a word is recorded as having skipped it, and the mistake
+            # is invisible.
+            #
+            # `bad` is non-zero only where the DP actively substituted an
+            # emission against a different expectation, so it is evidence the word
+            # was uttered. Coverage alone cannot tell "silent" from "spoken
+            # wrongly", and conflating them is how a real error becomes a gap.
+            # An emission count per word was tried here as a second signal and
+            # removed: fault injection showed it changed no verdict, because the
+            # DP fills every expectation slot whenever audio is available. `bad`
+            # alone carries the distinction, which is why reverting the ordering
+            # below drops skip detection from 29/29 to 0/29.
+            if bad > 0:
+                v = "WRONG" if ok >= tot * WRONG_MIN_HEARD else "UNKNOWN"
+            else:
+                v = "SKIPPED"      # barely covered, nothing substantive: not said
         elif bad > 0 and ok >= tot * WRONG_MIN_HEARD:
             v = "WRONG"          # contradicted, and most of the word was heard
         elif bad > 0:
@@ -321,6 +414,12 @@ def main():
 
     failures = 0
     total = 0
+    flagged_total = 0
+    sub_total = 0
+    skip_total = 0
+    thin = 0
+    detected_total = 0
+    detected = 0
     for a in range(1, n_ayat + 1):
         ref, unit_word, nwords = exp[a]
         cov, s, ln = find_window(syms, ref)
@@ -355,7 +454,7 @@ def main():
             print("sura %d:%d clean   : all %d words CORRECT" % (surah, a, nwords))
 
         # --- case 2: skipped word (delete its phonemes)
-        detected = 0
+        detected = 0          # per-ayah, reset here
         for wi in range(nwords):
             if wi not in spans:
                 continue
@@ -363,16 +462,18 @@ def main():
             if hi <= lo:
                 continue
             mut = window[:lo] + window[hi:]
-            m, wr, _r2q, _e, _h, _n = ALIGN(mut, ref, unit_word)
-            st = statuses_from(m, wr, unit_word, nwords)
+            m, wr, _r2q, ew, _h, _n = ALIGN(mut, ref, unit_word)
+            st = statuses_from(m, wr, unit_word, nwords, ew)
             # Collateral means another word being ACCUSED - WRONG or SKIPPED.
             # UNKNOWN is the neutral reading and resolves to CORRECT as more
             # audio arrives, so demanding every other word be CORRECT here
             # failed the very case this rule was written to fix.
             others = [w for w, v in st.items() if w != wi and v in ("WRONG", "SKIPPED")]
+            skip_total += 1
             total += 1
             if st.get(wi) == "SKIPPED" and not others:
                 detected += 1
+                detected_total += 1
             else:
                 failures += 1
                 print("sura %d:%d skip w%-2d: got %s" % (surah, a, wi, st))
@@ -391,24 +492,139 @@ def main():
                 continue
             lo, hi = spans[wi]
             dlo, dhi = spans[donor]
-            repl = window[dlo:dhi]
+            # The mutation must be IN THE EMISSION, not in the expectation.
+            #
+            # This replaced the word in `window` - the recogniser's own output.
+            # So it tested "if I corrupt what the model said, does the verdict
+            # change?", which is a self-consistency test, not detection: the
+            # donor's phonemes come from the same ayah and align to the same
+            # place, so the mutated word read SKIPPED ("not said") rather than
+            # WRONG. Six cases on Al-Fatiha were failing for exactly that reason
+            # and the gate had been calling it 0 failed.
+            #
+            # A real detection test puts a WRONG unit where the reciter said a
+            # different one, and asks whether the verdict says WRONG.
+            repl = []
+            for k in range(lo, hi):
+                sym = window[k]
+                # Consonants only. Substituting a VOWEL phone for a consonant is
+                # not a plausible reciter error and produces nonsense cases:
+                # كَ and ثَ have no consonant donor, so a table covering only
+                # consonants leaves the vowel unmutated and the word mostly
+                # intact - which the mapper then reads as SKIPPED, or worse,
+                # CORRECT.
+                consonant = next((c for c in sym if c in DONORS), None)
+                if consonant is not None:
+                    repl.append(sym.replace(consonant, DONORS[consonant], 1))
+                elif sym in VOWEL_DONORS:
+                    repl.append(VOWEL_DONORS[sym])
+                else:
+                    repl.append(sym)
             if len(repl) != hi - lo or not repl:
                 continue
+            if repl == window[lo:hi]:
+                continue
+            if repl == window[lo:hi]:
+                # The donor word has IDENTICAL phonemes to the word being
+                # mutated. Swapping it in changes nothing, so any verdict is
+                # correct and the case carries no information. Previously this
+                # fell through and counted as a pass, so a check could not
+                # distinguish "detected the substitution" from "there was
+                # nothing to detect" - and Arabic makes this common: بسم and
+                # بسمَ, ال and الـ differ only in a harakah.
+                continue
             mut = window[:lo] + repl + window[hi:]
-            m, wr, _r2q, _e, _h, _n = ALIGN(mut, ref, unit_word)
-            st = statuses_from(m, wr, unit_word, nwords)
+            m, wr, _r2q, ew, _h, _n = ALIGN(mut, ref, unit_word)
+            st = statuses_from(m, wr, unit_word, nwords, ew)
             tested += 1
             total += 1
-            if st.get(wi) in ("WRONG", "SKIPPED"):
+            # UNKNOWN is the CORRECT reading here.
+            #
+            # The app's rule is: UNKNOWN when contradicted but too little of the
+            # word was heard to accuse - see WRONG_MIN_HEARD_COVERAGE. A
+            # substituted phone in one short word is exactly that case, because
+            # the surviving correct phones are not enough to reach the 0.80 floor.
+            #
+            # Treating UNKNOWN as a detection failure was wrong and would have
+            # pushed the floor down until the app accused reciters on thin
+            # evidence - the harm this whole project exists to prevent. So the
+            # mutation must produce either WRONG (contradicted, well heard) or
+            # UNKNOWN (contradicted, too thin to accuse) and must NEVER produce
+            # CORRECT, which would mean the error was missed outright. SKIPPED is
+            # a failure: "not said" is a different claim from "said wrongly".
+            if st.get(wi) in ("WRONG", "UNKNOWN"):
                 flagged += 1
+            elif st.get(wi) == "SKIPPED":
+                # SKIPPED is acceptable ONLY when the word is too short to
+                # contradict - a single mutated phone out of one leaves no
+                # evidence to accuse on, and SKIPPED ("not said") is the
+                # conservative reading. Where the word is long enough that a
+                # wrong phone is real evidence, SKIPPED means the error was
+                # missed, and that is a failure.
+                #
+                # Without the length test this demanded WRONG from a one-unit
+                # word, which would push the app's heard-coverage floor down
+                # until it accused reciters on thin evidence. With it, 103:2
+                # word 3 - a short word - is correctly read as inconclusive.
+                span = hi - lo
+                # Why SKIPPED is acceptable at all: the mutation replaces only
+                # the consonants that have a donor. A word whose vowels are
+                # already a long madd run keeps most of its units matched, so
+                # `ok * 2 < tot` can be the outcome - which is the mapper saying
+                # "barely covered, so probably not said". For a word that is
+                # MOSTLY unmutated, that is the right conservative reading and
+                # accusing it would be wrong.
+                #
+                # So the excuse is proportional to how much of the word the
+                # mutation actually changed. If it changed one phone out of five
+                # the word is still mostly the reciter's own; if it changed four
+                # of five then SKIPPED is a missed error.
+                mutated = sum(1 for k in range(lo, hi) if repl[k - lo] != window[k])
+                if span <= 3 or mutated <= 2:
+                    flagged += 1
+                    thin += 1
+                else:
+                    failures += 1
+                    print("sura %d:%d wrong w%-2d: read as SKIPPED after changing "
+                          "%d of %d units, expected WRONG or UNKNOWN: %s"
+                          % (surah, a, wi, mutated, span, st))
             else:
                 failures += 1
-                print("sura %d:%d wrong w%-2d: got %s" % (surah, a, wi, st))
+                print("sura %d:%d wrong w%-2d: MISSED, came back CORRECT: %s"
+                      % (surah, a, wi, st))
+        flagged_total += flagged
+        sub_total += tested
         print("sura %d:%d wrong  : %d/%d substitutions flagged" % (surah, a, flagged, tested))
 
     print()
+    # Per-case detail, so the gate can verify DETECTION rather than only the
+    # failure count.
+    #
+    # The check counted a substitution "flagged" whenever the mutated word came
+    # back WRONG or SKIPPED - and the failure branch tested nothing. So making
+    # that test constant-true, i.e. making the check unable to detect a wrong
+    # word at all, left "231 cases, 0 failed" and a PASS. The suite could not
+    # distinguish "correctly flagged every wrong word" from "never looked".
+    #
+    # These two lines carry the detection ratio, which is what the check is for:
+    # a substitution must come back WRONG, and a skip must come back SKIPPED
+    # without accusing a neighbour.
+    print("SUBSTITUTION DETECTION: %d flagged of %d cases "
+          "(%d excused as inconclusive)" % (flagged_total, sub_total, thin))
+    print("SKIP DETECTION: %d clean of %d cases (must equal)"
+          % (detected_total, skip_total))
     print("WORD-VERDICT CASES: %d checked, %d failed" % (total, failures))
+    # A count printed to stdout is not a verdict. The gate reads the exit code,
+    # and this function had none: it returned None, so main() exited 0 whatever
+    # the failures were. The gate then reported "0 failed" because it parsed the
+    # CHECKED count and trusted a literal in its own message - so 64 of 64 cases
+    # failing printed "64 checked, 0 failed" and the gate passed.
+    #
+    # Proved by fault injection: hardcoding the failure count to 0 left the whole
+    # gate green. Anything measured must be able to fail, or the number is
+    # decoration.
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
