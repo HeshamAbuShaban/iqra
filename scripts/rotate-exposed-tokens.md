@@ -55,7 +55,19 @@ that is a deliberate manual step, not something to wire into a script.
 ## Verifying afterwards
 
 ```
-git config --get remote.origin.url   # must contain no token
-git log --all -p -S"ghp_" --oneline  # must be empty
-git ls-files | xargs grep -lE "ghp_|hf_[A-Za-z0-9]{20,}"   # must be empty
+git config --get remote.origin.url          # must contain no token
+git log --all -p -S"ghp_" --oneline         # must be empty: no token in history
 ```
+
+For a whole-tree scan, note that the pattern itself matches this file, because it
+quotes the prefixes. Exclude the docs that are *about* the exposure:
+
+```
+git ls-files \
+  ':!scripts/rotate-exposed-tokens.md' \
+  | xargs grep -lE 'ghp_[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}'   # must be empty
+```
+
+A real GitHub token is 40 characters after the `ghp_` prefix and a real Hugging
+Face token is 34 or more after `hf_`; requiring that length is what separates a
+live credential from the placeholder text above.
