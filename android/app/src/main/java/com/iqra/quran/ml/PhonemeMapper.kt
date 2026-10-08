@@ -49,11 +49,22 @@ private val YAA_MADD = setOf(
     "ۦ", "ۦۦ", "ۦۦۦ", "ۦۦۦۦ", "ۦۦۦۦۦ", "ۦۦۦۦۦۦ",
 )
 
-private fun canonicalId(u: String): String = when {
-    u in ALEF_MADD -> "<madd-alef>"
-    u in WAW_MADD -> "<madd-waw>"
-    u in YAA_MADD -> "<madd-ya>"
-    else -> u
+@Volatile var maddEquivalenceMatching: Boolean = true
+    private set
+
+private fun canonicalId(u: String): String {
+    // Restoring single-realisation matching (maddNeverAccuses=false) is a
+    // MEASUREMENT mode: the DP must then distinguish "held 4" from "held 2",
+    // which it cannot do reliably, so the same reciter scores wrong more
+    // often. It must never be the basis for a verdict - the pref doc says so,
+    // and this branch is the only thing that makes the setting real.
+    if (!maddEquivalenceMatching) return u
+    return when {
+        u in ALEF_MADD -> "<madd-alef>"
+        u in WAW_MADD -> "<madd-waw>"
+        u in YAA_MADD -> "<madd-ya>"
+        else -> u
+    }
 }
 
 object PhonemeMapper {
@@ -79,6 +90,24 @@ object PhonemeMapper {
     fun setHeardCoverageFloor(floor: Float) {
         WRONG_MIN_HEARD = floor.coerceIn(0.30f, 0.95f)
         Log.i(TAG, "WRONG evidence floor set to $WRONG_MIN_HEARD (validated default $WRONG_MIN_HEARD_COVERAGE)")
+    }
+
+    /**
+     * Apply the madd-tolerance preference, once at engine start, never
+     * mid-session (same contract as [setHeardCoverageFloor]). Default true is
+     * the only judging mode: madd length must never decide a verdict. False
+     * restores single-realisation matching for measuring only.
+     *
+     * Clears the expected-unit cache because every ayah's symbol-id table is
+     * built through canonicalId; leaving it would let one session be judged by
+     * two rules.
+     */
+    @Synchronized
+    fun setMaddEquivalence(on: Boolean) {
+        if (maddEquivalenceMatching == on) return
+        maddEquivalenceMatching = on
+        expectedCache.clear()
+        Log.i(TAG, "madd-equivalent matching set to $on")
     }
 
     @Volatile private var table: Map<String, List<String>>? = null
@@ -326,6 +355,12 @@ object PhonemeMapper {
          * -1 means the word has no units, so no evidence either way.
          */
         val wordCoverage: FloatArray = FloatArray(0),
+        /**
+         * For each word, true when its FIRST expected unit was judged wrong -
+         * the precise shape of "the reciter may have changed how this word
+         * begins" at a waqf mark. Set inside align; never guessed afterward.
+         */
+        val wrongAtWordStart: BooleanArray = BooleanArray(0),
     ) {
         /** Fraction of this ayah's phonemes the emission accounts for. */
         val coverage: Float
@@ -389,6 +424,18 @@ object PhonemeMapper {
         }
 
         val wordHeard = FloatArray(m) { -1f }
+        // Which words have a substitution on their very first unit: the marker
+        // for "the word's beginning may have been read in isolation" at a waqf
+        // boundary. The verdict rule itself stays where it is; this only hands
+        // the consumer the information a waqf policy needs.
+        val wrongAtWordStart = BooleanArray(m)
+        val seenOwner = HashSet<Int>(m)
+        for (k in flat.indices) {
+            val owner = wordOf[k]
+            if (owner in 0 until m && seenOwner.add(owner) && wrong[k]) {
+                wrongAtWordStart[owner] = true
+            }
+        }
         // Emissions the DP assigned to each expected word. Used only by the
         // diagnostic dump; the verdict rule reads `bad` alone, and
         // word_rule_sweep.py measures that at zero collateral.
@@ -463,7 +510,7 @@ object PhonemeMapper {
                 if (cnt[wi] > 0) wordProb[wi] = sum[wi] / cnt[wi]
             }
         }
-        return Alignment(statuses, emitWord, wordProb, unitsMatched, len, wordHeard)
+        return Alignment(statuses, emitWord, wordProb, unitsMatched, len, wordHeard, wrongAtWordStart)
     }
 
     /** Word holding the most recent emission within [recencySec] of now. */

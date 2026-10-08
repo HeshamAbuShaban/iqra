@@ -293,6 +293,30 @@ Every check in this repository asserts that a judgement is **correct**. For six
 months none asserted that a judgement was **reached** — which is how 66% of the
 Quran could vanish without a single test turning red. New checks should ask both.
 
+## What moved last: advisories, waqf junctions, honest toggles
+
+| what | where | evidence |
+|---|---|---|
+| Decorative toggles made real | `PracticeViewModel` calls `setMaddEquivalence`, `setHeardCoverageFloor`; `SessionReport` reads `diagnostics`; addAdvisory reads `advisoryAlarm`; cue reads `advisoryDisplay` | `pref_consumption.py`, 14 keys |
+| Decorative-settings regression gate | `engine/replay/pref_consumption.py` | fault-injected: removing the waqf pref read turns it red |
+| Advisory channel | `Advisory.kt`, `PracticeViewModel.addAdvisory` | `advisory_parity`, structural |
+| Waqf junction downgrade | `PhonemeMapper.align` exposes `wrongAtWordStart`; `PracticeViewModel` consults `waqfJunctions()` + `waqfNeverAccuses` | `advisory_parity`, `dp_equivalence` |
+| In-flow cue: amber wash, suppressed in hide mode | `MainActivity.resolveWordStyle`, `LineText`, `ExpectedWordsLine` | `advisory_parity` |
+| Session record lists advisories by reason | `PracticeViewModel.flushSessionRecord`, `PracticeLog.AdvisoryNote` | — |
+| `strictness`/`maddNeverAccuses`/`waqfNeverAccuses` no longer UI-only lies | — | `pref_consumption`, new gate |
+
+Madd tolerance was verified on-device pre-fix via 16/18 ayah-final WRONGs
+having aligned audio that a madd class cannot adjudicate anyway; the canonical
+madd-ID tolerance shipped in `71a863a`. Its effect on the live verdict stream
+is still pending a fresh user session.
+
+## What is open next
+
+Deferred legal-realisation alternates (wasl/waqf acoustic forms). Full-madd
+free-choice recognition (the engine never hears 2-vs-4 digits). The
+standing-word pointer. Page-turn device validation. UI polish (type sizes, RTL
+on Live, session list). See `docs/TODO.md`.
+
 ## Ownership
 
 Mine: `PracticeViewModel.kt`, `PhonemeMapper.kt`, `MainActivity.kt:1371`,

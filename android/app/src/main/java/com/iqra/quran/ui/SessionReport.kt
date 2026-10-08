@@ -83,7 +83,10 @@ fun SessionReportScreen(
     val clip = LocalClipboardManager.current
     var rec by remember { mutableStateOf<PracticeLog.Record?>(null) }
     var loaded by remember { mutableStateOf(false) }
-    var showDetail by remember { mutableStateOf(false) }
+    // The Recognition "diagnostics" switch promises to show engine state in the
+    // report; make it true by default there. A pref that nothing reads is a
+    // silent no-op, and the report is the promised place for it.
+    var showDetail by remember { mutableStateOf(ReaderPrefs.diagnostics(ctx)) }
     var copied by remember { mutableStateOf(false) }
 
     LaunchedEffect(recordName) {
@@ -198,6 +201,17 @@ fun SessionReportScreen(
                             // large score.
                             DetailLine(c, "words with a status", "${r.recorded}")
                             DetailLine(c, "words decided", "${r.judged}")
+                            // An advisory is the engine saying "I noticed this but
+                            // cannot judge it" - information for the reciter, never
+                            // an accusation, so it lists apart from the score.
+                            if (r.advisories.isNotEmpty()) {
+                                val byKind = r.advisories.groupingBy { it.kind }.eachCount()
+                                byKind.keys.sorted().forEach { kind ->
+                                    val n = r.advisories.filter { it.kind == kind }.sumOf { it.count }
+                                    val label = AdvisoryKind.entries.firstOrNull { it.name == kind }?.label ?: kind
+                                    DetailLine(c, label, "$n")
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 "\"Audio polls\" is how many times the engine looked at " +

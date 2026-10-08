@@ -35,12 +35,13 @@ result depends on how a human actually recites, say so.
 | `docs/ASK_mic_bands.md` | Only for mic spectrum work; it explains the one-method ask. |
 | `docs/REVERSE_ENGINEERING.md` | Only for Tarteel's architecture and its network endpoints. |
 | `docs/WORD_ALIGNMENT_4116.md` | Historical. Resolved; kept because the reasoning error is instructive. |
+| `docs/TODO.md` | The live backlog. What is next, and what was parked. |
 
 `docs/` is ~3,700 lines. Do not read it all. Route by symptom.
 
 ## The gate contract
 
-`engine/replay/run_checks.py` is the **only** source of truth. It runs 16 checks.
+`engine/replay/run_checks.py` is the **only** source of truth. It runs 19 checks.
 
 **Every check must be proven able to fail before its result is believed.** This
 is not a formality. Three checks were green while unable to report failure:
@@ -66,7 +67,7 @@ To add or trust a check:
 Run it: `engine/.venv-replay/bin/python engine/replay/run_checks.py`.
 Add `--only <name>` for one check. Some need token dumps under `engine/corpus/out/`.
 
-**17 checks.** A check that cannot fail measures nothing — see the failure
+**19 checks.** A check that cannot fail measures nothing — see the failure
 section below before trusting any of them.
 
 ## The failure that cost the most time
@@ -113,6 +114,35 @@ From `docs/LESSONS.md`, condensed. Each cost weeks.
    `UnitAligner.kt` exists for this reason.
 5. **Delete the branch that cannot fire.** A gate that can never pass is worse
    than none: it looks like a safety measure while disabling the feature.
+6. **A toggle that nothing reads is a false UI.** `waqfNeverAccuses` was
+   exactly that for two builds: stored, displayed, and never consulted by the
+   verdict path. `pref_consumption.py` now fails any gate where a Settings
+   switch is not consumed by the engine.
+
+## Advisories are notes, not verdicts
+
+The engine reports a second channel, `AdvisoryKind` (`Advisory.kt`), for the
+things it noticed but cannot decide:
+
+- `MISSED_RULING_POSSIBLE` — a legal stop at a waqf mark may have been
+  treated as the join. The engine no longer files WRONG for those; it files
+  a note.
+- `NO_AUDIO_WINDOW`, `LOW_EVIDENCE`, `DECODER_STARVATION`,
+  `UNSUPPORTED_REALISATION`.
+
+Rules of the channel:
+
+- **Never red.** Red means a measured substitution. An advisory wears amber.
+- **Never a streak.** `wrongStreak` only increments on a true WRONG; an
+  advisory word is demoted to UNKNOWN before the streak could see it.
+- **Never in hide mode.** A note on a masked word would reveal which word the
+  engine noticed. The cue is suppressed there.
+- **Counted, listed, and recorded.** The session report lists them by reason;
+  the record keeps them under `"advisories":[...]`. They never enter
+  `correct`, `wrong`, or `judgedWords`.
+- Settings: `recAdvisoryAlarm` (show everything vs engine-failures only) and
+  `recAdvisoryDisplay` (in-flow cue vs report-only vs off). Both are real
+  policies, consumed by the engine and checked by `pref_consumption.py`.
 
 ## Where things live
 

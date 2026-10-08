@@ -68,6 +68,10 @@ CHECKS = [
      "the deadlock state has an exit: Ar-Rahman 55 freezes without it"),
     ("handoff_boundary", "dumps",
      "surah handoff is reachable, and the page can show what it waits for"),
+    ("advisory_parity", "none",
+     "advisories inform, they never accuse: not red, not streaked, not in hide"),
+    ("pref_consumption", "none",
+     "every Settings toggle is consumed somewhere but the settings UI"),
 ]
 
 # Scripts that need a dump argument rather than running bare.

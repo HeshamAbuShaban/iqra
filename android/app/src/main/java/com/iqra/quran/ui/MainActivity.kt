@@ -294,6 +294,7 @@ private fun ExpectedWordsLine(
     playOrder: Map<String, Int>,
     playHead: Int,
     modifier: Modifier = Modifier,
+    advisories: Map<String, Advisory> = emptyMap(),
 ) {
     if (words.isEmpty()) return
     // Mushaf text the app draws itself scales with the user's text-size setting.
@@ -309,20 +310,28 @@ private fun ExpectedWordsLine(
         val isPlayed = gi != null && gi <= playHead
         val isHead = gi != null && gi == playHead
         val isCur = key == currentKey
+        val hasNote = advisories[key] != null &&
+            ReaderPrefs.advisoryDisplay(LocalContext.current) == ReaderPrefs.AdvisoryDisplay.IN_FLOW
         val fg = when {
+            st == null && hasNote -> amberColor
             st == null -> Chrome.OnChrome
             st == WordStatus.WRONG -> wrongColor
             isCur -> accentColor
             isPlayed || isHead -> goldColor
+            st == WordStatus.UNKNOWN && hasNote -> amberColor
+            st == WordStatus.SKIPPED && hasNote -> amberColor
             st == WordStatus.SKIPPED -> Chrome.OnChrome.copy(alpha = 0.45f)
             else -> Chrome.OnChrome
         }
         b.pushStyle(
             SpanStyle(
                 color = fg,
-                background = if (isCur) accentColor.copy(alpha = 0.30f)
-                else if (st == WordStatus.WRONG) wrongColor.copy(alpha = 0.25f)
-                else Color.Transparent,
+                background = when {
+                    isCur -> accentColor.copy(alpha = 0.30f)
+                    st == WordStatus.WRONG -> wrongColor.copy(alpha = 0.25f)
+                    hasNote -> amberColor.copy(alpha = 0.10f)
+                    else -> Color.Transparent
+                },
                 fontWeight = if (isCur || isHead) FontWeight.SemiBold else FontWeight.Normal,
             ),
         )
@@ -930,6 +939,7 @@ fun ReaderScreen(
     val hide by vm.hideVerse.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val statusMap by vm.statusMap.collectAsStateWithLifecycle()
+    val advisoryMap by vm.advisoryMap.collectAsStateWithLifecycle()
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val currentPage by vm.currentPage.collectAsStateWithLifecycle()
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
@@ -1123,6 +1133,7 @@ fun ReaderScreen(
                     onAnchorAyah = vm::anchorToVerse,
                     onSelectAyah = { s, a -> vm.selectAyah(s, a) },
                     selectedAyah = selectedAyah, activeWindow = activeWindow,
+                    advisories = advisoryMap,
                     night = night, pageInk = pageInk, mat = mat,
                     chromeVisible = chromeVisible, onTapChrome = { chromeVisible = !chromeVisible },
                 )
@@ -1222,7 +1233,7 @@ fun ReaderScreen(
                     }
                     if (recording && standWords.isNotEmpty()) {
                         Spacer(Modifier.width(10.dp))
-                        ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead, Modifier.weight(1f))
+                        ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead, Modifier.weight(1f), advisories = advisoryMap)
                     } else if (!recording && engineHint != null) {
                         Spacer(Modifier.width(10.dp))
                         Text(
@@ -1809,6 +1820,8 @@ private fun resolveWordStyle(
     hide: Boolean,
     onSurface: Color,
     background: Color,
+    advisory: Advisory? = null,
+    advisoryCue: Boolean = false,
 ): WordStyle {
     if (hide) {
         return when (layer) {
@@ -1841,9 +1854,13 @@ private fun resolveWordStyle(
         HighlightLayer.RECITATION_AYAH ->
             if (st == WordStatus.SKIPPED || st == WordStatus.UNKNOWN) WordStyle(
                 onSurface.copy(alpha = 0.45f),
-                Color.Transparent,
-                Color.Transparent,
-                0f,
+                // The advisory mark: an amber wash on a word the engine flagged
+                // it could not judge. NEVER on hide-mode words - that would leak
+                // which word the app suspects. It never sits under WRONG or
+                // CORRECT, because a verdict already settled that word.
+                if (advisoryCue && advisory != null) amberColor.copy(alpha = 0.12f) else Color.Transparent,
+                if (advisoryCue && advisory != null) amberColor else Color.Transparent,
+                if (advisoryCue && advisory != null) 0.12f else 0f,
                 false,
                 false,
             )
@@ -1868,6 +1885,7 @@ fun MushafPageView(
     onSelectAyah: (Int, Int) -> Unit = { _, _ -> },
     selectedAyah: String? = null,
     activeWindow: List<Int> = emptyList(),
+    advisories: Map<String, Advisory> = emptyMap(),
     night: Boolean = false,
     pageInk: Color = Color(0xFF505050),
     mat: Color = Color(0xFFF4EAD3),
@@ -1909,7 +1927,7 @@ fun MushafPageView(
                 when (line.type) {
                     "surah-header" -> SurahHeader(line.text ?: "")
                     "basmala" -> Basmala()
-                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead, selectedAyah, activeWindow)
+                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead, selectedAyah, activeWindow, advisories)
                 }
             }
         }
@@ -1939,7 +1957,7 @@ fun MushafPageView(
         pagePaper(bmp, cs.background, night, ctx)
     }
     val draws = remember(
-        page.page, statusMap, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, slotsByAyah,
+        page.page, statusMap, advisories, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, slotsByAyah,
     ) {
         buildList {
             // Join on (sura, ayah, position) — NEVER on line numbers. Mushaf
@@ -1983,7 +2001,11 @@ fun MushafPageView(
                     val inActive = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
                     val layer = if (st == null) HighlightLayer.UNSTARTED
                     else resolveLayer(st, isCur, isPlayed, isPlayHead, inActive, "${w.surah}:${w.verse}" == selectedAyah)
-                    val style = resolveWordStyle(layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background)
+                    val style = resolveWordStyle(
+                        layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background,
+                        advisory = advisories[key],
+                        advisoryCue = !hide && ReaderPrefs.advisoryDisplay(ctx) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
+                    )
                     add(WordDraw(rect, style))
                 }
             }
@@ -2220,6 +2242,7 @@ fun LineText(
     playHead: Int = -1,
     selectedAyah: String? = null,
     activeWindow: List<Int> = emptyList(),
+    advisories: Map<String, Advisory> = emptyMap(),
 ) {
     if (words.isEmpty()) return
     // This is the only renderer where the app draws the mushaf text itself, so
@@ -2246,7 +2269,11 @@ fun LineText(
         val cs = MaterialTheme.colorScheme
         val layer = if (st == null) HighlightLayer.UNSTARTED
         else resolveLayer(st, isCur, isPlayed, isPlayHead, inActiveAyah, "${w.surah}:${w.verse}" == selectedAyah)
-        val style = resolveWordStyle(layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background)
+        val style = resolveWordStyle(
+            layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background,
+            advisory = advisories[key],
+            advisoryCue = !hide && ReaderPrefs.advisoryDisplay(LocalContext.current) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
+        )
         builder.pushStyle(
             SpanStyle(
                 // This fallback renders over the reader's tiled paper gradient

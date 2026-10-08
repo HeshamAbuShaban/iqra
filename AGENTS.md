@@ -20,6 +20,9 @@ tajweed limits of the engine. Do not work in this repo without it.
 
 3. **Never report a number without naming what produced it** — and whether it
    came from the harness or the device. They have disagreed, repeatedly.
+   Advisories are never a verdict and never enter `correct`/`wrong`/`judgedWords`;
+   see the advisory section of the skill file.
+   Any Settings toggle must be consumed by the engine, or it is a lie.
 
 4. **"pushed" means git. "installed" means the phone.** Both must be said
    explicitly. Conflating them has twice left the user believing a build was on

@@ -168,7 +168,11 @@ object PracticeLog {
         val perAyah: Map<String, IntArray>,
         /** "surah:ayah:word" -> [times missed, session startedAt]. Misses ONLY - see parseRecord. */
         val hardWords: Map<String, LongArray>,
+        /** Engine advisories from this session - things the engine noticed but would not decide. */
+        val advisories: List<AdvisoryNote> = emptyList(),
     ) {
+
+    data class AdvisoryNote(val key: String, val kind: String, val count: Int)
         /**
          * Every word the engine recorded a status for, including SKIPPED and
          * UNKNOWN - which are the ABSENCE of a verdict, not one. This is the
@@ -654,6 +658,13 @@ object PracticeLog {
             correct = correct, wrong = wrong, skipped = skipped, unknown = unknown,
             judgedWords = c.optInt("judgedWords", 0),
             perSurah = per, perAyah = perAyah, hardWords = hard,
+            advisories = run {
+                val arr = o.optJSONArray("advisories") ?: org.json.JSONArray()
+                List(arr.length()) { i ->
+                    val a = arr.getJSONObject(i)
+                    Record.AdvisoryNote(a.optString("key"), a.optString("kind"), a.optInt("count"))
+                }
+            },
         )
     }
 

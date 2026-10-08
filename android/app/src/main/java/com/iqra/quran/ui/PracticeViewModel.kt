@@ -56,6 +56,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _statusMap = MutableStateFlow<Map<String, WordStatus>>(emptyMap())
     val statusMap: StateFlow<Map<String, WordStatus>> = _statusMap
 
+    private val _advisoryMap = MutableStateFlow<Map<String, Advisory>>(emptyMap())
+    val advisoryMap: StateFlow<Map<String, Advisory>> = _advisoryMap
+
     private val _currentKey = MutableStateFlow<String?>(null)
     val currentKey: StateFlow<String?> = _currentKey
 
@@ -424,6 +427,58 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val sessionArchive = LinkedHashMap<String, WordStatus>()
 
+    // One advisory per word, merged on repetition. Advisories are never WRONG
+    // and never advance the mistake streak - they are what the reciter is
+    // told ONLY when the engine saw something it cannot decide. Painting them
+    // red would turn "no verdict" into an accusation, so they keep their own
+    // map and their own renderer weight.
+    private val sessionAdvisories = LinkedHashMap<String, Advisory>()
+
+    // Waqf junctions: keys of the word that STARTS right after a marked stop,
+    // built once per mushaf load. A legal stop there makes the join's units
+    // (idgham across the boundary, fresh vs wasl onset) unmodelable, so a
+    // WRONG reported at that word's opening unit is indistinguishable from a
+    // legal pause. waqfNeverAccuses=true keeps the engine from blaming that.
+    private var waqfJunctionSet: Set<String>? = null
+    private var waqfJunctionPages: Any? = null
+
+    private fun waqfJunctions(): Set<String> {
+        val pages = _mushaf.value ?: return emptySet()
+        if (waqfJunctionSet != null && waqfJunctionPages === pages) return waqfJunctionSet!!
+        val marks = charArrayOf('ۖ', 'ۗ', 'ۚ', 'ۘ', 'ۙ', 'ۛ', 'ۜ')
+        val set = HashSet<String>()
+        val flats = ArrayList<com.iqra.quran.data.MushafWord>(1200)
+        for (p in pages) for (l in p.lines) if (l.type == "text") flats.addAll(l.words ?: emptyList())
+        for (i in 0 until flats.size - 1) {
+            val t = flats[i].text
+            if (t.isNotEmpty() && t.last() in marks) {
+                val n = flats[i + 1]
+                if (n.surah == flats[i].surah && n.verse == flats[i].verse) {
+                    set.add("${n.surah}:${n.verse}:${n.wordInVerse}")
+                }
+            }
+        }
+        waqfJunctionSet = set
+        waqfJunctionPages = pages
+        return set
+    }
+
+    private fun isWaqfJunction(key: String): Boolean = key in waqfJunctions()
+
+    /** Record or merge an advisory for a word. Every call must carry a reason. */
+    private fun addAdvisory(key: String, kind: AdvisoryKind) {
+        // Hard-rule-only mode keeps the channel quiet about the reciter's
+        // reading and reports only engine failures it can measure; notes that
+        // depend on the reciter's intent (missed stop, low evidence) are kept
+        // for the reciter who asked to see everything.
+        val mode = ReaderPrefs.advisoryAlarm(getApplication())
+        val isEngineFact = kind == AdvisoryKind.NO_AUDIO_WINDOW || kind == AdvisoryKind.DECODER_STARVATION
+        if (mode == ReaderPrefs.AdvisoryAlarm.HARD_RULES_ONLY && !isEngineFact) return
+        val prev = sessionAdvisories[key]
+        sessionAdvisories[key] = prev?.merge(Advisory(kind)) ?: Advisory(kind)
+        _advisoryMap.value = LinkedHashMap(sessionAdvisories)
+    }
+
     /** Record a verdict permanently, if this is the first one for the word. */
     private fun archiveVerdict(key: String, v: WordStatus) {
         val prev = sessionArchive[key]
@@ -530,6 +585,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             if (!first) sb.append(',')
             first = false
             sb.append("{\"key\":\"").append(k).append("\",\"st\":\"").append(v.name).append("\"}")
+        }
+        sb.append("]")
+        // Advisories exist to be read by a person making a recitation plan,
+        // not to be line-for-line matched against the words array. A compact
+        // count per reason plus the words is enough in the record.
+        sb.append(",\"advisories\":[")
+        var firstAdv = true
+        for ((k, a) in sessionAdvisories) {
+            if (!firstAdv) sb.append(',')
+            firstAdv = false
+            sb.append("{\"key\":\"").append(k).append("\",\"kind\":\"").append(a.kind.name)
+                .append("\",\"count\":").append(a.count).append('}')
         }
         sb.append("]")
         // Per-ayah status COUNTS, including SKIPPED and CORRECT.
@@ -1183,6 +1250,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         fedTotal = 0
         streamBaseSec = 0f
         tailBuf = FloatArray(0)
+        // The cursor briefly loses everything the old stream knew mid-verse. That
+        // says something about the engine state at that word, even when the
+        // verdict it produces later is correct.
+        _currentKey.value?.let { addAdvisory(it, AdvisoryKind.DECODER_STARVATION) }
         lastEmitCount = 0
         // The watchdog measures idle time from lastTokenTime. Without this the
         // clock kept running across resets, so idleSec grew without bound and
@@ -1236,6 +1307,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         //   emptyWindows - how often it happened.
         sessionNoWindowWords = 0
         sessionEmptyWindows = 0
+        sessionAdvisories.clear()
+        _advisoryMap.value = emptyMap()
         // The handoff streak is per surah change. Carried across sessions it let
         // the FIRST qualifying frame after a restart complete a handoff, which
         // is how a surah could change without the surah being finished.
@@ -1574,6 +1647,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // PhonemeMapper.setHeardCoverageFloor: never mid-session, or two
             // frames of one session would be judged by different rules.
             PhonemeMapper.setHeardCoverageFloor(ReaderPrefs.heardFloor(app))
+            PhonemeMapper.setMaddEquivalence(ReaderPrefs.maddNeverAccuses(app))
             val ok = SherpaZipformer.ensure(app) &&
                 PhonemeMapper.ensureTable(com.iqra.quran.data.AssetPaths.file(app, "ordered_quran_phonemes.json")) &&
                 // Bundled, not fetched: it is the difference between 31 ayat and
@@ -1638,6 +1712,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         sessionEvaluations = 0
         unjudgeableKeys.clear()
         sessionArchive.clear()
+        sessionAdvisories.clear()
+        _advisoryMap.value = emptyMap()
         // Arrivals and the emission log are SESSION state: an arrival index from
         // the previous session points into a log that no longer holds those
         // symbols, which is the same stale-index failure that made every word
@@ -2311,6 +2387,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     // quiet" - it is an index that no longer points at anything.
                     sessionEmptyWindows++
                     sessionNoWindowWords += ws.size
+                    for (i in ws.indices) addAdvisory(keyOf(ws[i]), AdvisoryKind.NO_AUDIO_WINDOW)
                 }
                 for (i in ws.indices) {
                     if (al == null) {
@@ -2320,6 +2397,27 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     val key = keyOf(ws[i])
                     var s = al.statuses.getOrElse(i) { WordStatus.SKIPPED }
+                    if (s == WordStatus.UNKNOWN && al.unitsMatched > 0) {
+                        // The window held audio, yet phrasing came back unclear:
+                        // the engine heard the word either way, and cannot
+                        // claim perfection for it. A verdict the engine did
+                        // NOT produce is an advisory, never an accusation.
+                        addAdvisory(key, AdvisoryKind.LOW_EVIDENCE)
+                    }
+                    // Waqf stop at a marked junction: stopping is a second
+                    // legal reading, and the expected table encodes only the
+                    // join. When the mismatch sits at the next word's first
+                    // unit, "stopped on the mark" and "read it wrongly" are
+                    // the same observation, so the blame must stop too - and
+                    // the alarm must start. Never escalates.
+                    if (s == WordStatus.WRONG &&
+                        ReaderPrefs.waqfNeverAccuses(getApplication()) &&
+                        isWaqfJunction(key) &&
+                        al.wrongAtWordStart.getOrElse(i) { false }
+                    ) {
+                        s = WordStatus.UNKNOWN
+                        addAdvisory(key, AdvisoryKind.MISSED_RULING_POSSIBLE)
+                    }
                     if (s == WordStatus.WRONG) {
                         // WRONG is only claimed for the ayah the lock is on, and
                         // only for as long as it persists (see the streak below).

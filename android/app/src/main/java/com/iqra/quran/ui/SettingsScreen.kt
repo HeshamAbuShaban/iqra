@@ -213,6 +213,41 @@ fun SettingsScreen(
                 )
                 SettingDivider()
                 Text(
+                    "What the engine may tell you",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+                )
+                ChoiceRow(
+                    label = "What counts as an engine note",
+                    options = ReaderPrefs.AdvisoryAlarm.entries.map { it.label },
+                    selected = remember(tick) { ReaderPrefs.advisoryAlarm(ctx).label },
+                    onSelect = { label ->
+                        ReaderPrefs.setAdvisoryAlarm(
+                            ctx,
+                            ReaderPrefs.AdvisoryAlarm.entries.first { it.label == label },
+                        )
+                    },
+                )
+                Text(
+                    remember(tick) { ReaderPrefs.advisoryAlarm(ctx).explain },
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Spacer(Modifier.height(6.dp))
+                ChoiceRow(
+                    label = "Where engine notes appear",
+                    options = ReaderPrefs.AdvisoryDisplay.entries.map { it.label },
+                    selected = remember(tick) { ReaderPrefs.advisoryDisplay(ctx).label },
+                    onSelect = { label ->
+                        ReaderPrefs.setAdvisoryDisplay(
+                            ctx,
+                            ReaderPrefs.AdvisoryDisplay.entries.first { it.label == label },
+                        )
+                    },
+                )
+                Text(
                     "How strict to be",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

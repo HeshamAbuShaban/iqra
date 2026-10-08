@@ -227,6 +227,47 @@ object ReaderPrefs {
             Strictness.STRICT -> 0.40f
         }
 
+    /**
+     * How advisories appear. Advisories are engine notes about words it could
+     * not judge - never errors. IN_FLOW puts a neutral amber wash under them
+     * while reciting; QUIET keeps them only in the session report; OFF hides
+     * them entirely.
+     */
+    enum class AdvisoryDisplay(val id: Int, val label: String) {
+        QUIET(0, "Quiet: session report only"),
+        IN_FLOW(1, "In flow: amber mark on the mushaf"),
+        OFF(2, "Off");
+        companion object {
+            fun of(id: Int): AdvisoryDisplay = entries.firstOrNull { it.id == id } ?: IN_FLOW
+        }
+    }
+
+    fun advisoryDisplay(ctx: Context): AdvisoryDisplay =
+        AdvisoryDisplay.of(prefs(ctx).getInt("recAdvisoryDisplay", 1))
+
+    fun setAdvisoryDisplay(ctx: Context, v: AdvisoryDisplay) = write(ctx) { putInt("recAdvisoryDisplay", v.id) }
+
+    /**
+     * May an advisory escalate into anything beyond a note. Never destructive:
+     * an advisory that could become WRONG is no longer an advisory, it is a
+     * candidate verdict, and none of them are. The preference chooses how
+     * talkative the channel is: NEVER shows every engine note (the gentle
+     * reciter default), HARD_RULES_ONLY shows only the engine failures it can
+     * facts about itself. Measured rules never lose their force either way.
+     */
+    enum class AdvisoryAlarm(val id: Int, val label: String, val explain: String) {
+        NEVER(0, "Measured + notes", "Every engine note is shown: missed-stop notes, low-evidence words, no-audio words."),
+        HARD_RULES_ONLY(1, "Engine failures only", "Only what the engine can prove about itself: words it could not hear, frames it could not process. Nothing about your reading.");
+        companion object {
+            fun of(id: Int): AdvisoryAlarm = entries.firstOrNull { it.id == id } ?: NEVER
+        }
+    }
+
+    fun advisoryAlarm(ctx: Context): AdvisoryAlarm =
+        AdvisoryAlarm.of(prefs(ctx).getInt("recAdvisoryAlarm", 0))
+
+    fun setAdvisoryAlarm(ctx: Context, v: AdvisoryAlarm) = write(ctx) { putInt("recAdvisoryAlarm", v.id) }
+
     // ---- practice --------------------------------------------------------
 
     /**
