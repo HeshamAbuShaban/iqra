@@ -427,10 +427,17 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Record a verdict permanently, if this is the first one for the word. */
     private fun archiveVerdict(key: String, v: WordStatus) {
         val prev = sessionArchive[key]
-        if (prev == null || (prev == WordStatus.CORRECT && v != WordStatus.CORRECT)) {
+        // A real verdict is sticky: once a word has been decided, a later
+        // absence of evidence must not strip it out. "First terminal verdict
+        // wins" is what the comment said, but the condition it guarded allowed
+        // a CORRECT to be overwritten by UNKNOWN - which is what below. Then
+        // the archive ended all-UNKNOWN while the counter kept counting every
+        // word it had ever marked, so the record reported 7002 judged words over
+        // a session that, by the archive, judged zero.
+        val sticky = prev == WordStatus.CORRECT || prev == WordStatus.WRONG
+        if (!sticky) {
             sessionArchive[key] = v
         }
-        // First terminal verdict wins, so this counts each judged word once.
         if (v == WordStatus.CORRECT || v == WordStatus.WRONG) {
             if (prev != WordStatus.CORRECT && prev != WordStatus.WRONG) {
                 sessionTerminalCount++
@@ -829,7 +836,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * without it, a stream that restarts would map its first symbol onto whatever
      * the log happened to hold at position 0.
      */
-    private var emissionStreamBase = 0
+
 
     /**
      * Highest index already appended **within the current stream**, or -1.
@@ -852,7 +859,26 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * two different streams, and it will always compare against the longer of
      * the two.
      */
-    private var emissionHighWater = -1
+    /**
+     * How many symbols of the CURRENT stream have already been appended to the
+     * session log. Reset to 0 whenever the stream is recreated, so a fresh stream
+     * is logged in full rather than judged against the length of the previous
+     * one.
+     *
+     * WHY THIS IS NEEDED, from the user's own session (613 polls, 28 stream
+     * restarts): the previous attempt used a single global high-water mark, but
+     * `getResult()` returns tokens SINCE THE LAST reset(). Index 5 means "the
+     * 6th token of THIS stream", so a global mark compares indices from two
+     * different streams - always against the longer. After the first restart the
+     * guard `since < highWater` stayed true forever, the log stopped growing, and
+     * every later ayah's window was shorter than the last until arrivals ran past
+     * the log and `ayahObs` returned nothing. That is `noWindowWords=11408`.
+     *
+     * The stream resets whenever the lock moves or the watchdog starves, so the
+     * counter is zeroed from the same place that resets the stream - it cannot
+     * drift from the list it indexes.
+     */
+    private var streamConsumed = 0
 
     /**
      * Append tokens this poll produced for the first time.
@@ -862,27 +888,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * already in the log and is skipped, which is what makes a stream reset
      * harmless.
      */
-    private fun appendEmissions(symbols: List<String>, since: Int) {
-        // A stream reset is visible in one of three ways: the list is shorter
-        // than the high-water, or the consumed cursor went backwards. Either way
-        // the high-water describes a stream that no longer exists, so it has to
-        // go with it.
-        if (symbols.size <= emissionHighWater || since < emissionHighWater) {
-            emissionHighWater = -1
-            // The replayed tail is already in the log from before the reset, so
-            // start from where the cursor says the live audio begins.
-            emissionStreamBase = emissionLog.size
-            // Through diag(), not logcat: this is the evidence a session record
-            // needs. A frozen log is otherwise invisible - every word just reads
-            // UNKNOWN - and "the instrument failed" is the most expensive class
-            // of defect in this project.
-            diag("emission log: stream reset at index $since, log now ${emissionLog.size}")
+    private fun appendEmissions(symbols: List<String>) {
+        // A stream restart is VISIBLE TO US: resetAudioPipeline() zeroes
+        // streamConsumed at the same moment, so we never compare this stream's
+        // indices against the last one's length. Each symbol is logged once.
+        if (symbols.size < streamConsumed) {
+            // New stream we were not shown the start of - begin at what it has.
+            streamConsumed = 0
         }
-        if (since < emissionHighWater) return          // restart: already logged
-        for (i in (emissionHighWater + 1)..<symbols.size) {
+        for (i in streamConsumed until symbols.size) {
             emissionLog.add(symbols[i])
         }
-        emissionHighWater = symbols.size - 1
+        streamConsumed = symbols.size
+
         // Bounded: a long session must not grow without limit. Trimming shifts
         // the base, and arrivals are stored as ABSOLUTE indices, so a stale
         // arrival below the base is clamped by ayahObs rather than silently
@@ -890,10 +908,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val cap = EMISSION_LOG_CAP
         if (emissionLog.size > cap) {
             val drop = emissionLog.size - cap
-            // removeAt(0) in a loop is O(n) PER ELEMENT, so trimming a 4000-entry
-            // log by 100 entries copies 4000 references 100 times - on the audio
-            // path, every poll, on the main thread. A subList view plus an
-            // explicit base advance does it once.
             val kept = emissionLog.subList(drop, emissionLog.size)
             emissionLog.clear()
             emissionLog.addAll(kept)
@@ -904,8 +918,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private fun clearEmissionLog() {
         emissionLog.clear()
         emissionBase = 0
-        emissionStreamBase = 0
-        emissionHighWater = -1
+        streamConsumed = 0
         ayahArrival.clear()
     }
 
@@ -1122,6 +1135,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // short fresh stream never matches one - but it is a real collision
         // waiting for the right utterance length.
         lastEmitCount = 0
+        // Both reset paths recycle the token list. The session log is indexed by
+        // per-stream position, so its cursor has to restart here too - otherwise
+        // the next stream's indices would be judged against the previous one's
+        // length and the log would silently stop growing.
+        streamConsumed = 0
         // And restart the idle clock. The starvation watchdog measures silence
         // from lastTokenTime, which a move does not touch - so a move late in a
         // pause inherited the pre-move idle count and could trip the recovery on
@@ -1160,6 +1178,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private fun resetAudioPipeline() {
         recorder.reset()
         SherpaZipformer.resetStream()
+        streamConsumed = 0
         fedAbs = 0
         fedTotal = 0
         streamBaseSec = 0f
@@ -1878,7 +1897,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // session log. `base` is the per-stream cursor, so a stream reset
             // (lower `base`) is recognised by appendEmissions and skipped rather
             // than re-appended or lost.
-            appendEmissions(res.symbols, sliceStart.coerceAtMost(res.symbols.size))
+            appendEmissions(res.symbols)
             val base = sliceStart.coerceAtMost(res.symbols.size)
             val obs = res.symbols.drop(base)
             if (obs.isEmpty()) {
