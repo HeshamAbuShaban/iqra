@@ -44,6 +44,12 @@ and none of them was reachable by a token corpus.
 
 ## Open, ranked by what is actually hurting you
 
+**0. Ground truth on the WRONG verdicts — ask the user.**
+The user's own sessions produced 16 WRONG verdicts across 699 decided words
+(2.3%). All 16 are classified below, but 7 of them fall in classes that could be
+either a real error or a table defect, and only the reciter can say which.
+That one answer outranks everything else on this list.
+
 **1. Page turn at a surah end — still not right.**
 The lock is clean; the page is not. Evidence from the retest: handoff now takes
 9–12 s instead of 42 s, and the lock trajectory has no oscillation at all, so what
@@ -310,7 +316,79 @@ having aligned audio that a madd class cannot adjudicate anyway; the canonical
 madd-ID tolerance shipped in `71a863a`. Its effect on the live verdict stream
 is still pending a fresh user session.
 
-## What is open next
+## Measured on the user's own sessions, 8 July 2026
+
+Pulled from `filesDir/sessions/`. Seven records, two of them substantive.
+
+| session | length | lock | words evaluated | decided | CORRECT | WRONG | UNKNOWN | noWindow |
+|---|---|---|---|---|---|---|---|---|
+| Fatiha → 3:1 | 476 s | 28 moves | 366 | 286 | 275 | 11 | 78 | **0** |
+| Al-Mulk 67 → 106 | 406 s | 105.6 wpm | 333 | (see below) | 322 | 5 | 6 | **0** |
+| 108:1–3 | 28 s | 2 moves | 10 | 5 | 5 | 0 | 5 | 0 |
+| 112:1–4 | 17 s | 3 moves | 15 | 14 | 14 | 0 | 1 | 0 |
+| 111:1–5 | 30 s | 4 moves | 23 | 22 | 22 | 0 | 1 | 0 |
+
+**The stream-log repair holds on device.** `noWindowWords=0` and
+`emptyWindows=0` across every session, where the same counters read 11,408 and
+922 before `686380e`. That was the defect that made a clean recitation look
+silent.
+
+**The madd tolerance did what it was built for.** 16 of the 18 WRONG verdicts
+in the last pre-fix session sat on ayah-final words, where a madd length cannot
+be adjudicated. In the new sessions only 3 of 11 sit on ayah-final words
+(`1:6:3 ٱلْمُسْتَقِيمَ`, `2:18:6 يَرْجِعُونَ`, `2:24:13 لِلْكَـٰفِرِينَ`); the rest
+are mid-ayah. Verified per word against the mushaf, not by eye.
+
+### Two defects the sessions exposed
+
+**1. Browsing destroyed the statistics of the recitation you had just done.**
+The Al-Mulk record reports `moves=0, reversals=0, judgedWords=0, fedSess=0`
+alongside `evaluatedWords=333` and 322 CORRECT — a body that contradicts itself,
+for a session whose diagTail plainly shows `lock 14 → 15`, `lock 15 → 16`.
+
+Cause: `endSession()` called `resetSessionCounters()`, and `endSession` also
+runs for every page jump (`reason=preparing-cancelled`, `ran=no`, `durMs=0`).
+The diagTail shows 19 such generations between the recitation and the final
+flush (g15–g21: 78, 106, 3, 3, 3, 106, 106). Each one zeroed the counters of
+the record still open — while `sessionArchive` and `sessionEvaluations`, absent
+from that reset, survived. So the verdicts were intact and the headline numbers
+were zero. Worst possible order of failure: the record still looks real.
+
+Fixed by removing the reset from `endSession`; `startRecite` already clears
+everything. Counters now live from one `startRecite` to the next.
+Gate: `session_record_integrity.py`, fault-injected three ways.
+
+**2. A frame-shaped advisory was accumulating like an event.** `LOW_EVIDENCE`
+reported **1,455 occurrences across 85 words** in the 476 s session. It fires
+once per frame a slightly ambiguous word is judged, so the tally measured how
+long the microphone was open, not how many words were affected. Split into
+`PER_EVENT` and `ONCE_PER_WORD`; the word count is now the honest figure.
+
+### The residual WRONG words are identifiable, not mysterious
+
+All 16 across the two substantive sessions, matched to the mushaf:
+
+| class | n | example |
+|---|---|---|
+| ends in a letter not required to be sounded (۟ ۢ ۭ) | 5 | `تُفْسِدُوا۟`, `أَلِيمٌۢ`, `أَندَادًاۭا` |
+| ayah-final (madd or end form) | 3 | `ٱلْمُسْتَقِيمَ` |
+| `-هُمْ` / `-كُمْ` / `-تُمْ` endings | 4 | `أَصَـٰبِعَهُمْ`, `يَنصُرُكُمْ` |
+| other mid-ayah | 4 | `وَقُودُهَا`, `وَإِنَّمَآ` |
+
+The first class is the one the new `UNMODELLED_FINAL` guard removes: a word
+whose text carries a high mark licensing an unsounded final letter cannot be
+evidence of error, and 3,559 mushaf words end in `۟` alone. It only fires when
+the substitution is on the word's **last** unit, so a garbled middle still
+becomes a verdict.
+
+**Honest caveat:** on the reference reciter's own surah-67 recording the one
+WRONG word (`67:10:1 وَقَالُوا۟`) has its substitution *not* on the final unit,
+so the guard does not catch it. Whole-corpus sweep in
+`engine/replay/optional_final.py` is running to size the class properly. The
+guard removes some false accusations, not all of them, and the measurement is
+not yet in.
+
+
 
 Deferred legal-realisation alternates (wasl/waqf acoustic forms). Full-madd
 free-choice recognition (the engine never hears 2-vs-4 digits). The

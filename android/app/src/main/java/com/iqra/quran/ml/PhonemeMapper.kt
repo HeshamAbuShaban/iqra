@@ -361,6 +361,14 @@ object PhonemeMapper {
          * begins" at a waqf mark. Set inside align; never guessed afterward.
          */
         val wrongAtWordStart: BooleanArray = BooleanArray(0),
+        /**
+         * For each word, true when its LAST expected unit was judged wrong -
+         * the precise shape of "the final letter did not sound as the table
+         * asserts". 3,559 words in the mushaf end in a high mark (۟, ۢ, ۭ) that
+         * licenses the final letter to be unsounded, and a table that cannot
+         * represent that must not accuse on it.
+         */
+        val wrongAtWordEnd: BooleanArray = BooleanArray(0),
     ) {
         /** Fraction of this ayah's phonemes the emission accounts for. */
         val coverage: Float
@@ -429,13 +437,16 @@ object PhonemeMapper {
         // boundary. The verdict rule itself stays where it is; this only hands
         // the consumer the information a waqf policy needs.
         val wrongAtWordStart = BooleanArray(m)
+        val wrongAtWordEnd = BooleanArray(m)
+        val lastOwner = HashMap<Int, Int>(m)
         val seenOwner = HashSet<Int>(m)
         for (k in flat.indices) {
             val owner = wordOf[k]
-            if (owner in 0 until m && seenOwner.add(owner) && wrong[k]) {
-                wrongAtWordStart[owner] = true
-            }
+            if (owner !in 0 until m) continue
+            if (seenOwner.add(owner) && wrong[k]) wrongAtWordStart[owner] = true
+            lastOwner[owner] = k
         }
+        for ((owner, k) in lastOwner) if (wrong[k]) wrongAtWordEnd[owner] = true
         // Emissions the DP assigned to each expected word. Used only by the
         // diagnostic dump; the verdict rule reads `bad` alone, and
         // word_rule_sweep.py measures that at zero collateral.
@@ -510,7 +521,7 @@ object PhonemeMapper {
                 if (cnt[wi] > 0) wordProb[wi] = sum[wi] / cnt[wi]
             }
         }
-        return Alignment(statuses, emitWord, wordProb, unitsMatched, len, wordHeard, wrongAtWordStart)
+        return Alignment(statuses, emitWord, wordProb, unitsMatched, len, wordHeard, wrongAtWordStart, wrongAtWordEnd)
     }
 
     /** Word holding the most recent emission within [recencySec] of now. */

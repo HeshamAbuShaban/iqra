@@ -442,10 +442,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var waqfJunctionSet: Set<String>? = null
     private var waqfJunctionPages: Any? = null
 
+    private val WAQF_MARKS = charArrayOf('ۖ', 'ۗ', 'ۚ', 'ۘ', 'ۙ', 'ۛ', 'ۜ')
+
+    /** High marks that license a word's final letter to be left unsounded. */
+    private val OPTIONAL_FINAL_MARKS = charArrayOf('۟', 'ۢ', 'ۭ', 'ۖ', 'ۗ', 'ۘ', 'ۙ', 'ۚ', 'ۛ', 'ۜ')
+
     private fun waqfJunctions(): Set<String> {
         val pages = _mushaf.value ?: return emptySet()
         if (waqfJunctionSet != null && waqfJunctionPages === pages) return waqfJunctionSet!!
-        val marks = charArrayOf('ۖ', 'ۗ', 'ۚ', 'ۘ', 'ۙ', 'ۛ', 'ۜ')
+        val marks = WAQF_MARKS
         val set = HashSet<String>()
         val flats = ArrayList<com.iqra.quran.data.MushafWord>(1200)
         for (p in pages) for (l in p.lines) if (l.type == "text") flats.addAll(l.words ?: emptyList())
@@ -465,6 +470,41 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun isWaqfJunction(key: String): Boolean = key in waqfJunctions()
 
+    /**
+     * Words whose text carries a high mark that licenses the final letter to go
+     * unsounded: ۟ (3,559 words), ۢ (1,733), ۭ (1,667) and the waqf marks.
+     *
+     * This is not a preference. A word the register does not require you to
+     * finish cannot be evidence that you finished it wrongly, and the expected
+     * table asserts a sound the reciter is free not to make. Measured on the
+     * user's own 6 July sessions: 5 of 16 WRONG verdicts sat on exactly these
+     * words - أُلِيمٌۢ, تُفْسِدُوا۟, تَجْعَلُوا۟, أَندَادًاۭا, فَٱعْتَرَفُوا۟.
+     *
+     * Narrow on purpose: the mismatch must be at the word's LAST unit. Garble
+     * the middle of the same word and it is still a verdict.
+     */
+    private var optionalFinalSet: Set<String>? = null
+    private var optionalFinalPages: Any? = null
+
+    private fun optionalFinalWords(): Set<String> {
+        val pages = _mushaf.value ?: return emptySet()
+        if (optionalFinalSet != null && optionalFinalPages === pages) return optionalFinalSet!!
+        val set = HashSet<String>()
+        for (p in pages) for (l in p.lines) {
+            if (l.type != "text") continue
+            for (w in l.words ?: emptyList()) {
+                if (w.text.any { it in OPTIONAL_FINAL_MARKS }) {
+                    set.add("${w.surah}:${w.verse}:${w.wordInVerse}")
+                }
+            }
+        }
+        optionalFinalSet = set
+        optionalFinalPages = pages
+        return set
+    }
+
+    private fun hasOptionalFinal(key: String): Boolean = key in optionalFinalWords()
+
     /** Record or merge an advisory for a word. Every call must carry a reason. */
     private fun addAdvisory(key: String, kind: AdvisoryKind) {
         // Hard-rule-only mode keeps the channel quiet about the reciter's
@@ -475,7 +515,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val isEngineFact = kind == AdvisoryKind.NO_AUDIO_WINDOW || kind == AdvisoryKind.DECODER_STARVATION
         if (mode == ReaderPrefs.AdvisoryAlarm.HARD_RULES_ONLY && !isEngineFact) return
         val prev = sessionAdvisories[key]
-        sessionAdvisories[key] = prev?.merge(Advisory(kind)) ?: Advisory(kind)
+        sessionAdvisories[key] = if (prev == null) {
+            Advisory(kind)
+        } else if (prev.shouldCount(Advisory(kind))) {
+            prev.merge(Advisory(kind))
+        } else {
+            prev
+        }
         _advisoryMap.value = LinkedHashMap(sessionAdvisories)
     }
 
@@ -1339,7 +1385,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             gen = ranGen,
         )
         sessionRan = false
-        resetSessionCounters()
+        // Deliberately NOT resetSessionCounters() here.
+        //
+        // startRecite already resets every counter and clears the archive, so
+        // this call was redundant. Worse than redundant: endSession also runs
+        // for sessions that never started (`reason=preparing-cancelled`,
+        // `ran=no`, `durMs=0`), which is what every page jump produces. Jumping
+        // around after a recitation therefore wiped the counters of the record
+        // still being written - and because sessionArchive and
+        // sessionEvaluations are NOT in that reset, the record survived with a
+        // self-contradictory body:
+        //
+        //   333 words evaluated, 322 CORRECT, 0 judged words, 0 moves, fed 0
+        //
+        // on a 406 s recitation of Al-Mulk at 105 wpm that moved its lock
+        // twenty-odd times. The headline numbers were destroyed by browsing,
+        // and the verdicts underneath them were intact - which is the worst
+        // possible order of failure, because the record still looks real.
+        // Counters now live from startRecite to the next startRecite.
     }
 
     /** Build per-ayah word + page maps for a surah. The page always follows the
@@ -2417,6 +2480,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     ) {
                         s = WordStatus.UNKNOWN
                         addAdvisory(key, AdvisoryKind.MISSED_RULING_POSSIBLE)
+                    }
+                    // The word ends in a letter the register does not require
+                    // to be sounded, and the mismatch is at that last letter.
+                    // The table asserts a sound the reciter is free not to make,
+                    // so it cannot be evidence of an error - only of a difference
+                    // the engine cannot represent. Same shape as the waqf guard
+                    // above: blame is removed, never added.
+                    if (s == WordStatus.WRONG &&
+                        hasOptionalFinal(key) &&
+                        al.wrongAtWordEnd.getOrElse(i) { false }
+                    ) {
+                        s = WordStatus.UNKNOWN
+                        addAdvisory(key, AdvisoryKind.UNMODELLED_FINAL)
                     }
                     if (s == WordStatus.WRONG) {
                         // WRONG is only claimed for the ayah the lock is on, and

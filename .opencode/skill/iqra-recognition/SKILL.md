@@ -41,7 +41,7 @@ result depends on how a human actually recites, say so.
 
 ## The gate contract
 
-`engine/replay/run_checks.py` is the **only** source of truth. It runs 19 checks.
+`engine/replay/run_checks.py` is the **only** source of truth. It runs 20 checks.
 
 **Every check must be proven able to fail before its result is believed.** This
 is not a formality. Three checks were green while unable to report failure:
@@ -67,7 +67,7 @@ To add or trust a check:
 Run it: `engine/.venv-replay/bin/python engine/replay/run_checks.py`.
 Add `--only <name>` for one check. Some need token dumps under `engine/corpus/out/`.
 
-**19 checks.** A check that cannot fail measures nothing — see the failure
+**20 checks.** A check that cannot fail measures nothing — see the failure
 section below before trusting any of them.
 
 ## The failure that cost the most time
@@ -127,6 +127,10 @@ things it noticed but cannot decide:
 - `MISSED_RULING_POSSIBLE` — a legal stop at a waqf mark may have been
   treated as the join. The engine no longer files WRONG for those; it files
   a note.
+- `UNMODELLED_FINAL` — the word ends in a letter the register does not
+  require to be sounded (۟ in 3,559 words, ۢ in 1,733, ۭ in 1,667) and the
+  substitution sits on that final unit. Not a preference: a table asserting
+  an unsounded letter cannot accuse on it.
 - `NO_AUDIO_WINDOW`, `LOW_EVIDENCE`, `DECODER_STARVATION`,
   `UNSUPPORTED_REALISATION`.
 
@@ -137,12 +141,33 @@ Rules of the channel:
   advisory word is demoted to UNKNOWN before the streak could see it.
 - **Never in hide mode.** A note on a masked word would reveal which word the
   engine noticed. The cue is suppressed there.
+- **Count by kind, not by frame.** `AdvisoryCounting.ONCE_PER_WORD` kinds
+  tally once per word; `PER_EVENT` kinds tally occurrences. Accumulating a
+  per-frame condition produced 1,455 "occurrences" over 85 words in one
+  session, which measured the microphone, not the recitation.
 - **Counted, listed, and recorded.** The session report lists them by reason;
   the record keeps them under `"advisories":[...]`. They never enter
   `correct`, `wrong`, or `judgedWords`.
 - Settings: `recAdvisoryAlarm` (show everything vs engine-failures only) and
   `recAdvisoryDisplay` (in-flow cue vs report-only vs off). Both are real
   policies, consumed by the engine and checked by `pref_consumption.py`.
+
+## Session counters belong to the session, not to the navigation
+
+`resetSessionCounters()` is called from `startRecite` and **nowhere else**.
+It used to also run in `endSession`, which fires for every page jump
+(`reason=preparing-cancelled`, `ran=no`). Jumping around after a recitation
+therefore zeroed the headline counters of the record still being written while
+`sessionArchive` and `sessionEvaluations` — absent from that reset — survived:
+
+```
+333 words evaluated, 322 CORRECT, 0 judged words, 0 moves, fed 0
+```
+
+for a 406 s recitation whose diagTail plainly showed the lock moving. The
+verdicts were intact and the numbers were zero: the worst order, because the
+record still looks real. `session_record_integrity.py` guards both halves —
+the start path clears everything, and nothing else clears anything.
 
 ## Where things live
 

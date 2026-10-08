@@ -72,6 +72,8 @@ CHECKS = [
      "advisories inform, they never accuse: not red, not streaked, not in hide"),
     ("pref_consumption", "none",
      "every Settings toggle is consumed somewhere but the settings UI"),
+    ("session_record_integrity", "none",
+     "a session's counters survive browsing; only the next startRecite clears them"),
 ]
 
 # Scripts that need a dump argument rather than running bare.
