@@ -32,6 +32,30 @@ import java.io.File
  */
 internal const val WRONG_MIN_HEARD_COVERAGE = 0.80f
 
+// ---- free-choice madd ------------------------------------------------------
+//
+// ~19% of madd sites (9,706 of 51,395) are free choice, where the register
+// lists several legal lengths and the shipped table asserts only the canonical
+// one. A reciter holding a DIFFERENT legal length is not in error, so all
+// lengths of the SAME madd bearer intern to one id and score as a match.
+// A 'اا' is never a 'وو' or a 'يي'.
+private val ALEF_MADD = setOf("اا", "ااۜ", "اااا", "ااااا", "اااااا")
+private val WAW_MADD = setOf(
+    "وو", "ووو", "ووَ", "ووُ", "ووِ", "وووَ", "وووُ", "وووِ",
+    "ۥ", "ۥۥ", "ۥۥۥ", "ۥۥۥۥ", "ۥۥۥۥۥ", "ۥۥۥۥۥۥ",
+)
+private val YAA_MADD = setOf(
+    "يي", "ييي", "ييَ", "ييُ", "ييِ", "يييَ", "يييُ", "ييييي",
+    "ۦ", "ۦۦ", "ۦۦۦ", "ۦۦۦۦ", "ۦۦۦۦۦ", "ۦۦۦۦۦۦ",
+)
+
+private fun canonicalId(u: String): String = when {
+    u in ALEF_MADD -> "<madd-alef>"
+    u in WAW_MADD -> "<madd-waw>"
+    u in YAA_MADD -> "<madd-ya>"
+    else -> u
+}
+
 object PhonemeMapper {
     private const val TAG = "PhonemeMapper"
 
@@ -206,7 +230,10 @@ object PhonemeMapper {
                 var m = ids
                 if (m == null) {
                     m = HashMap<String, Int>(units.size * 2)
-                    for (u in units) if (!m.containsKey(u)) m[u] = m.size
+                    for (u in units) {
+                        val k = canonicalId(u)
+                        if (!m.containsKey(k)) m[k] = m.size
+                    }
                     ids = m
                 }
                 return m
@@ -336,8 +363,8 @@ object PhonemeMapper {
         // id (every expected unit is in the map by construction), so it stays a
         // substitution exactly as the string compare was.
         val ids = expected.symbolIds
-        val ref = IntArray(len) { ids[flat[it]] ?: -1 }
-        val qry = IntArray(n) { ids[emitted[it]] ?: -1 }
+        val ref = IntArray(len) { ids[canonicalId(flat[it])] ?: -1 }
+        val qry = IntArray(n) { emitted.get(it)?.let { e -> ids[canonicalId(e)] ?: -1 } ?: -1 }
 
         // The traceback itself lives in UnitAligner so CI can execute it on the
         // JVM. Everything below is DERIVED from that one path, so the flags, the

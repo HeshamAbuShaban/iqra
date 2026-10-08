@@ -129,7 +129,11 @@ def main() -> int:
     # Expected/explode stayed in PhonemeMapper; only the traceback moved.
     mapper = MAPPER.read_text(encoding="utf-8")
     exp_decl = mapper[mapper.index("data class Expected("):mapper.index("private fun explode")]
-    if "for (u in units)" not in exp_decl or "m[u] = m.size" not in exp_decl:
+    # The build interns each expected unit. Since 4 legate a single realisation,
+    # it maps a madd unit's canonical length instead of its specific variant, so
+    # two legal length choices of the same bearer compare equal. Still built
+    # strictly from Expected.units; the canonicalisation is the whole point.
+    if "for (u in units)" not in exp_decl or "canonicalId" not in exp_decl:
         failures.append(
             "symbolIds is not built from Expected.units, so the expected side "
             "could miss the map and collide with the -1 used for unknown symbols"
@@ -173,7 +177,7 @@ def main() -> int:
     # unit taken as a raw string straight into the IntArray would restore the
     # Arabic comparison the optimisation removed - and would not even compile,
     # which is how this gap stayed invisible.
-    if not re.search(r"ids\[flat\[", mapper):
+    if not re.search(r"ids\[(canonicalId\()?flat\[", mapper):
         failures.append(
             "the expected units are not read through ids[flat[...]]; the kernel "
             "takes IntArray, so raw strings would compare Arabic per row"

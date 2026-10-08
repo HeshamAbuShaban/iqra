@@ -33,6 +33,8 @@ sys.path.insert(0, str(ROOT / "engine" / "replay"))
 
 
 # ---------------------------------------------------------------- reference
+from word_verdicts import unit_match, madd_equivalent, _canon
+
 def align_reference(emitted, flat, word_of):
     """Transcription of the shipped PhonemeMapper.align, exactly as written."""
     n, ln = len(emitted), len(flat)
@@ -51,7 +53,7 @@ def align_reference(emitted, flat, word_of):
         dp[0][j] = j
     for i in range(1, n + 1):
         for j in range(1, ln + 1):
-            cost = 0 if emitted[i - 1] == flat[j - 1] else 1
+            cost = 0 if unit_match(emitted[i - 1], flat[j - 1]) else 1
             sub = dp[i - 1][j - 1] + cost
             dele = dp[i - 1][j] + 1
             ins = dp[i][j - 1] + 1
@@ -66,7 +68,7 @@ def align_reference(emitted, flat, word_of):
     i, j = n, ln
     while i > 0 or j > 0:
         if i > 0 and j > 0 and dir_[i][j] == 0:
-            if emitted[i - 1] == flat[j - 1]:
+            if unit_match(emitted[i - 1], flat[j - 1]):
                 matched[j - 1] = True
                 units_matched += 1
             else:
@@ -89,8 +91,9 @@ def align_reference(emitted, flat, word_of):
 def build_ids(flat):
     ids = {}
     for u in flat:
-        if u not in ids:
-            ids[u] = len(ids)
+        k = _canon(u)
+        if k not in ids:
+            ids[k] = len(ids)
     return ids
 
 
@@ -106,12 +109,12 @@ def align_optimised(emitted, flat, word_of, ids=None):
 
     if ids is None:
         ids = build_ids(flat)
-    ref = [ids[u] for u in flat]                 # every expected unit has an id
+    ref = [ids[_canon(u)] for u in flat]         # every expected unit has an id
     # An emitted symbol outside this ayah's vocabulary becomes -1, which can
     # never equal a ref id, so it is a substitution exactly as the string
     # compare was. Two such symbols also compare equal to each other, but they
     # are only ever compared against ref, never against each other.
-    qry = [ids.get(s, -1) for s in emitted]
+    qry = [ids.get(_canon(s), -1) for s in emitted]
 
     width = ln + 1
     dir_ = bytearray((n + 1) * width)
@@ -122,7 +125,7 @@ def align_optimised(emitted, flat, word_of, ids=None):
         qi = qry[i - 1]
         row = i * width
         for j in range(1, ln + 1):
-            cost = 0 if qi == ref[j - 1] else 1
+            cost = 0 if unit_match(emitted[i - 1], flat[j - 1]) else 1
             sub = prev[j - 1] + cost
             dele = prev[j] + 1
             ins = cur[j - 1] + 1
@@ -138,7 +141,7 @@ def align_optimised(emitted, flat, word_of, ids=None):
     i, j = n, ln
     while i > 0 or j > 0:
         if i > 0 and j > 0 and dir_[i * width + j] == 0:
-            if qry[i - 1] == ref[j - 1]:
+            if unit_match(emitted[i - 1], flat[j - 1]):
                 matched[j - 1] = True
                 units_matched += 1
             else:
@@ -289,8 +292,8 @@ def compare(emitted, flat, word_of, label, failures, ids=None):
     b = align_optimised(emitted, flat, word_of, ids)
     if ids is None:
         ids = build_ids(flat)
-    ref_ids = [ids[u] for u in flat]
-    qry_ids = [ids[u] if u in ids else -1 for u in emitted]
+    ref_ids = [ids[_canon(u)] for u in flat]
+    qry_ids = [ids[_canon(u)] if _canon(u) in ids else -1 for u in emitted]
     d = derive(ref_to_query(qry_ids, ref_ids), qry_ids, ref_ids, word_of)
     if d != a[:4]:
         names = ("matched", "wrong", "emitWord", "unitsMatched")

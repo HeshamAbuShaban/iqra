@@ -148,7 +148,7 @@ def align_affine(query, ref, unit_word):
             if i == 0 or j == 0:
                 break
             ref_to_query[i - 1] = j - 1
-            if ref[i - 1] == query[j - 1]:
+            if unit_match(ref[i - 1], query[j - 1]):
                 matched[i - 1] = True
                 hits += 1
             else:
@@ -207,7 +207,7 @@ def align(query, ref, unit_word):
     while i > 0 or j > 0:
         if i > 0 and j > 0 and dirs[i - 1][j] == 0:
             ref_to_query[i - 1] = j - 1
-            if ref[i - 1] == query[j - 1]:
+            if unit_match(ref[i - 1], query[j - 1]):
                 matched[i - 1] = True
                 hits += 1
             else:
@@ -296,6 +296,52 @@ VOWEL_DONORS = {
     "غُ": "قُ", "فُ": "عُ", "قُ": "هُ", "كُ": "مُ", "لُ": "زُ", "مُ": "كُ",
     "نُ": "ثُ", "هُ": "شُ", "وُ": "نُ", "يُ": "طُ",
 }
+
+
+# ---- madd equivalence ------------------------------------------------------
+#
+# Free-choice madd: at ~19% of all madd sites the register lists more than one
+# permitted length, and the shipped table asserts only the canonical one. A
+# reciter holding a DIFFERENT legal length at such a site is NOT making an
+# error, yet the old match test saw 'اا' (2) against 'اااا' (4) and called it
+# a substitution. This is the single largest source of false accuses, so two
+# units of the SAME madd bearer are now treated as matching.
+#
+# Bearers are class-distinct: alef-madd, waw-madd, and ya-madd (and their dagger
+# forms) are not interchangeable. A 'اا' is not a 'وو'.
+_ALEF = {"اا","ااۜ","اااا","ااااا","اااااا"}
+_WAW = {"وو","ووو","ووَ","ووُ","ووِ","وووَ","وووُ","وووِ"}
+_YAA = {"يي","ييي","ييَ","ييُ","ييِ","يييَ","يييُ","ييييي"}
+_WAW_DAG = {"ۥ","ۥۥ","ۥۥۥ","ۥۥۥۥ","ۥۥۥۥۥ","ۥۥۥۥۥۥ"}
+_YAA_DAG = {"ۦ","ۦۦ","ۦۦۦ","ۦۦۦۦ","ۦۦۦۦۦ","ۦۦۦۦۦۦ"}
+
+
+def _madd_class(u):
+    if u in _ALEF: return "ALEF"
+    if u in _WAW or u in _WAW_DAG: return "WAW"
+    if u in _YAA or u in _YAA_DAG: return "YAA"
+    return None
+
+
+def madd_equivalent(a, b):
+    """True when a and b are the same kind of madd, of any legal length."""
+    ca = _madd_class(a)
+    return ca is not None and ca == _madd_class(b)
+
+
+def _canon(u):
+    """The internable key for u.
+
+    All lengths of one madd bearer intern to a single key, so two madd phones of
+    the same bearer compare equal under an integer-id DP - the form the Kotlin
+    and the optimised harness both use. Non-madd units keep their own key.
+    """
+    cls = _madd_class(u)
+    return ("<madd-" + cls.lower() + ">") if cls is not None else u
+
+
+def unit_match(a, b):
+    return a == b or madd_equivalent(a, b)
 
 WRONG_MIN_HEARD = 0.80
 

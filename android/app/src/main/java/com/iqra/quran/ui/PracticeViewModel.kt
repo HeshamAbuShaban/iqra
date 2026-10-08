@@ -1645,6 +1645,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         clearEmissionLog()
         handoffPageShown = false
         sessionActive = true
+        // The very first ayah never passes through advanceLockTo, and pendingArrivalKey
+        // is a single one-shot slot - so without this, arrival["<s>:<ayah>"] was never
+        // stamped for the starting ayah and its window was empty for the whole
+        // session, leaving every word of it UNKNOWN with no colouring.
+        pendingArrivalKey = "$s:${lockedAyah}"
         diag("session starts p=$page → s=$s:${lockedAyah}")
         // Write the header immediately. If the process dies before the first
         // timer tick there is still a file naming the session that died.
