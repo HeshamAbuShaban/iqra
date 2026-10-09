@@ -26,7 +26,10 @@ result depends on how a human actually recites, say so.
 | Read | When |
 |---|---|
 | `docs/STATUS.md` | Always, first. What is fixed, what is open, ranked by what hurts. |
+| `docs/CORE_LOGIC.md` | Before touching recognition code. The six pipeline steps in plain English, plus the achieved / not-achieved table. |
 | `docs/LESSONS.md` | Before changing any threshold, metric or gate. 13 lessons, each earned. |
+| `engine/replay/optional_final.py` | The whole-corpus false-accusation sweep. 768 WRONG verdicts over 6,112 ayat of reference audio. |
+| `engine/replay/window_lead.py` | The first-word sweep, and the three hypotheses it rejected. |
 | `docs/TAJWEED_AND_MEMORISATION.md` | Before anything touching expected phonemes. What the engine cannot judge, and why. |
 | `docs/HARNESS_FIDELITY_AUDIT.md` | Before trusting any offline test result. 22 harness-vs-device divergences. |
 | `engine/replay/emission_log_replay.py` | When verdicts are missing on the device. Replays a real session's polls through the log rule. |
@@ -36,12 +39,13 @@ result depends on how a human actually recites, say so.
 | `docs/REVERSE_ENGINEERING.md` | Only for Tarteel's architecture and its network endpoints. |
 | `docs/WORD_ALIGNMENT_4116.md` | Historical. Resolved; kept because the reasoning error is instructive. |
 | `docs/TODO.md` | The live backlog. What is next, and what was parked. |
+| `docs/CORE_LOGIC.md` | **Before touching recognition code.** The pipeline in plain English, built toward ASD-STE100: detect, decode, judge, move, paint, record. Update it in the same commit as any change to those six steps. |
 
 `docs/` is ~3,700 lines. Do not read it all. Route by symptom.
 
 ## The gate contract
 
-`engine/replay/run_checks.py` is the **only** source of truth. It runs 20 checks.
+`engine/replay/run_checks.py` is the **only** source of truth. It runs 22 checks.
 
 **Every check must be proven able to fail before its result is believed.** This
 is not a formality. Three checks were green while unable to report failure:
@@ -67,7 +71,7 @@ To add or trust a check:
 Run it: `engine/.venv-replay/bin/python engine/replay/run_checks.py`.
 Add `--only <name>` for one check. Some need token dumps under `engine/corpus/out/`.
 
-**20 checks.** A check that cannot fail measures nothing — see the failure
+**22 checks.** A check that cannot fail measures nothing — see the failure
 section below before trusting any of them.
 
 ## The failure that cost the most time

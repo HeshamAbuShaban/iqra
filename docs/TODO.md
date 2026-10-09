@@ -21,6 +21,9 @@ check items only when the shipped code proves them.
    several pages, then stop. The record must still report the moves and judged
    words of the recitation. `session_record_integrity.py` guards the code path;
    only the phone can show the record.
+4b. **Confirm the per-surah fold fix on the device.** The `foldedSurahs` undo is
+   new; a long session followed by a page jump is the only proof. The old code
+   inflated per-surah totals once per re-fold.
 5. **Two legal realisations, beyond the junction guard**: acoustic alternates
    for wasl/waqf at every mark. Cannot be built without measured mappings;
    the waqf downgrade is the safe stopgap. Do not generate alternates by guess.

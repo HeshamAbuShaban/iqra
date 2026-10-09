@@ -395,6 +395,123 @@ free-choice recognition (the engine never hears 2-vs-4 digits). The
 standing-word pointer. Page-turn device validation. UI polish (type sizes, RTL
 on Live, session list). See `docs/TODO.md`.
 
+## Maintenance and upgrading
+
+`docs/CORE_LOGIC.md` describes what the app does at each step, in plain English
+built toward ASD-STE100 (short sentences, one idea per sentence, the active
+voice, approved words). Any change to the alignment, the lock policy, the
+verdict rule or the record format must update that file in the same commit.
+
+Three new gate checks now hold the work in place, and each one has been shown to
+fail by fault injection:
+
+| Check | Stops |
+|---|---|
+| `dead_code.py` | A declaration in the recognition surface that no file references. Deleted 13 dead items in one pass. Known limit: it counts identifiers, not symbols, so a duplicate name shares another name's reference count. |
+| `honest_numbers.py` | "No data" and "zero percent" collapsing to the same value; the ayah strip sorting two surahs together; the live list painting a whitespace index; a `heard` count that includes words the engine could not hear. |
+| `session_record_integrity.py` | A counter that a browse wipes; timing constants derived from the declared poll interval instead of the measured one; the handoff boundary returning to a page boundary. |
+
+### Defects found in the user's own session records, and fixed
+
+| What | Where | Evidence |
+|---|---|---|
+| Browsing wiped a recitation's statistics | `endSession` no longer resets counters | Al-Mulk: 322 CORRECT next to `judgedWords=0, moves=0` |
+| Per-surah totals inflated on every re-fold | `PracticeLog.foldedSurahs` | 24 re-folds per ten-minute session |
+| Null accuracy and 0% accuracy encoded the same | series encodes `-1` for null | a failed session dropped out of the trend |
+| The live list painted a whitespace word index | `LiveMode` uses `vm.standWordsFor` | `بَعْدَ مَا` is one mushaf word |
+| `AdvisoryDisplay.OFF` changed nothing | the report lists the setting | QUIET and OFF were byte-identical |
+| `maddNeverAccuses`'s doc promised what the code did not keep | doc rewritten | turning it off DOES make length accusable |
+| `consecutiveRetreats`, `noiseFloor`, cadence leaked between sessions | `resetSessionCounters` | a new session inherited a loud room's floor |
+| Timing constants built on a 250 ms poll that runs at 563 ms | `pollSec` measured | wrong-latch and words-per-minute both wrong by 2.25x |
+| The gated long jump skipped one ayah | **NOT fixed** | 18:65→18:67 and 18:91→18:93, `nextCov=0.50` |
+| `noWindowWords` returned on a long session | **NOT fixed** | 2,501 words / 212 windows over 1,428 s |
+
+### Measured from the user's sessions, 9 October 2026
+
+| session | length | lock | evaluated | decided | CORRECT | WRONG | noWindow |
+|---|---|---|---|---|---|---|---|
+| Al-Isra 17 → Al-Kahf 18 | 1,428 s | 106 moves | 1,584 | 1,127 | 1,028 | 99 | **2,501** |
+| Al-Mulk 67 → 105 | 302 s | 28 moves | 333 | 269 | 258 | 11 | 0 |
+| Baqarah 2:141–158 | 268 s | 15 moves | 336 | 278 | 260 | 18 | 0 |
+| Baqarah 2:157–177 | 383 s | 16 moves | 433 | 232 | 219 | 13 | 0 |
+| Baqarah 2:176–3:1 | 168 s | 4 moves | 149 | 43 | 40 | 3 | 0 |
+| Baqarah 2:182–187 | 654 s | 4 moves | 188 | 104 | 96 | 8 | 0 |
+| Al-Kafirun 109 | 23 s | 5 moves | 26 | 22 | 22 | 0 | 0 |
+
+## The whole-corpus false-accusation sweep: what it found
+
+`engine/replay/optional_final.py` ran over all 114 reference-reciter dumps
+(6,112 ayat judged of 6,236, 26 h of audio). The reference reciter is Al-Dosari,
+so every WRONG verdict the harness finds is a false accusation:
+
+| | |
+|---|---|
+| WRONG verdicts on a reciter who made none | **768** |
+| the FIRST word of its ayah | **320 (42%)** |
+| carrying a stop mark (`۟ ۢ ۭ ۖ`…) | 132 (17%) |
+| wrong on the word's own final unit | 173 |
+| removed by the optional-final guard | **14 (2%)** |
+
+**The optional-final guard is not the fix I thought it was.** It removes 2% of
+the corpus-wide false accusations, against 5 of 16 measured in the user's own
+sessions — a small device sample that happened to be enriched for exactly that
+class. On the corpus the guard is marginal. It is kept because it removes blame
+and cannot add it, but it must not be presented as the answer.
+
+**The dominant class is the FIRST word of an ayah, and I have not found the
+cause.** Three hypotheses were measured and rejected, in
+`engine/replay/window_lead.py`:
+
+| Hypothesis | Measurement | Result |
+|---|---|---|
+| The window includes the previous ayah's tail and the first word loses to it. Trim the lead. | Surahs 18 + 3, trims 0–8. At trim 1, **every** first word collapses to SKIPPED (5 CORRECT remain). | **Rejected.** The overlap is load-bearing; removing it deletes the evidence. |
+| Skip exactly the symbols the PREVIOUS ayah consumed, derived from its own alignment. | Same run. Median offset consumed **54 symbols** — the previous ayah's units align greedily across this window and eat all of it. | **Rejected.** Worst of the three: 0 CORRECT, 304 SKIPPED. |
+| The first word's phonemes are a contiguous run inside the previous ayah's, so the window is genuinely ambiguous. | 329 first-word WRONG ayat. Overlap in 5% of them; the control group of clean ayat overlaps in **29%**. | **Rejected, and inverted.** |
+
+So the number is real — 42% of the reference reciter's false accusations are on a
+first word — and the window boundary is not why. The next candidates, in order,
+are the emission side rather than the table: the Zipformer's rolling state
+carries one ayah's tail into the next and drops or distorts the ayah's opening
+phoneme; or `ayahArrival` is written one poll late, so the window's left edge is
+quantised to a poll bucket and a fast reciter's first word falls outside it
+entirely. Both are measured from the frames, not the table, and both need a
+harness that reproduces the app's own window rather than the tight-fit window
+the sweep used.
+
+**That last point is a caveat on everything above.** `optional_final.py` and
+`window_lead.py` score against a window that `local_window()` fits tightly to the
+ayah. The app scores against `ayahObs`, whose window is three ayat wide and starts
+at the previous ayah's arrival. `docs/HARNESS_FIDELITY_AUDIT.md` records 22 places
+these two have already disagreed, so the 768 may be a different population from
+the 99 WRONG verdicts the Al-Kahf session produced. Treat the count as evidence
+that a class exists, not as a count of what the user saw.
+
+## What is open next
+
+**1. The first-word false accusation — 42% of the class, cause unknown.**
+Three measured hypotheses rejected (see the sweep above). Next candidates are on
+the emission side, not the table: the Zipformer's rolling state carrying one
+ayah's tail into the next, and `ayahArrival` written one poll late. To attack
+either one the harness must first reproduce the app's own `ayahObs` window, which
+is three ayat wide and starts at the previous ayah's arrival. `HARNESS_FIDELITY`
+entry 23 records the divergence.
+
+**2. `noWindowWords` returns on long sessions.** 2,501 words / 212 windows over
+1,428 s and 106 lock moves, where six shorter sessions read 0 and 0. The empty
+windows arrive on the first one or two polls after every lock advance, so the
+count is a per-advance artifact as much as a bug. Decide whether it should be
+measured at all: a word the lock has not reached yet is not a failure, and the
+counter does not separate the two.
+
+**3. The gated long jump skips an ayah.** Two measured events, `nextCov=0.50`
+both times. The jump treats partial next-ayah coverage as proof of a skip.
+
+**4. Ask the user which WRONG words were genuinely wrong.** Listed in the 8 July
+section above; 7 of 16 are ambiguous. This outranks items 1–3 for cost.
+
+**5. Device validation of the record fixes** (record integrity, per-surah fold),
+then page turns, then the standing-word pointer, then UI polish.
+
 ## Ownership
 
 Mine: `PracticeViewModel.kt`, `PhonemeMapper.kt`, `MainActivity.kt:1371`,

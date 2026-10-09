@@ -32,6 +32,25 @@ tajweed limits of the engine. Do not work in this repo without it.
    only the files you changed; do not `git add -A` over someone else's
    in-progress work.
 
+6. **Update `docs/CORE_LOGIC.md` in the same commit as any change to the six
+   pipeline steps.** It is the file a new reader uses to learn the app. A
+   change to the alignment, the lock policy, a verdict rule or the record format
+   that leaves it stale teaches the next person a lie.
+
+7. **A measured negative result is a result.** Write it down with its number. A
+   hypothesis that failed, and the measurement that killed it, is worth more than
+   a passing check that proves nothing. `docs/STATUS.md` holds three of them.
+
+8. **The harness and the phone are two different instruments.** A sweep over the
+   reference corpus is evidence that a class of defect exists. It is not a count
+   of what a user saw. Never quote a harness number as a device number, and say
+   which window it was measured in.
+
+9. **Never edit a comment to make a check pass.** When a gate check greps for
+   code you just deleted, the check named a symbol, not a behaviour. Fix the
+   check to test the behaviour, then fault-inject the fixed check. Do not restore
+   the symbol to satisfy a name.
+
 6. **Prefer `edit` on existing files** to creating new ones. Match surrounding
    style, and do not add comments unless asked — this codebase earns its
    comments, so if you are adding one it must explain something a reader could
