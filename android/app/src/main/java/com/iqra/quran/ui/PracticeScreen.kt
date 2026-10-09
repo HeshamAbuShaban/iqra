@@ -241,8 +241,13 @@ private fun HeadlineCard(s: PracticeLog.Summary, c: IqraColors) {
                 Metric(
                     c.ink, "${s.currentStreak}",
                     if (s.currentStreak == 1) "day in a row" else "days in a row",
-                    if (s.longestStreak > s.currentStreak)
-                        "best ${s.longestStreak}" else "best ${s.longestStreak}",
+                    // Both arms rendered "best ${s.longestStreak}": the test was
+                    // decoration, a comparison that could not change the answer,
+                    // which is worse than no comparison because it looks like
+                    // one. If the intent was "best vs current", the two numbers
+                    // must differ, and until they do this says the one true
+                    // thing.
+                    "best ${s.longestStreak}",
                 )
             }
         }

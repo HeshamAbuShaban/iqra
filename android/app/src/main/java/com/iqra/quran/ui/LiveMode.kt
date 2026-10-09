@@ -141,8 +141,13 @@ fun LiveModeScreen(
     val verses = remember(surah, startAyah, ayahCount) {
         (startAyah until startAyah + ayahCount).mapNotNull { data.getVerse(surah, it) }
     }
-    val totalWords = remember(verses) {
-        verses.sumOf { it.textClean.split(Regex("\\s+")).count { w -> w.isNotEmpty() } }
+    // The denominator is a MUSHARF word count, from the same list the statuses
+    // are keyed by - never a whitespace split of `textClean`, whose token count
+    // differs from the mushaf's word index from the first multi-word token
+    // onward. Counting one and displaying the other made "N of M heard" compare
+    // two different populations.
+    val totalWords = remember(verses, vm.wordsVersion.collectAsStateWithLifecycle().value) {
+        verses.sumOf { vm.standWordsFor(it.ayah).size }
     }
 
     val amp = remember { mutableFloatStateOf(0f) }

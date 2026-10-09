@@ -76,6 +76,8 @@ CHECKS = [
      "a session's counters survive browsing; only the next startRecite clears them"),
     ("dead_code", "none",
      "nothing in the recognition surface is declared and never referenced"),
+    ("honest_numbers", "none",
+     "no data and zero percent stay distinct, and the live list paints one word index"),
 ]
 
 # Scripts that need a dump argument rather than running bare.

@@ -341,7 +341,15 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
 private fun AyahCard(r: PracticeLog.Record, c: IqraColors) {
     // In recitation order, one outcome per ayah: the ayah's WORST verdict, because a
     // single mistake inside a mostly-correct ayah is the thing worth seeing.
-    val entries = r.perAyah.entries.sortedBy { it.key.substringAfter(':').toIntOrNull() ?: 0 }
+    // Sort by surah FIRST, then ayah. The key is "surah:ayah", and a session
+    // that spanned a handoff legitimately holds both 2:286 and 3:1 - sorting on
+    // the substring after the colon alone put 3:1 between 2:1 and 2:2 and drew
+    // the strip out of recitation order. The header next door already detects
+    // the handoff; the strip has to agree with it.
+    val entries = r.perAyah.entries.sortedWith(
+        compareBy({ it.key.substringBefore(':').toIntOrNull() ?: 0 },
+                  { it.key.substringAfter(':').toIntOrNull() ?: 0 })
+    )
     val outcomes = entries.map { (_, v) ->
         when {
             v[1] > 0 -> 1

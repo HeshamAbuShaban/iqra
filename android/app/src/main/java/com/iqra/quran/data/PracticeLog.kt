@@ -596,9 +596,16 @@ object PracticeLog {
                 }
             }
             val dur = r.durationSec ?: 0
+            // Both 0% and "nothing judged" used to encode as 0, and the decoder
+            // could not tell them apart, so a genuinely failed session vanished
+            // from the trend and from the "up/down on your previous session"
+            // comparison. This file states that "no data yet" and "zero
+            // percent" are different claims, so the encoding does too: 0 means
+            // zero percent, -1 means nothing was judged.
+            val acc = r.accuracy
             agg.series[f.name] = longArrayOf(
                 r.dayKey,
-                ((r.accuracy ?: 0f) * 1000f).toLong().coerceIn(0L, 1000L),
+                if (acc == null) -1L else (acc * 1000f).toLong().coerceIn(0L, 1000L),
                 (r.wpm * 10f).toLong().coerceIn(0L, 2000L),
                 r.judged.toLong(), r.wrong.toLong(),
                 dur.toLong(), r.surahStart.toLong(), r.perAyah.size.toLong(),
@@ -935,8 +942,12 @@ object PracticeLog {
             .map { (name, v) ->
                 SessionPoint(
                     dayKey = v.getOrElse(0) { 0L },
-                    accuracy = if (v.getOrElse(1) { 0L } <= 0L) null
-                               else v[1] / 1000f,
+                    // 0 is zero percent; -1 is "nothing was judged". Collapsing
+                    // the two erased a failed session from the trend.
+                    accuracy = when (val acc = v.getOrElse(1) { 0L }) {
+                        -1L -> null
+                        else -> acc / 1000f
+                    },
                     wpm = v.getOrElse(2) { 0L } / 10.0,
                     judged = v.getOrElse(3) { 0L }.toInt(),
                     wrong = v.getOrElse(4) { 0L }.toInt(),

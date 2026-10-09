@@ -1094,11 +1094,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             emissionBase + emissionLog.size,
         )
         if (hi <= lo) return emptyList()            // clamped to nothing: genuinely no audio yet
+        // No range guard below: `from` and `hi` are both clamped to
+        // [emissionBase, emissionBase + emissionLog.size] two lines up and the
+        // `hi <= lo` test above has already returned, so `a >= 0`,
+        // `b <= emissionLog.size` and `b > a` hold by construction. All three
+        // disjuncts of the guard that was here were unreachable, and an
+        // unreachable guard implies the caller believes the impossible is
+        // possible.
         val from = maxOf(lo, hi - ayahWindowLimit())
-        val a = from - emissionBase
-        val b = hi - emissionBase
-        if (a < 0 || b > emissionLog.size || b <= a) return emptyList()
-        return emissionLog.subList(a, b)
+        return emissionLog.subList(from - emissionBase, hi - emissionBase)
     }
 
     /**
@@ -2648,10 +2652,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // and handoff stays armed and keeps being evaluated.
             var page = versePage[lockedAyah] ?: pageNumber
             val atSurahEnd = verseWords.isNotEmpty() && lockedAyah >= verseWords.size
-            // The surah boundary, not the page boundary, is the one that may
-            // show the next surah's opening. See `surahEndAyah()`.
-            val atScopeEnd = atSurahEnd
-            if (atSurahEnd && atScopeEnd && activeSurah < 114) {
+            // The dead conjunct this replaces - `val atScopeEnd = atSurahEnd` then
+            // `atSurahEnd && atScopeEnd` - could never add information. It read
+            // as if a second, different boundary were being checked, which is
+            // the confusion that made the page-boundary handoff survive for so
+            // long: two boundaries were named and only one was ever evaluated.
+            if (atSurahEnd && activeSurah < 114) {
                 // Advance the page only once there is EVIDENCE the reciter has
                 // moved on - not the moment the lock reaches the last ayah.
                 //

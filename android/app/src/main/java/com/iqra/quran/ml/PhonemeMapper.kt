@@ -402,7 +402,10 @@ object PhonemeMapper {
         // substitution exactly as the string compare was.
         val ids = expected.symbolIds
         val ref = IntArray(len) { ids[canonicalId(flat[it])] ?: -1 }
-        val qry = IntArray(n) { emitted.get(it)?.let { e -> ids[canonicalId(e)] ?: -1 } ?: -1 }
+        // No safe-call: `emitted` is a List<String>, so element access is
+        // non-null and the `?.let` plus the trailing `?: -1` on the line this
+        // replaces could never fire. The reference side above does it right.
+        val qry = IntArray(n) { ids[canonicalId(emitted[it])] ?: -1 }
 
         // The traceback itself lives in UnitAligner so CI can execute it on the
         // JVM. Everything below is DERIVED from that one path, so the flags, the

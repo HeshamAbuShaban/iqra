@@ -211,8 +211,15 @@ def main() -> int:
     # the rule was gone and the helper was dead code. So this requires the call
     # with its surah argument, not merely the name.
     has_call = re.search(r"firstPageOfSurah\(\s*activeSurah\s*\+\s*1\s*\)", src_nc) is not None
-    has_gate = ("atSurahEnd" in src_nc and "atScopeEnd" in src_nc
-                and re.search(r"lockedAyah\s*>=\s*verseWords\.size", src_nc) is not None)
+    # Why this no longer greps for a variable called `atScopeEnd`: that name was
+    # deleted when it turned out to be a copy of `atSurahEnd`, and the check
+    # failed for a name rather than for behaviour - the same weakness its own
+    # comment describes below. What matters is that the block is guarded on the
+    # SURAH boundary and on there being a next surah, either of which being
+    # absent means the page never turns.
+    has_gate = ("atSurahEnd" in src_nc
+                and re.search(r"lockedAyah\s*>=\s*verseWords\.size", src_nc) is not None
+                and re.search(r"atSurahEnd\s*&&\s*activeSurah\s*<\s*114", src_nc) is not None)
     advances_before_lock = has_call and has_gate
     print(f"  page advances before the lock at a surah boundary: "
           f"{'yes' if advances_before_lock else 'NO'}")
