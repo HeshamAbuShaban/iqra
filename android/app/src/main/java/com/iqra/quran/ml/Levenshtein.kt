@@ -30,9 +30,4 @@ object Levenshtein {
         return prev[m]
     }
 
-    fun ratio(a: String, b: String): Double {
-        val lenSum = a.length + b.length
-        if (lenSum == 0) return 1.0
-        return (lenSum - distance(a, b)).toDouble() / lenSum
-    }
 }

@@ -75,13 +75,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     fun searchAyat(q: String): List<com.iqra.quran.data.AyahSearch.Hit> =
         searchIndex?.query(q) ?: emptyList()
 
-    fun ensureSearchIndex(d: com.iqra.quran.data.QuranData) {
-        if (searchIndex != null) return
-        viewModelScope.launch(Dispatchers.IO) {
-            searchIndex = com.iqra.quran.data.AyahSearch.build(d.verses)
-        }
-    }
-
     private val _engineLabel = MutableStateFlow("")
     val engineLabel: StateFlow<String> = _engineLabel
 
@@ -369,17 +362,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun sessionCaptureEnabled(): Boolean = sessionPrefs().getBoolean("capture", true)
 
-    fun setSessionCaptureEnabled(on: Boolean) {
-        sessionPrefs().edit().putBoolean("capture", on).apply()
-        if (!on) File(sessionsDir(), currentSessionName()).delete()
-    }
-
     fun sessionKeepCount(): Int = sessionPrefs().getInt("keep", 10).coerceIn(1, 100)
-
-    fun setSessionKeepCount(n: Int) {
-        sessionPrefs().edit().putInt("keep", n.coerceIn(1, 100)).apply()
-        pruneSessions()
-    }
 
     private fun currentSessionName(): String =
         "s-${sessionStartedAtMs}-$startSurahToFile-${buildTag.ifEmpty { "dev" }.take(24)}.json"
@@ -609,6 +592,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // looked like a measurement and was an artefact of the denominator.
             .append(",\"evaluatedWords\":").append(sessionArchive.size)
             .append(",\"judgedWords\":").append(sessionTerminalCount)
+            // The cadence the loop actually delivered, so the record can say
+            // whether the timing constants were operating on the truth. The
+            // declared interval is FEED_POLL_SEC = 250 ms; measured over the
+            // Al-Kahf session the loop delivered a median of 563 ms.
+            .append(",\"pollSec\":").append(f3(pollSec))
+            .append(",\"declaredPollSec\":").append(f3(SherpaVad.FEED_POLL_SEC))
             .append(",\"noWindowWords\":").append(sessionNoWindowWords)
             .append(",\"emptyWindows\":").append(sessionEmptyWindows)
             .append(",\"unjudgeableAyahs\":").append(unjudgeableKeys.size)
@@ -707,12 +696,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .forEach { runCatching { it.delete() } }
     }
 
-    /** Newest session file, for the existing Share action. */
-    fun latestSessionFile(): File? =
-        sessionsDir().listFiles { _, n -> n.endsWith(".json") }
-            ?.maxByOrNull { it.lastModified() }
-
-
     fun frameRingDump(): String {
         val sb = StringBuilder(FRAME_RING * 64 + 1024)
         sb.append("#iqra-frame-ring v1")
@@ -785,8 +768,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putInt("last_surah", s).putInt("last_page", page).apply()
         _lastRead.value = s to page
     }
-
-    fun lastReadPage(): Int? = _lastRead.value?.second
 
     /** Explicitly go back to where the reader was last left. */
     fun resumeLastRead(): Boolean {
@@ -1167,6 +1148,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         _activeWindow.value = computeWindow()
     }
 
+    /**
+     * The last ayah of the surah being recited. The handoff boundary is this,
+     * never a page boundary: leaving a surah mid-way is what produced the
+     * 18:27 -> 19:1 excursion in the Al-Kahf session.
+     */
+    private fun surahEndAyah(): Int = verseWords.keys.maxOrNull() ?: lockedAyah
+
     // ---- Recognition state ----
     private var wpmEma = 70.0
     private var lastAdvanceAt = 0L
@@ -1209,7 +1197,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val prev = lockedAyah
         val now = System.currentTimeMillis()
         if (measureSpeed) {
-            val dtSec = speechFramesSinceAdvance * SherpaVad.FEED_POLL_SEC
+            val dtSec = speechFramesSinceAdvance * pollSec
             val prevWords = verseWords[prev]?.size ?: 0
             if (dtSec in 2.0..180.0 && prevWords > 0) {
                 val inst = prevWords / dtSec * 60.0
@@ -1273,9 +1261,35 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Frames a WRONG flag must persist before it latches, scaled by measured
      *  words-per-minute so slow reciters' mid-word frames don't flash red. */
     private fun wrongLatchFrames(): Int =
-        (1.2 * (60.0 / wpmEma) / SherpaVad.FEED_POLL_SEC).roundToInt().coerceIn(2, 8)
+        (1.2 * (60.0 / wpmEma) / pollSec).roundToInt().coerceIn(2, 8)
 
     private var speechFramesSinceAdvance = 0L
+
+    /**
+     * Poll cadence actually delivered. The declared one is
+     * [SherpaVad.FEED_POLL_SEC], and every derived constant used to be built
+     * from it. Measured over a 1,428 s session that is a fiction: the loop
+     * asks for 250 ms and delivers a median of 563 ms, because each poll also
+     * accepts, decodes, aligns, repaints and writes Compose state. So the
+     * "1.2 seconds" of persistence a WRONG flag must hold really lasted 2.7 s,
+     * and words-per-minute was computed against an interval 2.25x too short -
+     * which inflated it, then had [wpmEma] clamp hide the inflation.
+     *
+     * Everything that thinks in seconds now reads this instead. It is an EMA
+     * so one long GC pause cannot swing it, and it starts at the declared
+     * value so the first ayah behaves exactly as before.
+     */
+    private var pollMsEma = SherpaVad.FEED_POLL_SEC * 1000f
+
+    /** Seconds per poll, for anything that must think in real time. */
+    private val pollSec: Float
+        get() = (pollMsEma / 1000f).coerceIn(0.05f, 2f)
+
+    /** Called once per poll with the wall-clock duration of that poll. */
+    private fun notePollDuration(ms: Long) {
+        if (ms <= 0L || ms > 10_000L) return
+        pollMsEma = 0.8f * pollMsEma + 0.2f * ms
+    }
 
     /**
      * Replays the recent audio tail into a FRESH stream after the lock moves,
@@ -1346,6 +1360,25 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // Counted, not just cleared: a session that reports judged words must
         // not have inherited the previous session's total.
         sessionTerminalCount = 0
+        // Siblings of the counters above, cleared here for the same reason: a
+        // field that survives a session boundary is a field the NEXT session
+        // inherits by accident.
+        //
+        // consecutiveRetreats only ever resets on a FORWARD move, so a session
+        // that ended mid-retreat opened the next one holding it at 2, and
+        // retreatAllowed() then silently refused every backward move until the
+        // reciter happened to advance first.
+        consecutiveRetreats = 0
+        // noiseFloor is calibrated per session from the room. A session whose
+        // mic yields nothing in the first 400 ms left the previous session's
+        // loud-room floor in force and gated itself shut, with _gateReason
+        // reading "silence" - the engine appearing deaf for a reason that
+        // belongs to an earlier session.
+        noiseFloor = SILENCE_RMS
+        // Restart the measured cadence at the declared one, so a session that
+        // opens with a fast poll is not judged by the previous session's slow
+        // one, and so the very first ayah behaves exactly as before.
+        pollMsEma = SherpaVad.FEED_POLL_SEC * 1000f
         // Counts of the two failure modes this round exists for, so a session
         // record can distinguish them without needing the phone back:
         //   noWindowWords - words whose window was empty although the lock had
@@ -1445,25 +1478,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             ?.let { return it.surah to it.verse }
         // otherwise the last ayah that has any presence here
         return words.lastOrNull()?.let { it.surah to it.verse }
-    }
-
-    /**
-     * Last ayah in scope for the current session: the last ayah present on the
-     * page the reader is showing. Bounds the session to the screen, so a page
-     * that ends mid-surah hands off to the next surah instead of wandering
-     * through hundreds of ayat the user never asked about.
-     */
-    private fun scopeEndAyah(): Int? {
-        val pages = _mushaf.value ?: return null
-        val page = pageNumber
-        if (page < 1 || page > pages.size) return null
-        val words = pages[page - 1].lines
-            .filter { it.type == "text" }
-            .flatMap { it.words ?: emptyList() }
-        if (words.isEmpty()) return null
-        val here = words.map { it.surah to it.verse }
-        // Only ayat of the surah we are on bound the session.
-        return here.filter { it.first == activeSurah }.maxOfOrNull { it.second }
     }
 
     /**
@@ -1651,17 +1665,6 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             diag("page turn within s=$activeSurah: navigation only, lock untouched")
         }
-    }
-
-    /** The lock's ayah when it is not on the page being viewed, for scroll-back. */
-    fun lockOffCurrentPage(): Boolean {
-        val pages = _mushaf.value ?: return false
-        if (pageNumber < 1 || pageNumber > pages.size) return false
-        val onPage = pages[pageNumber - 1].lines
-            .filter { it.type == "text" }
-            .flatMap { it.words ?: emptyList() }
-            .any { it.surah == activeSurah && it.verse == lockedAyah }
-        return !onPage
     }
 
     fun toggleHide() { _hideVerse.value = !_hideVerse.value }
@@ -1867,6 +1870,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             lastRecoveryTime = System.currentTimeMillis()
             diag("mic floor calibrated: ${"%.4f".format(noiseFloor)}")
             while (_recording.value && gen == sessionGen) {
+                val loopStart = SystemClock.elapsedRealtime()
                 // The poll cadence is a single declared constant, shared with the
                 // VAD so the gate's hangover cannot drift away from it.
                 delay((SherpaVad.FEED_POLL_SEC * 1000).toLong())
@@ -1926,6 +1930,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                         diag("frame error: $m")
                     }
                 }
+                // Close the poll's own timing, so the derived constants below
+                // are built from what the loop really does rather than what it
+                // asked for. Excludes the delay, because that is the part the
+                // caller controls: the work time is what stretches the cadence.
+                notePollDuration(SystemClock.elapsedRealtime() - loopStart)
             }
         }
     }
@@ -2073,11 +2082,30 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // Handoff: at the end of what is IN SCOPE, check whether the next
             // thing is the next surah's opening.
             //
-            // The scope is the visible page, not the whole surah: the user may
-            // start on page 50 of Al-Baqarah, and the session must not run on
-            // to 2:286 before it will ever consider a surah change. So the
-            // boundary is the last ayah that is present on the current page.
-            val lastAyah = scopeEndAyah() ?: (verseWords.keys.maxOrNull() ?: lockedAyah)
+            // The scope is the SURAH, not the visible page.
+            //
+            // This used to be `scopeEndAyah()` - the last ayah present on the
+            // current page - with the stated worry that a session starting on
+            // page 50 of Al-Baqarah "must not run on to 2:286 before it will
+            // ever consider a surah change". The consequence was the opposite
+            // of careful: the app offered a surah change at every page
+            // boundary, mid-surah.
+            //
+            // Measured on the user's own 1,428 s Al-Isra/Al-Kahf session:
+            // the lock left surah 18 at 18:27 into 19:1 while the reciter was
+            // mid-surah, then had to be fought back to 18:28 twenty seconds
+            // later. An earlier Al-Baqarah session did the same: 2:164 -> 3:2
+            // -> 3:3 -> 2:165. Every ayah between the page boundary and the
+            // surah's real end was skipped, and no word from Al-Isra was ever
+            // judged in that session at all - zero words, because the lock
+            // jumped the whole surah.
+            //
+            // The page follows the lock (`versePage[lockedAyah]`), so a surah
+            // scope still turns the page as recitation advances. What it stops
+            // is the lock leaving the surah at a page break, and the user's
+            // report that a surah change was offered while their own flow of
+            // ayat was still going.
+            val lastAyah = surahEndAyah()
             if (lockedAyah < lastAyah) handoffFrames = 0
             if (lockedAyah >= lastAyah && activeSurah < 114) {
                 val next = PhonemeMapper.expected(activeSurah + 1, 1)
@@ -2620,7 +2648,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // and handoff stays armed and keeps being evaluated.
             var page = versePage[lockedAyah] ?: pageNumber
             val atSurahEnd = verseWords.isNotEmpty() && lockedAyah >= verseWords.size
-            val atScopeEnd = scopeEndAyah()?.let { lockedAyah >= it } ?: false
+            // The surah boundary, not the page boundary, is the one that may
+            // show the next surah's opening. See `surahEndAyah()`.
+            val atScopeEnd = atSurahEnd
             if (atSurahEnd && atScopeEnd && activeSurah < 114) {
                 // Advance the page only once there is EVIDENCE the reciter has
                 // moved on - not the moment the lock reaches the last ayah.

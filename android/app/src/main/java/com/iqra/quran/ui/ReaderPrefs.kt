@@ -70,12 +70,6 @@ object ReaderPrefs {
     /** The multiplier to hand `sp`/`TextUnit` sizes. 100 -> 1.0f. */
     fun fontScale(ctx: Context): Float = fontScalePercent(ctx) / 100f
 
-    /** One-line summary for the settings screen, e.g. "100% · default". */
-    fun fontScaleLabel(ctx: Context): String {
-        val p = fontScalePercent(ctx)
-        return if (p == FONT_DEFAULT) "$p% · default" else "$p%"
-    }
-
     // ---- appearance -----------------------------------------------------
 
     /**
@@ -121,10 +115,17 @@ object ReaderPrefs {
      * construction, not a tunable aggressiveness. Hence a hard prohibition
      * rather than a threshold.
      *
-     * Default true. Turning it off cannot make madd length accusable - the DP
-     * cannot separate "held 4 instead of 2" from a wrong consonant anyway - it
-     * only restores single-realisation matching, which is useful for measuring
-     * but not for judging.
+     * Default true, and it is the only mode permitted for judging.
+     *
+     * Turning it OFF makes madd length accusable. That is the honest meaning of
+     * the switch, and the comment this replaces claimed the opposite - that
+     * turning it off "cannot make madd length accusable - the DP cannot
+     * separate 'held 4 instead of 2' from a wrong consonant anyway". It can and
+     * it does: with the switch off, canonicalId becomes the identity, so 'اا'
+     * and 'اااا' are different reference ids and the ordinary substitution rule
+     * marks the word WRONG. PhonemeMapper has said this correctly all along;
+     * only this doc lied, and a documented promise the code does not keep is
+     * worse than an undocumented limit.
      */
     fun maddNeverAccuses(ctx: Context): Boolean =
         prefs(ctx).getBoolean("recNoMadd", true)
@@ -229,14 +230,18 @@ object ReaderPrefs {
 
     /**
      * How advisories appear. Advisories are engine notes about words it could
-     * not judge - never errors. IN_FLOW puts a neutral amber wash under them
-     * while reciting; QUIET keeps them only in the session report; OFF hides
-     * them entirely.
+     * not judge - never errors.
+     *
+     * OFF hides them everywhere, including the session report: a switch that
+     * promises to hide something and does not is a decoration. QUIET keeps them
+     * only in the session report. IN_FLOW also puts a neutral amber wash under
+     * them while reciting. Every value must behave differently from the other
+     * two, and a gate check counts the comparisons that actually read it.
      */
     enum class AdvisoryDisplay(val id: Int, val label: String) {
         QUIET(0, "Quiet: session report only"),
         IN_FLOW(1, "In flow: amber mark on the mushaf"),
-        OFF(2, "Off");
+        OFF(2, "Off: no engine notes anywhere");
         companion object {
             fun of(id: Int): AdvisoryDisplay = entries.firstOrNull { it.id == id } ?: IN_FLOW
         }

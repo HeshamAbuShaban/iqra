@@ -170,8 +170,6 @@ object PhonemeMapper {
         }
     }
 
-    fun wordTableSize(): Int = wordTable?.size ?: 0
-
     /** Idempotent; ~5 MB JSON parsed once per process. */
     fun ensureTable(file: File): Boolean {
         if (table != null) return true
@@ -231,9 +229,6 @@ object PhonemeMapper {
 
     fun isReady(): Boolean = table != null && unitsByLength != null
 
-    fun tableSize(): Int = table?.size ?: 0
-
-    fun unitCount(): Int = unitSet?.size ?: 0
 
     /**
      * An ayah expressed in the model's own alphabet: the phoneme UNITS to

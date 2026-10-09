@@ -204,7 +204,14 @@ fun SessionReportScreen(
                             // An advisory is the engine saying "I noticed this but
                             // cannot judge it" - information for the reciter, never
                             // an accusation, so it lists apart from the score.
-                            if (r.advisories.isNotEmpty()) {
+                            //
+                            // OFF hides them here too. QUIET and IN_FLOW differ
+                            // only in whether the mushaf also shows a mark; a
+                            // value of this enum that behaved the same as
+                            // another would be a switch that does nothing.
+                            val showNotes = ReaderPrefs.advisoryDisplay(ctx) !=
+                                ReaderPrefs.AdvisoryDisplay.OFF
+                            if (showNotes && r.advisories.isNotEmpty()) {
                                 val byKind = r.advisories.groupingBy { it.kind }.eachCount()
                                 byKind.keys.sorted().forEach { kind ->
                                     val n = r.advisories.filter { it.kind == kind }.sumOf { it.count }

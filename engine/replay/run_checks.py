@@ -74,6 +74,8 @@ CHECKS = [
      "every Settings toggle is consumed somewhere but the settings UI"),
     ("session_record_integrity", "none",
      "a session's counters survive browsing; only the next startRecite clears them"),
+    ("dead_code", "none",
+     "nothing in the recognition surface is declared and never referenced"),
 ]
 
 # Scripts that need a dump argument rather than running bare.

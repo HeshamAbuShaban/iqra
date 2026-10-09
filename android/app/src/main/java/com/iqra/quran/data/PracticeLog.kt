@@ -387,6 +387,20 @@ object PracticeLog {
         val foldedHard = HashMap<String, Map<String, Long>>()
 
         /**
+         * name -> that record's per-surah contribution.
+         *
+         * The undo block below took back sessions, correct, wrong, skipped,
+         * unknown, ayat and hard - everything except [surahs]. Since the engine
+         * rewrites a record every ~25 s, a ten-minute session folded into
+         * `surahs` roughly twenty-four times while the headline numbers
+         * survived the undo. The screen then read "322 CORRECT" above a By-surah
+         * row claiming thousands. A part of the record the undo cannot reach is
+         * a number nobody can trust, so it is stored and subtracted like the
+         * rest.
+         */
+        val foldedSurahs = HashMap<String, Map<Int, LongArray>>()
+
+        /**
          * record name -> one point on the practice timeline.
          *
          * `[dayKey, accuracy*1000, wpm, judged, wrong, durationSec, surah, ayat]`.
@@ -539,6 +553,17 @@ object PracticeLog {
                         }
                     }
                     agg.foldedHard.remove(f.name)
+                    agg.foldedSurahs.remove(f.name)?.forEach { (s, a) ->
+                        val acc = agg.surahs[s]
+                        if (acc != null) {
+                            acc[0] = (acc[0] - a[0]).coerceAtLeast(0L).toInt()
+                            acc[1] = (acc[1] - a[1]).coerceAtLeast(0L).toInt()
+                            acc[2] = (acc[2] - a[2]).coerceAtLeast(0L).toInt()
+                            acc[3] = (acc[3] - a[3]).coerceAtLeast(0L).toInt()
+                            acc[4] = (acc[4] - 1L).coerceAtLeast(0L).toInt()
+                            if (acc.sum() == 0) agg.surahs.remove(s)
+                        }
+                    }
                 }
             }
             agg.folded[f.name] = longArrayOf(
@@ -563,6 +588,13 @@ object PracticeLog {
                 mine[k] = v[0].toLong()
             }
             agg.foldedHard[f.name] = mine
+            agg.foldedSurahs[f.name] = HashMap<Int, LongArray>().also { m ->
+                r.perSurah.forEach { (s, a) ->
+                    m[s] = longArrayOf(
+                        a[0].toLong(), a[1].toLong(), a[2].toLong(), a[3].toLong(),
+                    )
+                }
+            }
             val dur = r.durationSec ?: 0
             agg.series[f.name] = longArrayOf(
                 r.dayKey,
@@ -730,6 +762,17 @@ object PracticeLog {
                     }
                 }
             }
+            o.optJSONObject("foldedSurahs")?.let { fo ->
+                fo.keys().forEach { key ->
+                    fo.optJSONObject(key)?.let { inner ->
+                        val m = HashMap<Int, LongArray>()
+                        inner.keys().forEach { s ->
+                            m[s.toInt()] = LongArray(4) { inner.optJSONArray(s)?.optLong(it, 0L) ?: 0L }
+                        }
+                        a.foldedSurahs[key] = m
+                    }
+                }
+            }
             a
         } catch (e: Exception) {
             Log.w(TAG, "aggregate unreadable, rebuilding from records", e)
@@ -757,6 +800,13 @@ object PracticeLog {
             o.put("foldedHard", JSONObject().apply {
                 a.foldedHard.forEach { (k, m) ->
                     put(k, JSONObject().apply { m.forEach { (w, n) -> put(w, n) } })
+                }
+            })
+            o.put("foldedSurahs", JSONObject().apply {
+                a.foldedSurahs.forEach { (k, m) ->
+                    put(k, JSONObject().apply {
+                        m.forEach { (s, v) -> put("$s", JSONArray(v.toList())) }
+                    })
                 }
             })
             o.put("series", JSONObject().apply {

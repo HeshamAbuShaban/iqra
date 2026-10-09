@@ -49,9 +49,6 @@ object SherpaZipformer {
         "$MODEL_FILE[${com.iqra.quran.data.AssetPaths.resolveReport(context, MODEL_FILE)}] " +
             "$TOKENS_FILE[${com.iqra.quran.data.AssetPaths.resolveReport(context, TOKENS_FILE)}]"
 
-    fun modelDir(context: Context): File =
-        com.iqra.quran.data.AssetPaths.engineDir(context)
-
     /** True when gated files are present AND the streaming recognizer started. */
     fun ensure(context: Context): Boolean {
         if (recognizer != null) return true

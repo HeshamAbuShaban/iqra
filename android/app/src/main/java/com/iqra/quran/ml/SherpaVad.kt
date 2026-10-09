@@ -103,17 +103,6 @@ object SherpaVad {
         }
     }
 
-    fun speechInWindow(samples: FloatArray): Boolean? {
-        val v = vad as? com.k2fsa.sherpa.onnx.Vad ?: return null
-        return try {
-            v.reset()
-            v.acceptWaveform(samples)
-            v.isSpeechDetected()
-        } catch (t: Throwable) {
-            Log.w(TAG, "VAD probe failed", t)
-            null
-        }
-    }
 
     fun close() {
         try {

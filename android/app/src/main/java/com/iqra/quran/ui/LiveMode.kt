@@ -315,7 +315,22 @@ fun LiveModeScreen(
                 ) {
                     verses.forEachIndexed { i, v ->
                         val ayah = startAyah + i
-                        val parts = remember(v.textUthmani) { uthmaniWords(v.textUthmani) }
+                                // The words come from the mushaf, not from a
+                                // whitespace split of the uthmani text.
+                                //
+                                // statusMap is keyed by MushafWord.wordInVerse,
+                                // and the mushaf's own word is not always one
+                                // whitespace token: ٱلذَّـٰلَّكِ' appears in the
+                                // mushaf as two words printed as one, and
+                                // 'بَعْدَ مَا' (2:89 w3, 8:6 w4) is one mushaf
+                                // word drawn as two. Splitting on spaces
+                                // therefore shifts every index from the first
+                                // such word onward and lights up the WRONG
+                                // WORD - the one failure this app exists to
+                                // prevent.
+                                val parts = remember(v, vm.wordsVersion.collectAsStateWithLifecycle().value) {
+                                    vm.standWordsFor(ayah).map { it.text }
+                                }
                         Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
                             Text(
                                 "$ayah",
@@ -335,8 +350,7 @@ fun LiveModeScreen(
                                         statusMap["$surah:$ayah:${wi + 1}"],
                                         "$surah:$ayah:${wi + 1}" == currentKey,
                                     )
-                                }
-                            }
+                                }                            }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -371,8 +385,15 @@ fun LiveModeScreen(
                                 modifier = Modifier.weight(1f),
                             ) { Text("Begin reciting", color = lcG.accent, fontSize = 16.sp) }
                         } else {
+                            // "heard" is a verdict, not a paint. UNKNOWN and
+                            // SKIPPED are the ABSENCE of one, so counting the
+                            // map's size let a session the engine never heard
+                            // report "N of N heard".
+                            val judged = statusMap.values.count {
+                                it == WordStatus.CORRECT || it == WordStatus.WRONG
+                            }
                             Text(
-                                "${statusMap.size} of $totalWords heard",
+                                "$judged of $totalWords heard",
                                 fontSize = 13.sp,
                                 color = Color(0xFF8FA0BE),
                                 modifier = Modifier.weight(1f).padding(start = 12.dp),
@@ -411,7 +432,16 @@ fun LiveModeScreen(
             onDismissRequest = {},
             title = { Text("Done") },
             text = {
-                val judged = statusMap.size
+                        // "heard" must mean heard. statusMap is the live paint
+                        // map, and it is filled with UNKNOWN for every word the
+                        // engine could NOT judge, so counting its size reported
+                        // "N of N heard" over a session the engine never heard
+                        // at all. UNKNOWN is defined in this repo as the absence
+                        // of a verdict, exactly like SKIPPED, so it is not
+                        // counted here either.
+                        val judged = statusMap.values.count {
+                            it == WordStatus.CORRECT || it == WordStatus.WRONG
+                        }
                 Text(
                     if (judged == 0) {
                         // Distinguish the cases. The old copy blamed the microphone
@@ -728,28 +758,18 @@ private fun LiveStat(label: String, value: String) {
 }
 
 /**
- * The verse's words, in reading order, from the Uthmani text.
+ * The passage now takes its words from `vm.standWordsFor(ayah)`, which are
+ * `MushafWord`s already keyed by `wordInVerse` - the same index the verdict maps
+ * use.
  *
- * Two things this has to get right, and the obvious implementation gets both
- * wrong. `textClean` carries NO harakat at all - 2:7 is `خَتَمَ ٱللَّهُ عَلَىٰ` in
- * Uthmani and `ختم الله علي` in clean - so rendering the clean text silently
- * strips exactly what a reciter is reading. And the Uthmani text splits bare
- * waqf marks into their own whitespace tokens: 2:7 yields fourteen tokens for
- * twelve words, because `ۖ` appears twice on its own.
- *
- * So a token counts as a word only if it contains an Arabic letter. Marks are
- * attached to the word they follow, which is also where a mushaf prints them.
+ * The whitespace splitter that was here is gone deliberately. It carried two
+ * right-by-construction notes about `textClean` stripping harakat and bare waqf
+ * marks splitting into their own tokens, and still indexed the words wrongly:
+ * the mushaf prints 'بَعْدَ مَا' (2:89 w3, 8:6 w4) as ONE word across a space,
+ * so from the first such word onward every whitespace index points at a
+ * different word than the verdict map does. Deriving the list from the mushaf is
+ * the only way the two can agree, and the engine already publishes it.
  */
-internal fun uthmaniWords(text: String): List<String> {
-    val out = ArrayList<String>()
-    for (raw in text.split(' ')) {
-        if (raw.isEmpty()) continue
-        val hasLetter = raw.any { it.code in 0x0621..0x064A || it.code in 0x0671..0x06D3 }
-        if (hasLetter) out.add(raw)
-        else if (out.isNotEmpty()) out[out.lastIndex] = out.lastIndex.let { out[it] } + " " + raw
-    }
-    return out
-}
 
 
 /**
