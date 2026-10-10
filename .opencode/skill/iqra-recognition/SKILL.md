@@ -40,6 +40,7 @@ result depends on how a human actually recites, say so.
 | `docs/WORD_ALIGNMENT_4116.md` | Historical. Resolved; kept because the reasoning error is instructive. |
 | `docs/TODO.md` | The live backlog. What is next, and what was parked. |
 | `docs/CORE_LOGIC.md` | **Before touching recognition code.** The pipeline in plain English, built toward ASD-STE100: detect, decode, judge, move, paint, record. Update it in the same commit as any change to those six steps. |
+| `docs/MAINTAINING.md` | **How to change the app and prove it.** The gate, how to write a check, how to swap the model, how to add a tajweed rule, what the open defects are. |
 
 `docs/` is ~3,700 lines. Do not read it all. Route by symptom.
 
