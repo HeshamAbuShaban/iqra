@@ -33,6 +33,15 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
+/** One ayah of the surah in scope, for the progress strip. */
+data class ScopeAyah(
+    val ayah: Int,
+    val words: Int,
+    val heard: Int,
+    val decided: Int,
+    val isLocked: Boolean,
+)
+
 class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading
@@ -1177,17 +1186,55 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Narrow 2–3 ayah active window (locked±1) that matching, statuses and
      *  the hide overlay all consume, so attention stays on what the reciter
      *  is actually saying instead of the whole surah. */
-    private fun computeWindow(): List<Int> {
+private fun computeWindow(): List<Int> {
         if (verseWords.isEmpty()) return emptyList()
         val keys = verseWords.keys
         val w = listOf(lockedAyah - 1, lockedAyah, lockedAyah + 1).filter { keys.contains(it) }
         if (w.isNotEmpty()) return w
-        val nearest = keys.minOrNull() ?: return emptyList()
+        val nearest = keys.minOrNull() ?: return keys.take(1)
         return listOf(nearest)
+    }
+
+    private val _scopeProgress = MutableStateFlow<List<ScopeAyah>>(emptyList())
+    /**
+     * Every ayah of the surah in scope, with how many of its words were heard.
+     *
+     * The reader showed the locked ayah only, so a memoriser working from a
+     * hidden page could see neither how far through the surah they were nor
+     * which ayat were still unreached. That is the "same relation of the
+     * unhidden one" the user asked for: the progress of the RECITATION, drawn
+     * over the scope the user is working in, whether or not the words are
+     * masked. A surah is at most 286 ayat, so one list rebuild per ayah is
+     * cheap; a 3-page scope is a strict subset of it.
+     */
+    val scopeProgress: StateFlow<List<ScopeAyah>> = _scopeProgress
+
+    private fun rebuildScopeProgress() {
+        if (verseWords.isEmpty()) {
+            _scopeProgress.value = emptyList()
+            return
+        }
+        val out = ArrayList<ScopeAyah>(verseWords.size)
+        for (a in verseWords.keys.sorted()) {
+            var heard = 0
+            var decided = 0
+            val base = "$activeSurah:$a:"
+            for (k in sessionArchive.keys) {
+                if (!k.startsWith(base)) continue
+                when (sessionArchive[k]) {
+                    WordStatus.CORRECT -> { heard++; decided++ }
+                    WordStatus.WRONG -> decided++
+                    else -> {}
+                }
+            }
+            out.add(ScopeAyah(a, verseWords[a]?.size ?: 0, heard, decided, a == lockedAyah))
+        }
+        _scopeProgress.value = out
     }
 
     private fun refreshWindow() {
         _activeWindow.value = computeWindow()
+        rebuildScopeProgress()
     }
 
     /**
@@ -1583,8 +1630,47 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (surah in 1..114 && ayah >= 1) _selectedAyah.value = "$surah:$ayah"
     }
 
+    private val _selectedRange = MutableStateFlow<Pair<String, String>?>(null)
+    /** First and last selected ayah, when the user has extended a selection. */
+    val selectedRange: StateFlow<Pair<String, String>?> = _selectedRange
+
+    /**
+     * Long-press selection, modelled on the reference reader's AyahSelection.
+     *
+     * The reference does three things and this now does the same:
+     *  - long-press with nothing selected starts a selection on that ayah;
+     *  - long-press again EXTENDS the selection into a range (the range keeps
+     *    its order whichever end you press next);
+     *  - a plain tap inside the current selection collapses it to that ayah, and
+     *    a tap on the page chrome (not an ayah) clears it.
+     *
+     * The range is what makes a single ayah selectable AND a passage selectable
+     * with the same gesture, which is the "smart" part: the mode is explicit
+     * state, not a guess from gesture length.
+     */
+fun toggleSelectAyah(surah: Int, ayah: Int) {
+        if (surah !in 1..114 || ayah < 1) return
+        val key = "$surah:$ayah"
+        // The range anchors on the currently SELECTED ayah, not on the range.
+        // It used to anchor on `_selectedRange`, which the previous press had
+        // just set to null - so the branch that opens a range could never be
+        // reached and long-press could only ever select one ayah. The same
+        // shape as the checks that could never fire: it looked like a range
+        // selector and was a single-ayah selector wearing one.
+        val anchor = _selectedAyah.value
+        _selectedAyah.value = key
+        _selectedRange.value = if (anchor == null || anchor == key) {
+            null
+        } else {
+            // Order the range whichever end is pressed next: a range is read
+            // left to right, and a reversed one would select the wrong passage.
+            if (key.toInt() < anchor.toInt()) key to anchor else anchor to key
+        }
+    }
+
     fun clearSelection() {
         _selectedAyah.value = null
+        _selectedRange.value = null
     }
 
     fun pageOfVerse(surah: Int, ayah: Int): Int? {

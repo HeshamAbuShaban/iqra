@@ -254,6 +254,54 @@ private fun mushafShapes() = Shapes(
     extraLarge = RoundedCornerShape(32.dp),
 )
 
+/**
+ * A compact progress strip over the ayah of the surah in scope.
+ *
+ * Each ayah is a cell, filled by the share of its words the engine has heard.
+ * This is the memoriser's answer to "how far through am I", which the reader
+ * bar - the locked ayah alone - could not give. It is a bar, not a number,
+ * because a percentage here would read as a score of the reciter, and it is not
+ * one: it is how far the LOCK has come.
+ */
+@Composable
+private fun ScopeProgressStrip(
+    ayahs: List<ScopeAyah>,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    Canvas(modifier.height(14.dp)) {
+        val n = ayahs.size
+        if (n == 0) return@Canvas
+        val gap = if (n > 120) 0.5f else 1.2f
+        val cell = (size.width - gap * (n - 1)) / n
+        ayahs.forEachIndexed { i, a ->
+            val x = i * (cell + gap)
+            val frac = if (a.words > 0) a.heard.toFloat() / a.words else 0f
+            if (a.heard > 0) {
+                drawRect(
+                    cs.onSurface.copy(alpha = 0.12f),
+                    androidx.compose.ui.geometry.Offset(x, 0f),
+                    androidx.compose.ui.geometry.Size(cell, size.height),
+                )
+            }
+            if (frac > 0f) {
+                drawRect(
+                    cs.onSurface.copy(alpha = 0.42f),
+                    androidx.compose.ui.geometry.Offset(x, size.height * (1f - frac)),
+                    androidx.compose.ui.geometry.Size(cell, size.height * frac),
+                )
+            }
+            if (a.isLocked) {
+                drawRect(
+                    cs.primary,
+                    androidx.compose.ui.geometry.Offset(x, -1f),
+                    androidx.compose.ui.geometry.Size(cell, 2f),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ExpectedWordsLine(
     words: List<MushafWord>,
@@ -915,7 +963,9 @@ fun ReaderScreen(
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val activeWindow by vm.activeWindow.collectAsStateWithLifecycle()
+    val scopeProgress by vm.scopeProgress.collectAsStateWithLifecycle()
     val selectedAyah by vm.selectedAyah.collectAsStateWithLifecycle()
+    val selectedRange by vm.selectedRange.collectAsStateWithLifecycle()
     val repeatKey by vm.repeatAyahKey.collectAsStateWithLifecycle()
     val repeatLeft by vm.repeatLeft.collectAsStateWithLifecycle()
     val playIndex by vm.playIndex.collectAsStateWithLifecycle()
@@ -1100,6 +1150,8 @@ fun ReaderScreen(
                     mushaf[idx], statusMap, hide, currentKey, active, activeVerse, playIndex, playHead,
                     onAnchorAyah = vm::anchorToVerse,
                     onSelectAyah = { s, a -> vm.selectAyah(s, a) },
+                    onToggleSelectAyah = { s, a -> vm.toggleSelectAyah(s, a) },
+                    selectionOpen = selectedAyah != null,
                     selectedAyah = selectedAyah, activeWindow = activeWindow,
                     advisories = advisoryMap,
                     night = night, pageInk = pageInk, mat = mat,
@@ -1201,7 +1253,15 @@ fun ReaderScreen(
                     }
                     if (recording && standWords.isNotEmpty()) {
                         Spacer(Modifier.width(10.dp))
-                        ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead, Modifier.weight(1f), advisories = advisoryMap)
+                        Column(Modifier.weight(1f)) {
+                            ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead, Modifier.fillMaxWidth(), advisories = advisoryMap)
+                            // How far through the surah the recitation has come.
+                            // Shown in hide mode so a memoriser sees the same
+                            // progress they would with the words revealed.
+                            if (hide && scopeProgress.isNotEmpty()) {
+                                ScopeProgressStrip(scopeProgress, Modifier.fillMaxWidth())
+                            }
+                        }
                     } else if (!recording && engineHint != null) {
                         Spacer(Modifier.width(10.dp))
                         Text(
@@ -1291,6 +1351,19 @@ fun ReaderScreen(
                 val selPage = remember(selectedAyah) { vm.pageOfVerse(selSurah, selAyah) }
                 val selText = remember(selectedAyah) { vm.ayahText(selSurah, selAyah) }
                 val selBookmarked = selPage?.let { bookmarkPages.contains(it) } ?: false
+                // A long-press range is a first-class selection, not a hidden
+                // field. When one is open the sheet names WHICH passage and
+                // shows its text, so a multi-ayah selection is as visible and
+                // copyable as a single ayah. Without this the range existed and
+                // nothing could see it.
+                val rangeEndAyah = selectedRange?.second?.split(":")?.getOrNull(1)?.toIntOrNull()
+                val rangeIsMulti = rangeEndAyah != null && rangeEndAyah != selAyah
+                val rangeText = remember(selectedRange, selSurah) {
+                    if (rangeIsMulti && rangeEndAyah != null) {
+                        generateSequence(selAyah) { it + 1 }.takeWhile { it <= rangeEndAyah }
+                            .joinToString(" ") { vm.ayahText(selSurah, it) }
+                    } else null
+                }
                 var repeatCount by remember(selectedAyah) { mutableStateOf(5) }
                 val clipboard = LocalClipboardManager.current
                 val sheetCtx = LocalContext.current
@@ -1299,10 +1372,14 @@ fun ReaderScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ) {
                     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-                        Text("Ayah $selSurah:$selAyah", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(
+                            if (rangeIsMulti && rangeEndAyah != null) "Ayahs $selAyah–$rangeEndAyah"
+                            else "Ayah $selSurah:$selAyah",
+                            fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                        )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            selText,
+                            rangeText ?: selText,
                             fontFamily = quranFont,
                             fontSize = 20.sp,
                             textAlign = TextAlign.End,
@@ -1851,6 +1928,8 @@ fun MushafPageView(
     playHead: Int,
     onAnchorAyah: (Int, Int) -> Unit = { _, _ -> },
     onSelectAyah: (Int, Int) -> Unit = { _, _ -> },
+    onToggleSelectAyah: (Int, Int) -> Unit = { _, _ -> },
+    selectionOpen: Boolean = false,
     selectedAyah: String? = null,
     activeWindow: List<Int> = emptyList(),
     advisories: Map<String, Advisory> = emptyMap(),
@@ -2044,20 +2123,32 @@ fun MushafPageView(
                             //   long press  -> anchor the recitation lock to that ayah
                             //   double tap  -> ayah actions sheet
                             detectTapGestures(
-                                onTap = {
+                                onTap = { offset ->
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onTapChrome()
+                                    // A tap on an ayah collapses an open selection
+                                    // to it; a tap on the chrome still toggles the
+                                    // chrome. The mode is state, so the two never
+                                    // fight over one gesture.
+                                    val tapped = hit(offset.x, offset.y)
+                                    if (tapped != null && selectionOpen) {
+                                        onSelectAyah(tapped.first, tapped.second)
+                                    } else {
+                                        onTapChrome()
+                                    }
                                 },
                                 onLongPress = { offset ->
                                     hit(offset.x, offset.y)?.let { (s, a) ->
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onAnchorAyah(s, a)
+                                        // Long-press SELECTS and extends a range.
+                                        // Moving the lock is a double-tap now, so
+                                        // the two gestures stop competing.
+                                        onToggleSelectAyah(s, a)
                                     }
                                 },
                                 onDoubleTap = { offset ->
                                     hit(offset.x, offset.y)?.let { (s, a) ->
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onSelectAyah(s, a)
+                                        onAnchorAyah(s, a)
                                     }
                                 },
                             )

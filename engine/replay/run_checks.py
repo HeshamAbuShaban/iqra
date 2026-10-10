@@ -86,6 +86,8 @@ CHECKS = [
      "the documents name the same number of checks the gate runs"),
     ("final_vowel_parity", "none",
      "a word-final consonant cannot decide a verdict, and the rule stays narrow"),
+    ("selection_parity", "none",
+     "long-press selects then extends a range, order kept, tap or chrome ends it"),
 ]
 
 # Scripts that need a dump argument rather than running bare.
