@@ -1063,6 +1063,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      */
     private var intentHandoffAyah = 0
 
+    /** Wall clock when the reciter armed the next surah by turning the page. */
+    private var intentArmedAt = 0L
+
     /** Last diag's intent flag, so the gate logs only when the reason changes. */
     private var intentWasHonoured = false
 
@@ -1682,10 +1685,68 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val opensNewSurah = surahsOnPage.any { it > activeSurah }
         if (opensNewSurah) {
             intentHandoffAyah = activeSurah + 1
+            // When the intent was armed. The lock used to wait for recitation
+            // evidence for the next surah's opening, which is right while the
+            // reciter is speaking and wrong while they are not.
+            //
+            // Measured on the user's own 10 October session: they finished 1:7
+            // and turned the page onto Al-Baqarah at t=15981. The intent armed
+            // immediately. The handoff fired at t=16002 - TWENTY-ONE SECONDS
+            // later - so for 21 s the reader showed Al-Baqarah while the
+            // highlighted ayah stayed on a surah that was no longer on screen.
+            // That is the "page turn is still corrupt" report, and it is a
+            // navigation fault, not a recognition one: nothing was misjudged,
+            // the app simply did not follow the reader.
+            //
+            // So: if the reciter goes quiet after choosing the next surah, the
+            // lock follows the PAGE, not the audio. Nothing is credited - the
+            // new ayah starts unjudged - so this cannot accuse anyone.
+            intentArmedAt = System.currentTimeMillis()
             diag("page turn onto s=$opensNewSurah: intent handoff armed")
         } else {
             diag("page turn within s=$activeSurah: navigation only, lock untouched")
         }
+    }
+
+    /**
+     * Follow an explicit page choice when the reciter is not speaking.
+     *
+     * The intent handoff otherwise needs the next surah's opening to reach
+     * [HANDOFF_COVERAGE]. That is the correct test DURING recitation and the
+     * wrong one when there is no recitation: the page has already moved, so
+     * holding the lock on the old surah leaves the reader showing text the lock
+     * is not on, and the reciter has to say something to make the page make
+     * sense.
+     *
+     * [INTENT_FOLLOW_IDLE_MS] is long enough that a natural pause between ayat
+     * does not count, and short enough that turning a page and thinking is not
+     * 21 seconds of wrong page.
+     */
+    private fun followArmedIntentIfIdle() {
+        val armedAt = intentArmedAt
+        if (armedAt == 0L) return
+        val nextSurah = intentHandoffAyah
+        if (nextSurah <= 0 || nextSurah != activeSurah + 1) return
+        if (surahEndAyah() != lockedAyah) return
+        val idleMs = System.currentTimeMillis() - lastTokenTime
+        if (idleMs < INTENT_FOLLOW_IDLE_MS) return
+        loadSurah(nextSurah)
+        lockedAyah = 1
+        pendingArrivalKey = "$activeSurah:1"
+        lastLockMoveMs = System.currentTimeMillis()
+        rebaseSlice = true
+        lastAdvanceAt = System.currentTimeMillis()
+        pendingNextAyah = null; pendingNextFrames = 0
+        pendingBackAyah = null; pendingBackFrames = 0
+        ayahArrival.clear()
+        intentHandoffAyah = 0
+        intentArmedAt = 0L
+        handoffFrames = 0
+        pendingAnchor = null
+        resetAudioPipeline()
+        refreshWindow()
+        diag("page turn follow: silent for ${idleMs}ms, lock moved to " +
+            "$activeSurah:1 with no verdict credited")
     }
 
     fun toggleHide() { _hideVerse.value = !_hideVerse.value }
@@ -1933,6 +1994,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     // that spent 90s in silence-gate rejection and one that
                     // spent 90s feeding a decoder produced the same log.
                     gateClosedFrames++
+                    // Silent, and the reader may already have turned the page.
+                    // This is the only place the reciter is not speaking, so it
+                    // is the only place a page choice can be followed without
+                    // arguing with the audio.
+                    followArmedIntentIfIdle()
                     _gateReason.value = "silence"
                     _policyLive.value = _policyLive.value.copy(
                         gateClosed = gateClosedFrames,
@@ -2946,6 +3012,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
          * frame, because a single frame of noise can score coverage.
          */
         private const val INTENT_FRAMES = 2
+
+        /**
+         * How long the reciter must be silent after choosing the next surah
+         * before the lock follows the PAGE instead of waiting for audio.
+         *
+         * Measured: the same choice took 21 s when the lock waited for the
+         * next surah's opening to be recited. A pause between ayat is 2-4 s, so
+         * anything above that cannot be confused with thinking.
+         */
+        private const val INTENT_FOLLOW_IDLE_MS = 6_000L
         // The lock only yields BACKWARDS when the ayah it holds is clearly not
         // what is being recited. Without this the lock ping-pongs mid-session.
         // It doubles as the long jump's "the lock is not being recited" test,

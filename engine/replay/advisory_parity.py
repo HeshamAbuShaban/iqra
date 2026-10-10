@@ -110,6 +110,26 @@ def main() -> int:
         # wiped the counters of the record still being written while the archive
         # survived: 322 CORRECT words reported alongside 0 judged and 0 moves.
         ("endSession never resets the counters", "resetSessionCounters()" not in end_session_fn()),
+        # The page-turn follow moves the LOCK on a navigation signal while the
+        # reciter is silent. It must never archive a verdict for the ayah it
+        # moved onto: an unrehearsed ayah is not a mistake, and a follow that
+        # credited one would invent a false accusation out of a swipe.
+        ("page-turn follow credits no verdict",
+         "archiveVerdict" not in (re.search(r"private fun followArmedIntentIfIdle.*?\n    \}", VM, re.S).group(0)
+                                  if re.search(r"private fun followArmedIntentIfIdle.*?\n    \}", VM, re.S) else "")),
+        ("page-turn follow only moves to ayah 1",
+         "lockedAyah = 1" in (re.search(r"private fun followArmedIntentIfIdle.*?\n    \}", VM, re.S).group(0)
+                              if re.search(r"private fun followArmedIntentIfIdle.*?\n    \}", VM, re.S) else "")),
+        # A zero or tiny idle window would make the follow fire on every quiet
+        # poll, which is the same class of bug as a gate that can never pass -
+        # in the other direction, a safety measure that fires when nothing is
+        # wrong.
+        ("page-turn follow waits a real silence",
+         re.search(r"INTENT_FOLLOW_IDLE_MS\s*=\s*([0-9_]+)L", VM) is not None
+         and int(re.search(r"INTENT_FOLLOW_IDLE_MS\s*=\s*([0-9_]+)L", VM).group(1).replace("_", "")) >= 3000),
+        ("page-turn follow is only called when silent",
+         "followArmedIntentIfIdle()" in VM and
+         VM.index("followArmedIntentIfIdle()\n                    _gateReason.value = \"silence\"") > 0),
     ]:
         if not ok:
             bad.append(name)
