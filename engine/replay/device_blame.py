@@ -53,6 +53,7 @@ def main():
     by_bucket = Counter()
     first_unit_words = []
     last_unit_words = []
+    lats = []
     for path in sys.argv[1:]:
         try:
             o = json.load(open(path, encoding="utf-8"))
@@ -60,11 +61,17 @@ def main():
             print("skip %s: %s" % (path, e))
             continue
         have_wu = any("wu" in w for w in o.get("words", []))
-        if not have_wu:
-            print("%s: no `wu` field. That session predates the blame "
-                  "position, or it recorded no WRONG word." % path.rsplit("/", 1)[-1])
+        have_wt = any("wt" in w for w in o.get("words", []))
+        if not have_wu and not have_wt:
+            print("%s: neither `wu` nor `wt`. That session predates both."
+                  % path.rsplit("/", 1)[-1])
             continue
+        if not have_wu:
+            print("%s: no `wu`, so blame positions are unavailable; reading `wt` only."
+                  % path.rsplit("/", 1)[-1])
         for w in o.get("words", []):
+            if "wt" in w:
+                lats.append(w["wt"])
             if w.get("st") != "WRONG":
                 continue
             fr = w.get("wu", -1)
@@ -75,13 +82,30 @@ def main():
             if fr >= 1000:
                 last_unit_words.append(w["key"])
 
-    if total == 0:
+    if total == 0 and not lats:
         print("No WRONG word with a blame position in these records.")
-        return 0
+        if not lats:
+            return 0
 
-    print("WRONG words with a recorded blame position: %d" % total)
+    if total:
+        print("WRONG words with a recorded blame position: %d" % total)
     for name, n in by_bucket.most_common():
         print("  %-22s %3d  (%2.0f%%)" % (name, n, 100.0 * n / total))
+    if lats:
+        lats.sort()
+        n = len(lats)
+        print()
+        print("Verdict latency (`wt`, ms from session start to the word being decided):")
+        for label, v in (("first quarter", lats[n // 4]),
+                         ("median", lats[n // 2]),
+                         ("three quarters", lats[3 * n // 4]),
+                         ("last", lats[-1])):
+            print("  %-16s %6d ms" % (label, v))
+        print()
+        print("This is the measurement behind \"colour only appears when most of the")
+        print("ayah is done\". Compare it with the frames' per-poll cadence to tell")
+        print("a slow engine from a late paint.")
+
     print()
     if first_unit_words:
         print("Blamed on the FIRST unit (%d):" % len(first_unit_words))

@@ -58,6 +58,15 @@ def main() -> int:
          re.search(r"wrongStartFrac\.getOrNull\(i\)", vm) is not None),
         ("the fraction is stored under the word key",
          re.search(r"wrongStartOf\[key\] = it", vm) is not None),
+        # Verdict latency: the user asks for colour "at the exact time I finish
+        # a word", and nothing recorded when a word was actually decided, so the
+        # complaint could not be checked at all.
+        ("the record times each word's first verdict",
+         re.search(r'append\(",\\\"wt\\\":"', vm) is not None),
+        ("the time is taken when the verdict first becomes terminal",
+         re.search(r"sessionTerminalAt\[key\] = System\.currentTimeMillis\(\) - sessionStartedAtMs", vm) is not None),
+        ("a word that is re-judged does not get a new time",
+         re.search(r"if \(prev != WordStatus\.CORRECT && prev != WordStatus\.WRONG\) \{[\s\S]{0,400}?sessionTerminalCount\+\+[\s\S]{0,400}?sessionTerminalAt\[key\]", vm) is not None),
         # the source of the value
         ("PhonemeMapper declares the field on Alignment",
          re.search(r"val wrongStartFrac: FloatArray", mp) is not None),
@@ -75,7 +84,8 @@ def main() -> int:
             {"key": "18:2:5", "st": "WRONG", "wu": 500},
             {"key": "18:2:9", "st": "WRONG", "wu": 1000},
             {"key": "18:3:2", "st": "WRONG", "wu": -1},
-            {"key": "18:4:1", "st": "CORRECT"},
+            {"key": "18:4:1", "st": "CORRECT", "wt": 8123},
+            {"key": "18:4:2", "st": "CORRECT", "wt": 9600},
         ],
     }
     with tempfile.TemporaryDirectory() as d:
@@ -93,6 +103,10 @@ def main() -> int:
                 bad.append("first unit, middle and last unit collapse into one bucket")
             if "no blame recorded" not in out:
                 bad.append("a WRONG word with no recorded position is not reported")
+            if "Verdict latency" not in out or "median" not in out:
+                bad.append("the tool does not report the verdict latency")
+            if "8123" not in out:
+                bad.append("the recorded verdict time is not shown")
 
     if bad:
         for b in bad:

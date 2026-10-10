@@ -512,6 +512,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** WRONG key -> where the mismatch began inside the word, 0..1, or -1. */
     private val wrongStartOf = HashMap<String, Float>()
 
+    /** Word key -> ms from session start at which it first earned a verdict. */
+    private val sessionTerminalAt = HashMap<String, Long>()
+
     private fun archiveVerdict(key: String, v: WordStatus) {
         val prev = sessionArchive[key]
         // A real verdict is sticky: once a word has been decided, a later
@@ -528,6 +531,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (v == WordStatus.CORRECT || v == WordStatus.WRONG) {
             if (prev != WordStatus.CORRECT && prev != WordStatus.WRONG) {
                 sessionTerminalCount++
+                // WHEN the word was first decided, in ms from the session start.
+                //
+                // The user reports that colour only appears once most of the
+                // ayah is done, and that they want it "at the exact time I
+                // finish a word". No record carried that time, so the claim
+                // could not be checked - the same blindness that hid the
+                // blame position until `wu` existed. This is that measurement:
+                // `wt` is the latency between the session opening and the word
+                // earning a verdict, and reading it next to the word's own
+                // arrival separates "the engine is slow" from "the engine
+                // decided early and the PAINT was late".
+                sessionTerminalAt[key] = System.currentTimeMillis() - sessionStartedAtMs
             }
         }
     }
@@ -635,6 +650,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             sb.append("{\"key\":\"").append(k).append("\",\"st\":\"").append(v.name).append("\"")
             if (frac >= 0) {
                 sb.append(",\"wu\":").append((frac * 1000f).toInt())
+            }
+            sessionTerminalAt[k]?.let {
+                sb.append(",\"wt\":").append(it)
             }
             sb.append("}")
         }
@@ -1862,6 +1880,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         sessionArchive.clear()
         sessionAdvisories.clear()
         wrongStartOf.clear()
+        sessionTerminalAt.clear()
         _advisoryMap.value = emptyMap()
         // Arrivals and the emission log are SESSION state: an arrival index from
         // the previous session points into a log that no longer holds those
