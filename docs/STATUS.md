@@ -515,15 +515,57 @@ these two have already disagreed, so the 768 may be a different population from
 the 99 WRONG verdicts the Al-Kahf session produced. Treat the count as evidence
 that a class exists, not as a count of what the user saw.
 
+## The device says something different, and it outranks the sweep
+
+Same six device sessions, every WRONG verdict matched against the mushaf, the
+app's own window (152 verdicts):
+
+| Class | Device | Corpus |
+|---|---|---|
+| the FIRST word of its ayah | **15 (10%)** | **320 (42%)** |
+| carries a stop mark (`۟ ۢ ۭ ۖ`) | 34 (22%) | 132 (17%) |
+| ayah-final word | 11 (7%) | 173 (23%) |
+| plain mid-ayah, no mark | **108 (71%)** | — |
+
+**Two things follow, and both change what work happens next.**
+
+1. **The harness's 42% first-word figure is an artefact.** The device blames the
+   first word of an ayah 10% of the time. `docs/HARNESS_FIDELITY_AUDIT.md` already
+   records 22 divergences; this is entry 23, and the largest. Do not chase the
+   first-word class on the strength of a harness number.
+2. **The dominant class is the plain mid-ayah word with no signature** - 71% of
+   the device's accusations. It is not a mark, not the ayah's opening, not the
+   ayah's final word, and not a pronoun ending. Nothing textual separates it
+   from a correct word, and the corpus cannot be used to study it, because the
+   corpus produces a different population.
+
+Neither figure could say WHERE in a word the mismatch sits, and that is the one
+question that separates a boundary artefact from a wrong phoneme. So `wu` was
+added: each WRONG word in the session record now carries the fraction of its own
+units at which the contradiction begins, 0..1000.
+
+| Tool | What it does |
+|---|---|
+| `engine/replay/device_blame.py` | Reads `wu` from a session record and buckets it. |
+| `engine/replay/device_blame_parity.py` | Holds the writer, the reader and the buckets honest (7 injections red). |
+
+Run it after the next device session:
+
+```
+adb -s 35d5637e shell run-as com.iqra.quran cat files/sessions/<file>.json > /tmp/x.json
+python3 engine/replay/device_blame.py /tmp/x.json
+```
+
+**Until then this is the one number that matters:** the app cannot yet explain
+71% of its own accusations, and it cannot say which of them are false. Every
+session before this build records nothing, because the field did not exist.
+
 ## What is open next
 
-**1. The first-word false accusation — 42% of the class, cause unknown.**
-Three measured hypotheses rejected (see the sweep above). Next candidates are on
-the emission side, not the table: the Zipformer's rolling state carrying one
-ayah's tail into the next, and `ayahArrival` written one poll late. To attack
-either one the harness must first reproduce the app's own `ayahObs` window, which
-is three ayat wide and starts at the previous ayah's arrival. `HARNESS_FIDELITY`
-entry 23 records the divergence.
+**1. The unexplained 71% - and the first session that carries `wu`.**
+Blame position per unit class is the only measurement that can separate a table
+fault from a pipeline artefact, and it was not being recorded. Next session with
+the new build answers it.
 
 **2. `noWindowWords` returns on long sessions.** 2,501 words / 212 windows over
 1,428 s and 106 lock moves, where six shorter sessions read 0 and 0. The empty
@@ -536,7 +578,8 @@ counter does not separate the two.
 both times. The jump treats partial next-ayah coverage as proof of a skip.
 
 **4. Ask the user which WRONG words were genuinely wrong.** Listed in the 8 July
-section above; 7 of 16 are ambiguous. This outranks items 1–3 for cost.
+section above; 7 of 16 are ambiguous. This outranks everything above it for cost,
+because a yes-or-no answer converts the 71% into a measured class.
 
 **5. Device validation of the record fixes** (record integrity, per-surah fold),
 then page turns, then the standing-word pointer, then UI polish.

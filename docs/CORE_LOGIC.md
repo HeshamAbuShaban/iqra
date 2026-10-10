@@ -271,7 +271,7 @@ The record holds:
 |---|---|
 | Header | Start time, flush time, surahs, lock, generation, words-per-minute |
 | `counters` | Moves, reversals, polls, words evaluated, words judged, words with no window, empty windows, unjudgeable ayat |
-| `words` | Every word the archive holds, with its verdict |
+| `words` | Every word the archive holds, with its verdict. A WRONG word also carries `wu`: the fraction of its own units at which the contradiction began, 0..1000. Without that field the app cannot say WHY a word was accused, and it cannot be argued with. |
 | `ayahStatus` | Per-ayah counts, including `SKIPPED` and `CORRECT` |
 | `advisories` | The engine's notes, by kind and count |
 | `frames` | The policy state at each poll |
@@ -331,7 +331,7 @@ now clears the siblings too: `consecutiveRetreats` and `noiseFloor`.
 |---|---|
 | Legal stop detection | The app removes blame at a mark. It cannot detect the stop itself. |
 | The optional-final guard | Measured over the whole corpus: it removes **2%** of the reference reciter's false accusations (14 of 768). It is worth keeping, and it is not the answer. |
-| The first-word false accusation | **42% of the corpus class (320 of 768). Cause unknown.** Three measured hypotheses rejected. See `STATUS.md`. |
+| The unexplained accusation | **71% of the DEVICE class (108 of 152).** Plain mid-ayah words, no signature. Nothing textual separates them from correct words. |
 | The per-surah fold | Fixed in code. Not yet confirmed on a device. |
 | `noWindowWords` on long sessions | Back at 2,501 on the 1,428-second session. Open. |
 | The long jump skips an ayah | Two measured events. Open. |
@@ -340,11 +340,10 @@ now clears the siblings too: `consecutiveRetreats` and `noiseFloor`.
 | UI polish: text size, list order, RTL on live, search to text | Deferred. |
 
 The truth about the goal: the app keeps a clean lock, and it keeps an honest
-record. It does not yet keep an honest verdict on every word. The measured size
-of that failure is 768 false accusations in 6,112 ayat of reference audio, and
-42% of them share a cause nobody has found yet. Do not report that number to a
-user as "accuracy" — it is the harness's count over its own window, not the
-phone's.
+record. It does not yet keep an honest verdict on every word. On the phone the
+size of that failure is 152 accused words in six sessions, and the app cannot
+explain 108 of them. Do not report a corpus figure to a user as "accuracy" — it
+is the harness's count over its own window, not the phone's.
 
 ### A note on where those numbers come from
 

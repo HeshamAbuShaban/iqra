@@ -80,6 +80,8 @@ CHECKS = [
      "no data and zero percent stay distinct, and the live list paints one word index"),
     ("unused_imports", "none",
      "no import names a component that is not used - the residue of deleted features"),
+    ("device_blame_parity", "none",
+     "the record says WHERE a word was blamed, and the reader buckets it"),
 ]
 
 # Scripts that need a dump argument rather than running bare.
