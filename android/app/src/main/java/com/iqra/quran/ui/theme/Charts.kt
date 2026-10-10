@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -222,7 +221,6 @@ fun AccuracyRing(
     val target = fraction ?: 0f
     val sweep by animateFloatAsState(target, tween(750), label = "ring")
     val capStyle = TextStyle(fontSize = 24.sp, color = accentColor)
-    val capSmall = TextStyle(fontSize = 10.sp, color = captionColor)
 
     Canvas(Modifier.size(diameter)) {
         val sw = strokeWidth.toPx()
@@ -402,88 +400,8 @@ fun AyahStrip(
     }
 }
 
-/**
- * Horizontal bars for a ranked quantity - pace per ayah, difficulty per word.
- *
- * Ranked rather than chronological on purpose: the question is "which one", and a
- * chronological bar chart makes you read every value to find the tallest.
- */
-@Composable
-fun RankedBars(
-    entries: List<Pair<String, Float>>,
-    accent: Color,
-    track: Color,
-    labelColor: Color,
-    modifier: Modifier = Modifier,
-    rowHeight: androidx.compose.ui.unit.Dp = 22.dp,
-    max: Float = 0f,
-) {
-    val measurer = rememberTextMeasurer()
-    val lbl = TextStyle(fontSize = 11.sp, color = labelColor)
-    val valStyle = TextStyle(fontSize = 10.sp, color = labelColor.copy(alpha = 0.8f))
 
-    Column(modifier) {
-        val top = max.takeIf { it > 0f } ?: entries.maxOfOrNull { it.second } ?: 1f
-        entries.forEach { (name, v) ->
-            Canvas(
-                Modifier
-                    .fillMaxWidth()
-                    .height(rowHeight)
-            ) {
-                val nameT = measurer.measure(name, lbl)
-                val valT = measurer.measure(fmt1(v), valStyle)
-                val textW = maxOf(nameT.size.width, valT.size.width) + 10f
-                val trackX = textW + 6f
-                val trackW = (size.width - trackX).coerceAtLeast(10f)
-                val cy = size.height / 2f
 
-                drawText(nameT, topLeft = Offset(0f, cy - nameT.size.height / 2f))
-                drawText(valT, topLeft = Offset(size.width - valT.size.width, cy - valT.size.height / 2f))
-                drawRoundRect(
-                    track, Offset(trackX, cy - 3f),
-                    Size(trackW, 6f), CornerRadius(3f),
-                )
-                val f = (v / top).coerceIn(0f, 1f)
-                if (f > 0.001f) {
-                    drawRoundRect(
-                        accent, Offset(trackX, cy - 3f),
-                        Size(trackW * f, 6f), CornerRadius(3f),
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun fmt1(v: Float): String =
-    if (v >= 100f) v.toInt().toString() else if (v >= 10f) v.toInt().toString()
-    else "%.1f".format(v)
-
-/**
- * A bare sparkline. For a number that needs a shape but not an axis.
- */
-@Composable
-fun Sparkline(
-    values: List<Float>,
-    color: Color,
-    modifier: Modifier = Modifier,
-    strokeWidth: Float = 2f,
-) {
-    Canvas(modifier) {
-        if (values.size < 2) return@Canvas
-        val lo = values.min()
-        val hi = values.max()
-        val span = (hi - lo).takeIf { it > 1e-4f } ?: 1f
-        val pts = values.mapIndexed { i, v ->
-            Offset(
-                x = size.width * i / (values.size - 1f),
-                y = size.height - ((v - lo) / span) * size.height * 0.86f - size.height * 0.07f,
-            )
-        }
-        drawPath(smoothPath(pts), color, style = Stroke(strokeWidth, cap = StrokeCap.Round))
-        drawCircle(color, strokeWidth * 1.4f, pts.last())
-    }
-}
 
 /**
  * A comparison bar: this session against your best or against the last one.

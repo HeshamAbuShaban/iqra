@@ -94,8 +94,6 @@ class AudioRecorder(private val sampleRate: Int = 16000) {
         Log.i("AudioRecorder", "captured $n samples (${"%.1f".format(n / sampleRate.toFloat())}s)")
     }
 
-    fun isRecording(): Boolean = running
-
     /** Drop captured audio and restart the absolute cursor (re-anchor recognition). */
     fun reset() = synchronized(lock) {
         write = 0

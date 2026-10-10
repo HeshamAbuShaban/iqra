@@ -66,8 +66,6 @@ class QuranData private constructor(
     }
 
     fun getVerse(surah: Int, ayah: Int): Verse? = byRef[surah * 1000 + ayah]
-    fun getSurah(surah: Int): List<Verse> = bySurah[surah] ?: emptyList()
-
     fun surahList(): List<SurahInfo> = surahs
 
     fun surahInfo(number: Int): SurahInfo? = surahsByNumber[number]

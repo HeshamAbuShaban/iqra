@@ -12,12 +12,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -29,9 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -50,8 +45,6 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.ViewModule
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ContentCopy
@@ -86,27 +79,18 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.MonitorHeart
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.material.icons.outlined.ShowChart
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.graphics.drawscope.withTransform
 import kotlin.math.max
 import kotlin.math.min
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.Font
@@ -236,8 +220,6 @@ internal val wrongColor = Color(0xFFE0625A)
 internal val goldColor = Color(0xFFD9B36B)
 private val reciteBlue = Color(0xFF4A9EFF)
 private val PAGE_MASK = Color(0xFFF3ECD9) // parchment, used to hide words on light page images
-private val ParchmentScaffold = Color(0xFFE6DDC4) // warm dim parchment that frames the page
-
 private object Chrome {
     val Bar = Color(0xFF1F1F26).copy(alpha = 0.96f)
     val HeaderTop = Color(0xFF1F1F26)
@@ -263,20 +245,6 @@ private fun lightReaderScheme(night: Boolean, mat: Color, ink: Color, chrome: Co
 
 private val Pill = RoundedCornerShape(50)
 private val CardRadius = RoundedCornerShape(16.dp)
-
-private fun darkMushafScheme() = darkColorScheme(
-    primary = accentColor,
-    secondary = goldColor,
-    background = Color(0xFF15151A),
-    surface = Color(0xFF1F1F26),
-    surfaceVariant = Color(0xFF2A2A33),
-    secondaryContainer = accentColor.copy(alpha = 0.15f),
-    onSecondaryContainer = accentColor,
-    outline = goldColor.copy(alpha = 0.25f),
-    onBackground = Color(0xFFF2E8D5),
-    onSurface = Color(0xFFF2E8D5),
-    onPrimary = Color(0xFF06231F),
-)
 
 private fun mushafShapes() = Shapes(
     extraSmall = RoundedCornerShape(8.dp),

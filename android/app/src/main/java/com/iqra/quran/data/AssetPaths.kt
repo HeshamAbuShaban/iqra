@@ -70,8 +70,6 @@ object AssetPaths {
     fun sharedRoot(): File =
         File(Environment.getExternalStorageDirectory(), SHARED_DIR)
 
-    fun privateRoot(context: Context): File = context.filesDir
-
     /**
      * Where the app is ALLOWED to write.
      *
@@ -115,9 +113,6 @@ object AssetPaths {
         return if (page in 1..PAGE_COUNT) File(File(w, "pages"), "%03d.png".format(page))
         else File(w, name)
     }
-
-    fun engineDir(context: Context): File =
-        file(context, "model.int8.onnx").parentFile ?: writableRoot(context)
 
     /**
      * Why [name] did (not) resolve, for diagnostics.

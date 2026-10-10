@@ -7,7 +7,6 @@ import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OnlineStream
 import com.k2fsa.sherpa.onnx.OnlineZipformer2CtcModelConfig
-import java.io.File
 
 /**
  * Quran-Lab zipformer_p-arabic-v3 streaming phoneme recognizer behind the

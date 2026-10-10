@@ -27,11 +27,6 @@ data class JuzInfo(
     val surahNameEn: String,
 )
 
-data class WordResult(
-    val arabic: String,
-    val status: WordStatus,
-)
-
 /**
  * Per-word recitation verdict.
  *

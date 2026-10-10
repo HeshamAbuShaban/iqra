@@ -24,8 +24,6 @@ object DataFetcher {
         val fileTotal: Long,
     )
 
-    class Cancelled : Exception("cancelled")
-
     suspend fun fetchAll(
         context: Context,
         onProgress: (Progress) -> Unit = {},

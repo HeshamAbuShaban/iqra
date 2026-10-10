@@ -1,19 +1,8 @@
 package com.iqra.quran.ui.theme
 
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.SpringSpec
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.iqra.quran.R
 
 /**
  * The app's design tokens, in one place.
@@ -116,21 +105,7 @@ data class IqraColors(
     val chartBad: Color,
     /** The empty half of a heatmap cell. */
     val chartEmpty: Color,
-) {
-    /**
-     * Word colour by verdict, in one place.
-     *
-     * This existed twice - once in the reader's `resolveWordStyle` and once in
-     * `LiveWord` - as two sets of five literals that had already drifted apart. A
-     * verdict is one fact about a word and must not be able to be two colours.
-     */
-    fun forVerdict(verdict: Int): Color = when (verdict) {
-        0 -> wordGood
-        1 -> wordBad
-        2 -> wordUnknown
-        else -> wordCurrent
-    }
-}
+) {}
 
 /**
  * Shapes. Every corner in the app comes from here.
@@ -143,73 +118,11 @@ data class IqraColors(
  * "actual type is Dp, but Shape was expected".
  */
 object IqraShape {
-    val card = RoundedCornerShape(18.dp)
-    val panel = RoundedCornerShape(14.dp)
-    /** 50% on a shape makes a stadium, which is what "pill" has to mean. */
+    val card = RoundedCornerShape(18.dp)    /** 50% on a shape makes a stadium, which is what "pill" has to mean. */
     val pill = RoundedCornerShape(percent = 50)
-    val sheet = RoundedCornerShape(28.dp)
-    val circle = CircleShape
 }
 
-/**
- * Type scale.
- *
- * The project had no `Typography` object at all - every size was a hardcoded `sp`
- * at its point of use, which is why two screens could both say 12sp and mean
- * different things. Sizes here are the scale; screens name the role.
- *
- * Arabic is set in Amiri with generous line height. Amiri is a naskh face whose
- * marks stack high above and below the baseline, and at a normal 1.2 line height
- * the fatha of the line above collides with the alif of the one below. That
- * collision is not a style opinion, it is a legibility failure, so scripture sizes
- * carry their own lineHeight rather than inheriting it.
- */
-object IqraType {
-    val scriptLarge = TextStyle(
-        fontFamily = FontFamily(Font(R.font.amiri)), fontSize = 34.sp,
-        lineHeight = 62.sp, fontWeight = FontWeight.Normal,
-    )
-    val scriptMedium = TextStyle(
-        fontFamily = FontFamily(Font(R.font.amiri)), fontSize = 24.sp,
-        lineHeight = 46.sp, fontWeight = FontWeight.Normal,
-    )
-    val scriptSmall = TextStyle(
-        fontFamily = FontFamily(Font(R.font.amiri)), fontSize = 18.sp,
-        lineHeight = 34.sp, fontWeight = FontWeight.Normal,
-    )
-    val display = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Light)
-    val title = TextStyle(fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold)
-    val body = TextStyle(fontSize = 14.sp, lineHeight = 21.sp)
-    val label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
-    val caption = TextStyle(fontSize = 11.sp, lineHeight = 15.sp)
-    /** Numbers that have to line up in a column or be compared at a glance. */
-    val metric = TextStyle(fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
-}
 
-/**
- * Motion.
- *
- * Springs, not tweens, for anything a finger is waiting on. A tween has a fixed
- * duration, so at 120 ms it feels sluggish on a fast interaction and at 300 ms it
- * feels broken on a slow one; a spring settles as fast as the physics allow and
- * carries velocity through, which is what makes a gesture feel connected to what
- * it caused.
- */
-object IqraMotion {
-    /** A word resolving. Stiff, so it arrives rather than drifts. */
-    val wordIn: SpringSpec<Float> = spring(dampingRatio = 0.72f, stiffness = 700f)
-    /** Panels, sheets, anything that changes size. */
-    val settle: SpringSpec<Float> = spring(dampingRatio = 0.86f, stiffness = 380f)
-    /** The horizon responding to the voice. Softer, because it never fully rests. */
-    val flow: SpringSpec<Float> = spring(dampingRatio = 0.9f, stiffness = 120f)
-    /** Values that should not wobble at all, like a progress bar. */
-    val crisp: SpringSpec<Float> = spring(dampingRatio = 1f, stiffness = 900f)
-
-    /** Decelerate, for something entering. */
-    val enter: CubicBezierEasing = CubicBezierEasing(0f, 0f, 0.2f, 1f)
-    /** Accelerate, for something leaving. */
-    val exit: CubicBezierEasing = CubicBezierEasing(0.4f, 0f, 1f, 1f)
-}
 
 /** Every theme's colours, resolved once here. */
 object IqraPalettes {

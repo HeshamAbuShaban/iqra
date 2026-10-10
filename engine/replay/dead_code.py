@@ -1,32 +1,36 @@
 #!/usr/bin/env python3
 """
-Dead engine code is a liability: it reads as a feature and ships as a bug.
+Dead code is a liability: it reads as a feature and ships as a bug.
 
 The audit that produced this check found, in one pass, an enum constant for a
 verdict the aligner cannot emit, a `wordProb` array computed on every alignment
 and read by nobody, a confidence-gate's plumbing still standing after the gate
-itself was deleted, and a whole 554-line screen with no caller. None of it was
+itself was deleted, a `forVerdict` helper whose comment claims it unified the
+verdict colours across two renderers while both renderers still carry their own
+five literals, and a whole 554-line screen with no caller. None of it was
 reachable, so nothing tested it, so nobody noticed.
 
-The rule enforced here: every declaration in the recognition surface must be
-referenced from some OTHER file. A declaration nobody references is dead weight
-that a future reader will believe is load-bearing.
+Two rules, both against the whole production tree:
 
-References are counted as bare identifiers, not as calls, because Kotlin exposes
-StateFlow properties, data-class constructors and constants without parentheses -
-`vm.statusMap`, `advisory.kind`, `Alignment.wordProb`. Comments are stripped
-first: a mention in prose is not a reference.
+  1. Every top-level declaration must be referenced from somewhere. A
+     declaration nobody references is dead weight a future reader believes is
+     load-bearing.
+  2. Every FILE must be referenced from another file. A file whose members only
+     reference each other is unreachable however many references they share
+     between them - rule 1 cannot see it, because a dead screen's members call
+     each other.
 
-Deliberately out of scope: theme tokens, chart helpers, screens and other styling
-composables. Those are cosmetic, another agent owns them, and deleting them on a
-name-count alone risks removing API someone else is about to call.
+References are counted as bare identifiers, not calls: Kotlin exposes
+StateFlow properties, data-class constructors and constants without
+parentheses (`vm.statusMap`, `advisory.kind`, `alignment.wordCoverage`).
+Comments are stripped first, because a mention in prose is not a reference.
 
-KNOWN LIMIT. This counts identifiers, not symbols, so a NEW declaration whose name
-already exists elsewhere in the tree will share the other one's reference count
-and pass. It therefore catches the common case - a dead name nobody else uses -
-and not the case of shadowing with a duplicate. Adding a second `isReady()` to a
-file next to another `isReady()` is exactly what it misses. Whoever repairs it
-needs a real parser, not this.
+KNOWN LIMIT. This counts identifiers, not symbols, so a new declaration whose
+name already exists elsewhere shares the other one's reference count and passes.
+It catches the common case - a dead name nobody else uses - and not the case of
+shadowing with a duplicate.
+
+Run: python3 engine/replay/dead_code.py
 """
 
 import re
@@ -34,81 +38,94 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-JAVA = HERE.parent.parent / "android/app/src/main/java/com/iqra/quran"
+ROOT = HERE.parent.parent
+JAVA = ROOT / "android/app/src/main/java/com/iqra/quran"
+TEST = ROOT / "android/app/src/test"
 
-DECL = re.compile(r"^\s{4}(?:private |internal |@\w+ )*(?:fun|val|var|class|object|const)\s+([A-Za-z_]\w*)")
-
-# Whether the identifier appears anywhere else in the tree. `\bname\b` matches a
-# property read, a call, a type use and a constructor argument alike.
-IDENT = r"\b{0}\b"
-
-# Legitimate entry points: called from the JVM test source or from Android, so
-# no reference appears in the production tree.
-EXTERNAL_ENTRY = {
-    "PhonemeMapper", "UnitAligner", "SherpaVad", "SherpaZipformer",
-    "Levenshtein", "Alignment", "Advisory", "AdvisoryKind",
-    # Read by android/app/src/test/java/com/iqra/quran/ml/UnitAlignerTest.kt,
-    # which is the only reason it exists. It is not dead, it is untested-from-
-    # this-tree, and deleting it would silently drop its coverage.
-    "canonicalCases",
-}
-
-# Names reachable only through the JVM test tree are allowlisted here. Anything
-# else needs a caller, and a function whose name begins with get/is/has/table/
-# unit/count gets no leniency just for being a plausible accessor - `tableSize`,
-# `unitCount`, `wordTableSize`, `isReady`, `speechInWindow` and `modelDir` were
-# all deleted from this surface in one pass for exactly that reason.
+# Declarations at column 0 or 4 columns. Some files put their functions at the
+# top level (MainActivity.kt) and some nest them inside a class
+# (PracticeViewModel.kt), and matching only one of those shapes silently skips
+# the other - which is how this check passed over every dead declaration in
+# MainActivity.kt while reporting them in PracticeViewModel.kt.
+DECL = re.compile(r"^[ \t]{0,4}(?:private |internal |@\w+ )*(?:fun|val|var|class|object|const)\s+([A-Za-z_]\w*)")
+# A file is referenced when something names a symbol it declares.
+TOP = re.compile(r"^(?:internal |private )?(?:fun|val|var|class|object|data class|enum class)\s+([A-Za-z_]\w*)")
 
 BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-LINE_COMMENT = re.compile(r"//[^\n]*")
+
+# Entry points that Android instantiates from the manifest, so no Kotlin caller
+# can name them. They are not dead; they are unreachable-from-this-tree.
+MANIFEST_ENTRY = {"QuranApplication", "MainActivity"}
 
 
-def strip_comments(text: str) -> str:
+def strip_comments(text):
     text = BLOCK_COMMENT.sub("", text)
     return "\n".join(l.split("//")[0] for l in text.splitlines())
 
 
-def main() -> int:
-    everything = {}
-    for p in JAVA.rglob("*.kt"):
-        try:
-            everything[p] = strip_comments(p.read_text(encoding="utf-8"))
-        except OSError:
+def read_tree():
+    files = {}
+    for base in (JAVA, TEST):
+        if not base.is_dir():
             continue
+        for p in sorted(base.rglob("*.kt")):
+            try:
+                files[p] = strip_comments(p.read_text(encoding="utf-8"))
+            except OSError:
+                pass
+    return files
 
-    targets = sorted(set(
-        [JAVA / f for f in ("ui/PracticeViewModel.kt", "ui/Advisory.kt")]
-        + list((JAVA / "ml").rglob("*.kt"))
-    ))
 
+def main():
+    files = read_tree()
     bad = []
     checked = 0
-    for path in targets:
-        lines = everything[path].splitlines()
+
+    # ---- rule 1: declarations ---------------------------------------------
+    for path, text in files.items():
+        if not str(path).startswith(str(JAVA)):
+            continue
+        lines = text.splitlines()
         for i, line in enumerate(lines, 1):
             m = DECL.match(line)
             if not m:
                 continue
             name = m.group(1)
             checked += 1
-            if name in EXTERNAL_ENTRY:
+            if name in MANIFEST_ENTRY:
                 continue
-            rx = re.compile(IDENT.format(re.escape(name)))
-            # Every reference anywhere in the tree, minus the one on the line
-            # that declares it. A ViewModel's members are legitimately used only
-            # inside the ViewModel, so counting must include its own file -
-            # excluding it would flag most of the class as dead.
-            refs = sum(len(rx.findall(text)) for text in everything.values())
-            refs -= len(rx.findall(line))
+            rx = re.compile(r"\b" + re.escape(name) + r"\b")
+            refs = sum(len(rx.findall(t)) for t in files.values()) - len(rx.findall(line))
             if refs <= 0:
-                bad.append("%s:%d %s: declared in the recognition surface, referenced from nowhere"
-                           % (path.relative_to(JAVA), i, name))
+                bad.append("%s:%d %s: declared, referenced from nowhere" % (
+                    path.relative_to(JAVA), i, name))
+
+    # ---- rule 2: files -----------------------------------------------------
+    for path, text in files.items():
+        if not str(path).startswith(str(JAVA)):
+            continue
+        named = [m.group(1) for m in TOP.finditer("\n".join(text.splitlines()[1:]))]
+        if not named:
+            continue
+        referenced = False
+        for other, otext in files.items():
+            if other == path:
+                continue
+            for name in set(named):
+                if re.search(r"\b" + re.escape(name) + r"\b", otext):
+                    referenced = True
+                    break
+            if referenced:
+                break
+        if not referenced:
+            bad.append("%s: entire file is unreachable - no other file names "
+                       "anything it declares" % path.relative_to(JAVA))
 
     if bad:
-        for b in bad:
+        for b in sorted(bad):
             print("FAIL:", b)
         return 1
-    print("ok: %d declarations checked, every one referenced from another file" % checked)
+    print("ok: %d declarations checked; every file is reachable from another" % checked)
     return 0
 
 

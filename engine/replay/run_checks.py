@@ -78,6 +78,8 @@ CHECKS = [
      "nothing in the recognition surface is declared and never referenced"),
     ("honest_numbers", "none",
      "no data and zero percent stay distinct, and the live list paints one word index"),
+    ("unused_imports", "none",
+     "no import names a component that is not used - the residue of deleted features"),
 ]
 
 # Scripts that need a dump argument rather than running bare.
