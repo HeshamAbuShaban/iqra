@@ -30,6 +30,7 @@ result depends on how a human actually recites, say so.
 | `docs/LESSONS.md` | Before changing any threshold, metric or gate. 13 lessons, each earned. |
 | `engine/replay/optional_final.py` | The whole-corpus false-accusation sweep. 768 WRONG verdicts over 6,112 ayat of reference audio. |
 | `engine/replay/window_lead.py` | The first-word sweep, and the three hypotheses it rejected. |
+| `engine/replay/device_blame.py` | Reads `wu` from a session record: where in a word the mismatch began. The only tool that can argue with a WRONG verdict after the fact. |
 | `docs/TAJWEED_AND_MEMORISATION.md` | Before anything touching expected phonemes. What the engine cannot judge, and why. |
 | `docs/HARNESS_FIDELITY_AUDIT.md` | Before trusting any offline test result. 22 harness-vs-device divergences. |
 | `engine/replay/emission_log_replay.py` | When verdicts are missing on the device. Replays a real session's polls through the log rule. |
