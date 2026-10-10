@@ -40,6 +40,7 @@ result depends on how a human actually recites, say so.
 | `docs/REVERSE_ENGINEERING.md` | Only for Tarteel's architecture and its network endpoints. |
 | `docs/WORD_ALIGNMENT_4116.md` | Historical. Resolved; kept because the reasoning error is instructive. |
 | `docs/TODO.md` | The live backlog. What is next, and what was parked. |
+| `docs/MAINTAINING.md` | How to change the app, prove it, swap the model, add a tajweed rule. |
 | `docs/CORE_LOGIC.md` | **Before touching recognition code.** The pipeline in plain English, built toward ASD-STE100: detect, decode, judge, move, paint, record. Update it in the same commit as any change to those six steps. |
 | `docs/MAINTAINING.md` | **How to change the app and prove it.** The gate, how to write a check, how to swap the model, how to add a tajweed rule, what the open defects are. |
 
@@ -130,6 +131,13 @@ From `docs/LESSONS.md`, condensed. Each cost weeks.
 The engine reports a second channel, `AdvisoryKind` (`Advisory.kt`), for the
 things it noticed but cannot decide:
 
+- `UNMODELLED_FINAL` / the final-vowel rule — 34.5% of the table's words end on a
+  bare consonant (a bare `ن` in `يُنفِقُونَ`) while the model says the
+  vowel, and those are different tokens. Measured on the user's 10 October
+  session: 9 of its 10 WRONG words were blamed on the LAST unit. All variants
+  of one word-final consonant intern to one id, exactly like madd, and only at
+  a word's last unit. Waw and ya are excluded — a semi-vowel's vowel is its
+  own sound. `final_vowel_parity.py`.
 - `MISSED_RULING_POSSIBLE` — a legal stop at a waqf mark may have been
   treated as the join. The engine no longer files WRONG for those; it files
   a note.
