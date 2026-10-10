@@ -114,6 +114,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.HighlightLayer
@@ -300,6 +301,120 @@ private fun ScopeProgressStrip(
             }
         }
     }
+}
+
+/**
+ * In-reader search over the whole mushaf.
+ *
+ * The magnifier used to open a "go to page" box, which is a different job: a
+ * reader looking for a word wants the word, not a number. This lists live
+ * matches as they type and jumps to the ayah on tap.
+ *
+ * Three things it does that a bare list does not:
+ *  - it only queries once the query is long enough to be selective (the engine
+ *    needs two characters), so a single tap does not dump the mushaf;
+ *  - a match shows the ayah text with the matched span marked, so the result is
+ *    recognisable without opening it;
+ *  - tapping jumps the reader to that ayah, which is the whole point of
+ *    searching from inside the mushaf.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchSheet(
+    query: (String) -> List<com.iqra.quran.data.AyahSearch.Hit>,
+    onGoToPage: () -> Unit,
+    onDismiss: () -> Unit,
+    onPick: (Int, Int) -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    val results = remember(text) { if (text.trim().length >= 2) query(text.trim()) else emptyList() }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Search the mushaf") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(6.dp))
+            // Page jump lives here now: the magnifier searches for a WORD, and
+            // this keeps the other job one tap away instead of leaving a
+            // dialog nothing can open.
+            TextButton(onClick = onGoToPage, modifier = Modifier.align(Alignment.Start)) {
+                Text("Go to page…", fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(4.dp))
+            if (text.trim().length < 2) {
+                Text(
+                    "Type at least two letters.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            } else if (results.isEmpty()) {
+                Text(
+                    "No ayah matches \u2018$text\u2019.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            } else {
+                Text(
+                    "${results.size} ${if (results.size == 1) "ayah" else "ayat"}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(6.dp))
+                LazyColumn(Modifier.height(320.dp)) {
+                    items(results.size) { i ->
+                        val hit = results[i]
+                        val body = ayahSnippet(hit)
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onPick(hit.surah, hit.ayah)
+                                }
+                                .padding(vertical = 8.dp),
+                        ) {
+                            Text(
+                                "${hit.surah}:${hit.ayah}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(body, fontFamily = quranFont, fontSize = 17.sp, lineHeight = 24.sp)
+                        }
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The ayah text behind a search hit, for the result row.
+ *
+ * [QuranData.load] is suspending, so the text is produced on a coroutine and
+ * the row renders whatever has arrived. A result row that shows its ayah number
+ * for a frame and then its text is the normal shape of this, and it is why the
+ * list is driven by the engine's hits rather than by a blocking lookup.
+ */
+@Composable
+private fun ayahSnippet(hit: com.iqra.quran.data.AyahSearch.Hit): String {
+    val ctx = LocalContext.current
+    val text by produceState("", hit) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { QuranData.load(ctx).getVerse(hit.surah, hit.ayah)?.textClean ?: "" }
+                .getOrDefault("")
+        }
+    }
+    return text
 }
 
 @Composable
@@ -988,6 +1103,7 @@ fun ReaderScreen(
     }
     val bookmarkPages by vm.bookmarks.collectAsStateWithLifecycle()
     var showGoto by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
 
     // The header must describe the page currently on screen. It used to be
@@ -1197,10 +1313,10 @@ fun ReaderScreen(
                         )
                     }
                     Spacer(Modifier.width(4.dp))
-                    IconButton(onClick = { showGoto = true }) {
+                    IconButton(onClick = { showSearch = true }) {
                         Icon(
                             Icons.Filled.Search,
-                            "Go to page",
+                            "Search the mushaf",
                             tint = Chrome.OnChrome,
                         )
                     }
@@ -1273,6 +1389,17 @@ fun ReaderScreen(
                         )
                     }
                 }
+            }
+            if (showSearch) {
+                SearchSheet(
+                    query = { qq -> vm.searchAyat(qq) },
+                    onGoToPage = { showSearch = false; showGoto = true },
+                    onDismiss = { showSearch = false },
+                    onPick = { s2, a2 ->
+                        showSearch = false
+                        vm.anchorToVerse(s2, a2)
+                    },
+                )
             }
             if (showGoto) {
                 val go = {
