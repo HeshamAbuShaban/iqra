@@ -3,7 +3,39 @@
 Canonical backlog for the recognition work. Update at commit boundaries;
 check items only when the shipped code proves them.
 
+## Shipped 10 October 2026 (measured, not hoped)
+
+- **Word-final vowel rule.** 34.5% of the table's words end on a bare
+  consonant; the model says the vowel; they are different tokens. The DP now
+  treats them as one class at a word's last unit only. `final_vowel_parity.py`.
+- **Page-turn follow.** The lock follows an explicit page choice when the
+  reciter is silent, and credits nothing.
+- **Verdict latency in the record (`wt`).** The colour complaint could not be
+  checked because nothing recorded when a word was decided. It does now.
+- **Tap / long-press selection.** Long-press selects, extends a range, tap
+  collapses, chrome ends. `selection_parity.py`.
+- **Hide-mode progress strip.** How far through the surah the recitation has
+  come, in the same place whether or not the words are masked.
+- **In-reader search.** The magnifier searches the mushaf and jumps to the
+  ayah; page jump moved into the same sheet.
+
 ## Next, in order
+
+1. **Recite on the new build and read it back.** The final-vowel rule, the
+   page-turn follow and the latency field all want one session:
+   ```
+   adb -s 35d5637e shell run-as com.iqra.quran cat files/sessions/<file>.json > /tmp/x.json
+   python3 engine/replay/device_blame.py /tmp/x.json
+   ```
+   Expect: the last-unit blame class gone, page-turn wait under 6 s, and a `wt`
+   distribution that says whether colour is late in the engine or in the paint.
+2. **The residual accusation classes.** With the final-vowel class gone, what
+   is left is the real measurement: interior elisions (`اا بِ` for `بِ`) and
+   window misplacement, both visible in the harness dump of surah 3.
+3. **Standing-word pointer**, which can still be empty between windows.
+4. **UI polish**: type sizes, session list order, RTL on the live caption.
+
+## Next, in order (superseded)
 
 1. **Ask which of the 16 WRONG words were genuinely wrong.** They are listed
    by class in `STATUS.md`; 7 of 16 are ambiguous between a real error and a

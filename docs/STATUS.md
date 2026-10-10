@@ -560,6 +560,92 @@ python3 engine/replay/device_blame.py /tmp/x.json
 71% of its own accusations, and it cannot say which of them are false. Every
 session before this build records nothing, because the field did not exist.
 
+## What the blame position settled, and what came out of it
+
+The user's 10 October session carried the new instrumentation for the first time.
+Its ten WRONG words were read with `device_blame.py`, and the answer was not the
+one the corpus had led me to expect:
+
+| | |
+|---|---|
+| blamed on the word's LAST unit | **9 of 10** |
+| blamed on the first unit | 1 |
+| carrying a silent-letter mark | 0 |
+
+The nine are the plural masculine and pronoun endings — `ٱلضَّآلِّينَ`,
+`يُنفِقُونَ`, `ٱلْمُفْلِحُونَ`, `بِمُؤْمِنِينَ`, `يَعْمَهُونَ`, `وَتَرَكَهُمْ`,
+`يَرْجِعُونَ` — and **none** carries a mark, so the optional-final guard could
+not see them.
+
+The cause is in the table. `يُنفِقُونَ` is stored as `يُ ںںں فِ قُ ۥۥۥۥ ن`, so its
+last unit is a bare `ن`. The model emits `نَ`, because a reciter says the
+fatḥa, and those are **different tokens** in tokens.txt. **26,733 of the table's
+77,481 words — 34.5% — end on a bare consonant with no i'rab vowel**, and the
+reference reciter emits both forms in quantity (`نَ` 680 times, bare `ن` 450 in
+Al-Baqarah), so neither can be discarded.
+
+The fix interns every variant of one word-final consonant to one id, exactly as
+the madd rule does, applied only at a word's last unit. It can remove blame and
+never add it. The letter set is measured, not chosen: `ن ه م ر د ب ة ق ل ك س`
+and the other carriers of the defect. Waw and ya are excluded — as semi-vowels
+their vowels are their own sound, and relaxing them would hide a real error.
+Gate: `final_vowel_parity.py`, five injections red.
+
+**The 71% had a cause. It was not tajweed, and it was not the lock.**
+
+## Page turn: what the record showed
+
+The same session, from its own diag tail:
+
+```
+t=15981  lock 6 → 7                        (last ayah of Al-Fatiha)
+t=15981  page turn onto s=true: intent handoff armed
+t=15991  page turn onto s=true: intent handoff armed
+t=16002  handoff → s=2:1 coverage=0.63 via=page-turn-intent
+```
+
+The reader turned the page and the lock took **21 seconds** to admit it, so for
+21 s the screen showed Al-Baqarah while the highlighted ayah sat on a surah that
+was no longer visible. Nothing was misjudged; the app simply did not follow the
+reader.
+
+The lock now follows the PAGE when the reciter goes quiet for 6 s with the
+intent armed. Nothing is credited — the new ayah starts unjudged — so it cannot
+accuse anyone. Gate: `advisory_parity` asserts the follow archives no verdict,
+runs only in silence, and waits a real pause.
+
+## Tap and long-press, after reading the reference
+
+The reference reader's `AyahSelection` is a sealed state — `None`, `Ayah`,
+`AyahRange` — and that is the "smart" part: the mode is explicit state, not a
+guess from gesture length. This app now does the same: long-press selects,
+long-press again extends a range, a tap collapses it, the chrome ends it, and
+double-tap moves the lock.
+
+The first implementation had the range anchored on `_selectedRange`, which the
+previous press had just set to null — so **the branch that opens a range could
+never be reached**, and long-press was a single-ayah selector wearing a range
+selector's clothes. `selection_parity.py` now holds the state machine, and one
+of its injections is exactly that bug.
+
+## Hide mode, and the progress it never showed
+
+Hide mode masked the words but showed nothing about how far the recitation had
+come, so a memoriser could not see the progress they would have seen with the
+words revealed — the "same relation of the unhidden one" that was asked for. A
+compact strip now sits under the reader bar in hide mode: one cell per ayah of
+the surah in scope, filled by the share of its words heard, with the locked ayah
+marked. It is a bar and not a percentage, because a percentage there would read
+as a score of the reciter, and it is not one.
+
+## The magnifier
+
+It opened a "go to page" box, which is a different job: a reader looking for a
+word wants the word. The search engine was already written, normalised and
+folding the alef variants — it simply was not reachable. The magnifier now lists
+live matches and jumps to the ayah; "Go to page" moved into the same sheet so
+the feature survives.
+
 ## What is open next
 
 **1. The unexplained 71% - and the first session that carries `wu`.**
