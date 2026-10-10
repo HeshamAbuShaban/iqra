@@ -358,12 +358,14 @@ class Move(object):
 
 
 REASONS = ("forward-strong", "forward-pending", "jump", "pinned-escape",
-           "backward", "handoff",
-            "pinned-escape",
-           "repeat")
+           "backward", "handoff", "repeat")
 
+# Every reason REASONS can produce needs an arrow. "pinned-escape" was in
+# REASONS and absent here, so any trace containing one raised KeyError while
+# formatting its own output - the harness crashed on the state it had just
+# computed, and only on the runs where the escape actually fired.
 ARROW = {"forward-strong": "->", "forward-pending": "->", "jump": "=>",
-         "backward": "<-", "handoff": ">>", "repeat": "<<"}
+         "pinned-escape": "->", "backward": "<-", "handoff": ">>", "repeat": "<<"}
 
 HEADER = ("time", "from", "to", "dir", "reason", "cov")
 

@@ -364,7 +364,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 25 checks. Every check must be shown able to fail. Break the thing that
+It runs 26 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -385,6 +385,7 @@ nothing.
 | `word_alignment_parity` | Ayat that get no word verdict, so the count cannot get worse |
 | `device_blame_parity` | A WRONG word with no recorded blame position, or buckets that collapse |
 | `doc_check_count` | This document claiming a number of checks that the gate does not run |
+| `final_vowel_parity` | A word-final consonant deciding a verdict, or the rule leaking inside a word |
 | `honest_numbers` | Two meanings of zero |
 | `word_rule_sweep` | Per-word collateral damage over 154 real words |
 

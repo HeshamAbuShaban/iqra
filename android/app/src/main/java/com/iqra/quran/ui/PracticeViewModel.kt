@@ -509,6 +509,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Record a verdict permanently, if this is the first one for the word. */
+    /** WRONG key -> where the mismatch began inside the word, 0..1, or -1. */
+    private val wrongStartOf = HashMap<String, Float>()
+
     private fun archiveVerdict(key: String, v: WordStatus) {
         val prev = sessionArchive[key]
         // A real verdict is sticky: once a word has been decided, a later
@@ -619,7 +622,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         for ((k, v) in sessionArchive) {
             if (!first) sb.append(',')
             first = false
-            sb.append("{\"key\":\"").append(k).append("\",\"st\":\"").append(v.name).append("\"}")
+            // WRONG words carry WHERE in the word the mismatch began, as a
+            // 0..1000 fraction of its own units. A whole-corpus sweep and the
+            // device disagreed about which words are accused - the first word of
+            // an ayah, 42% in the harness and 10% on the phone - and neither
+            // figure could say where the mismatch sat. `wu` answers that from
+            // the device, offline, for every future session.
+            val frac = when (v) {
+                WordStatus.WRONG -> wrongStartOf[k] ?: -1f
+                else -> -1f
+            }
+            sb.append("{\"key\":\"").append(k).append("\",\"st\":\"").append(v.name).append("\"")
+            if (frac >= 0) {
+                sb.append(",\"wu\":").append((frac * 1000f).toInt())
+            }
+            sb.append("}")
         }
         sb.append("]")
         // Advisories exist to be read by a person making a recitation plan,
@@ -1783,6 +1800,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         unjudgeableKeys.clear()
         sessionArchive.clear()
         sessionAdvisories.clear()
+        wrongStartOf.clear()
         _advisoryMap.value = emptyMap()
         // Arrivals and the emission log are SESSION state: an arrival index from
         // the previous session points into a log that no longer holds those
@@ -2525,6 +2543,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                     ) {
                         s = WordStatus.UNKNOWN
                         addAdvisory(key, AdvisoryKind.UNMODELLED_FINAL)
+                    }
+                    // Remember WHERE the mismatch began, before the streak
+                    // below can demote this frame's WRONG to SKIPPED. Written
+                    // per verdict, so the record can say it after the fact.
+                    if (s == WordStatus.WRONG) {
+                        al.wrongStartFrac.getOrNull(i)?.let { wrongStartOf[key] = it }
                     }
                     if (s == WordStatus.WRONG) {
                         // WRONG is only claimed for the ayah the lock is on, and

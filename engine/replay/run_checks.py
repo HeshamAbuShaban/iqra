@@ -84,6 +84,8 @@ CHECKS = [
      "the record says WHERE a word was blamed, and the reader buckets it"),
     ("doc_check_count", "none",
      "the documents name the same number of checks the gate runs"),
+    ("final_vowel_parity", "none",
+     "a word-final consonant cannot decide a verdict, and the rule stays narrow"),
 ]
 
 # Scripts that need a dump argument rather than running bare.

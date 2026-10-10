@@ -63,6 +63,14 @@ def build_expected(table, tok, surah, n_ayat):
     return exp
 
 
+def final_indices(unit_word):
+    """Ref indices that are the LAST unit of their word."""
+    last = {}
+    for k, w in enumerate(unit_word):
+        last[w] = k
+    return last
+
+
 def align_affine(query, ref, unit_word):
     """Gotoh affine-gap alignment.
 
@@ -82,6 +90,7 @@ def align_affine(query, ref, unit_word):
     nwords = (max(unit_word) + 1) if unit_word else 0
     if not n or not m:
         return [False] * n, [False] * n, [-1] * n, [-1] * m, 0, nwords
+    last_of_word = final_indices(unit_word)
 
     INF = 1 << 29
     M = [[INF] * (m + 1) for _ in range(n + 1)]
@@ -148,7 +157,9 @@ def align_affine(query, ref, unit_word):
             if i == 0 or j == 0:
                 break
             ref_to_query[i - 1] = j - 1
-            if unit_match(ref[i - 1], query[j - 1]):
+            is_final = last_of_word.get(unit_word[i - 1]) == i - 1
+            if (unit_match_final(ref[i - 1], query[j - 1]) if is_final
+                    else unit_match(ref[i - 1], query[j - 1])):
                 matched[i - 1] = True
                 hits += 1
             else:
@@ -203,11 +214,14 @@ def align(query, ref, unit_word):
     wrong = [False] * n
     ref_to_query = [-1] * n
     emit_word = [-1] * m
+    last_of_word = final_indices(unit_word)
     i, j, hits = n, m, 0
     while i > 0 or j > 0:
         if i > 0 and j > 0 and dirs[i - 1][j] == 0:
             ref_to_query[i - 1] = j - 1
-            if unit_match(ref[i - 1], query[j - 1]):
+            is_final = last_of_word.get(unit_word[i - 1]) == i - 1
+            if (unit_match_final(ref[i - 1], query[j - 1]) if is_final
+                    else unit_match(ref[i - 1], query[j - 1])):
                 matched[i - 1] = True
                 hits += 1
             else:
@@ -329,6 +343,35 @@ def madd_equivalent(a, b):
     return ca is not None and ca == _madd_class(b)
 
 
+# Letters measured to end a word BARE in the table while the mushaf prints a
+# vowel on them: nun 2,936, ha 2,169, ra 248, mim 228, dal 104, ba 93, ta 49,
+# lam 41, qaf 24, alef-maqsura 21, kaf 13, sin 10. Waw and ya are deliberately
+# ABSENT: they carry vowels of their own as semi-vowels, so the vowel there is
+# load-bearing and relaxing it would hide a real error.
+FINAL_VOWELLESS = set("نهمردبةقلسعجثزتفطظشح")
+SHORT_VOWELS = set("\u064e\u064f\u0650")
+
+
+def final_vowel_id(u):
+    """A word-FINAL consonant, ignoring the case vowel on it.
+
+    26,733 of the table's 77,481 words end on a bare consonant: the table stores
+    'yunfiqoon' with a bare final nun, the model emits nun+fatha, and those are
+    different tokens. Same shape as the madd rule - it can only remove blame.
+    """
+    if not u:
+        return None
+    last = u[-1]
+    if last in SHORT_VOWELS:
+        stem = u[:-1]
+        if stem and stem[-1] in FINAL_VOWELLESS:
+            return "<fin-%s>" % stem[-1]
+        return None
+    if last in FINAL_VOWELLESS:
+        return "<fin-%s>" % last
+    return None
+
+
 def _canon(u):
     """The internable key for u.
 
@@ -342,6 +385,25 @@ def _canon(u):
 
 def unit_match(a, b):
     return a == b or madd_equivalent(a, b)
+
+
+# A/B switch, used only by the measurement that justifies the rule.
+FINAL_VOWEL_RULE = [True]
+
+
+def unit_match_final(a, b):
+    """Matching at a word-final position.
+
+    Identical to `unit_match` except that a bare consonant and its vowelled
+    forms compare equal. Applied only to a word's LAST unit - inside a word the
+    vowel is load-bearing. Mirrors PhonemeMapper.finalUnitId.
+    """
+    if unit_match(a, b):
+        return True
+    if not FINAL_VOWEL_RULE[0]:
+        return False
+    fa, fb = final_vowel_id(a), final_vowel_id(b)
+    return fa is not None and fa == fb
 
 WRONG_MIN_HEARD = 0.80
 

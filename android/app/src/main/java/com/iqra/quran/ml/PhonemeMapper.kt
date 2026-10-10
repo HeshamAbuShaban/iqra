@@ -52,6 +52,56 @@ private val YAA_MADD = setOf(
 @Volatile var maddEquivalenceMatching: Boolean = true
     private set
 
+// ---- final vowel on a word-final consonant ---------------------------------
+//
+// 26,733 of the table's 77,481 words - 34.5% - end on a bare consonant with no
+// i'rab vowel: 'يُنفِقُونَ' is stored as `يُ ںںں فِ قُ ۥۥۥۥ ن`, so the last unit is a
+// bare `ن`. The model has no such thing: it emits `نَ`, because a reciter says
+// the fatḥa. `ن` and `نَ` are DIFFERENT tokens in tokens.txt, so the DP charges
+// the recited vowel as a substitution against that final consonant.
+//
+// Measured on the user's own 10 October session, using the blame position the
+// record now carries: 9 of its 10 WRONG words were blamed on the LAST unit, and
+// they are almost all the plural masculine and pronoun endings - 'ٱلضَّآلِّينَ',
+// 'يُنفِقُونَ', 'ٱلْمُفْلِحُونَ', 'بِمُؤْمِنِينَ', 'يَعْمَهُونَ', 'وَتَرَكَهُمْ',
+// 'يَرْجِعُونَ'. None of them carries a silent-letter mark, so the optional-final
+// guard could not see them.
+//
+// The reference reciter proves the mechanism. In Al-Baqarah he emits `نَ` 680
+// times and bare `ن` 450 times, so both forms are real and neither can be
+// discarded. The fix therefore mirrors the madd rule: intern every variant of
+// ONE word-final consonant to one id, so the DP accepts whichever the reciter
+// chose. Like the madd rule, it can only ever remove blame - it cannot accuse.
+// Letters measured to end a word BARE in the table while the mushaf prints a
+// vowel on them: nun 2,936, ha 2,169, ra 248, mim 228, dal 104, ba 93, ta-marbuta
+// 49, lam 41, qaf 24, kaf 13, sin 10.
+//
+// Waw and ya are deliberately ABSENT. As semi-vowels they carry vowels of their
+// own - the fatha on waw is the fatha of 'وَاو' - so relaxing them would hide a
+// real error. The list is measured, not chosen: engine/replay/final_vowel_parity.py
+// asserts every letter here and asserts that waw and ya stay out.
+private val FINAL_VOWELLESS = "نهمردبةقلسعجثزتفطظشح"
+private val SHORT_VOWELS = charArrayOf('َ', 'ُ', 'ِ')
+
+/**
+ * The id for a word-FINAL consonant, ignoring the case vowel on it.
+ *
+ * Only applied to the final unit of a word, which is why [canonicalId] cannot do
+ * it: the same token can legitimately be mid-word, where its vowel matters.
+ * 'ن' inside 'مِن' is a different sound from the 'ن' that ends 'مِنْ'.
+ */
+private fun finalVowelId(u: String): String? {
+    if (u.isEmpty()) return null
+    val last = u.last()
+    if (last in SHORT_VOWELS) {
+        val stem = u.dropLast(1)
+        if (stem.isNotEmpty() && stem.last() in FINAL_VOWELLESS) return "<fin-${stem.last()}>"
+        return null
+    }
+    if (last in FINAL_VOWELLESS) return "<fin-$last>"
+    return null
+}
+
 private fun canonicalId(u: String): String {
     // Restoring single-realisation matching (maddNeverAccuses=false) is a
     // MEASUREMENT mode: the DP must then distinguish "held 4" from "held 2",
@@ -63,8 +113,30 @@ private fun canonicalId(u: String): String {
         u in ALEF_MADD -> "<madd-alef>"
         u in WAW_MADD -> "<madd-waw>"
         u in YAA_MADD -> "<madd-ya>"
-        else -> u
+        else -> finalVowelId(u) ?: u
     }
+}
+
+/**
+ * The same equivalence, for a unit known to be the LAST of its word.
+ *
+ * The expected side is canonicalised through [canonicalId], which cannot know
+ * position, so the last unit of every word is rewritten here before interning.
+ * Without this the DP compares the table's bare `ن` against the reciter's `نَ`
+ * and calls it a mistake.
+ */
+internal fun finalUnitId(u: String): String = finalVowelId(u) ?: canonicalId(u)
+
+/**
+ * Look up an emitted symbol that only matches a word-FINAL unit.
+ *
+ * The emitted side cannot know which units end a word, so this is a fallback
+ * consulted only after [canonicalId] missed. It returns -1 when the ayah does not
+ * assert that consonant at any word's end, which keeps the substitution intact.
+ */
+private fun finalEmissionId(u: String, ids: Map<String, Int>): Int {
+    val fv = finalVowelId(u) ?: return -1
+    return ids[fv] ?: -1
 }
 
 object PhonemeMapper {
@@ -254,9 +326,24 @@ object PhonemeMapper {
                 var m = ids
                 if (m == null) {
                     m = HashMap<String, Int>(units.size * 2)
-                    for (u in units) {
-                        val k = canonicalId(u)
-                        if (!m.containsKey(k)) m[k] = m.size
+                    // The last unit of a word registers BOTH its bare form and
+                    // the form with a case vowel, so the reciter's `نَ` can find
+                    // the id the table gave the bare `ن`. Registering the extra
+                    // key cannot make a wrong word right: it only lets the DP
+                    // treat two spellings of one final sound as a match, and the
+                    // id is only reachable if this ayah really asserts that
+                    // consonant at the end of a word.
+                    val lastIdx = HashMap<Int, Int>(wordCount)
+                    for (k in unitWord.indices) lastIdx[unitWord[k]] = k
+                    val isFinal = BooleanArray(units.size)
+                    for (k in lastIdx.values) if (k < isFinal.size) isFinal[k] = true
+                    for (i in units.indices) {
+                        val u = units[i]
+                        if (!m.containsKey(canonicalId(u))) m[canonicalId(u)] = m.size
+                        if (isFinal[i]) {
+                            val fv = finalVowelId(u)
+                            if (fv != null && !m.containsKey(fv)) m[fv] = m.size
+                        }
                     }
                     ids = m
                 }
@@ -364,6 +451,20 @@ object PhonemeMapper {
          * represent that must not accuse on it.
          */
         val wrongAtWordEnd: BooleanArray = BooleanArray(0),
+        /**
+         * For each word, where inside that word the mismatch BEGINS, as a
+         * fraction of its own units: 0.0 is the first unit, 1.0 is the last,
+         * -1f when the word was not contradicted at all.
+         *
+         * Added after the whole-corpus sweep and the device sessions disagreed
+         * about which words get accused. The corpus (which fits its own window)
+         * blames the FIRST word of an ayah 42% of the time; the device blames it
+         * 10% of the time, and the dominant device class has no textual
+         * signature at all. Neither figure can say WHERE in a word the mismatch
+         * sits, and that is the question that separates a boundary artefact from
+         * a wrong phoneme. This answers it, per session, from the phone.
+         */
+        val wrongStartFrac: FloatArray = FloatArray(0),
     ) {
         /** Fraction of this ayah's phonemes the emission accounts for. */
         val coverage: Float
@@ -401,11 +502,29 @@ object PhonemeMapper {
         // id (every expected unit is in the map by construction), so it stays a
         // substitution exactly as the string compare was.
         val ids = expected.symbolIds
-        val ref = IntArray(len) { ids[canonicalId(flat[it])] ?: -1 }
+        // The LAST unit of each word is matched through the final-vowel rule.
+        // Everywhere else uses the plain canonical id, because a vowel inside a
+        // word is load-bearing: the 'ن' in 'مِن' is not the 'ن' that ends 'مِنْ'.
+        val isFinal = BooleanArray(len)
+        val lastOfWord = HashMap<Int, Int>(expected.wordCount)
+        for (k in flat.indices) lastOfWord[wordOf[k]] = k
+        for (k in lastOfWord.values) isFinal[k] = true
+        val ref = IntArray(len) {
+            val u = flat[it]
+            ids[if (isFinal[it]) finalUnitId(u) else canonicalId(u)] ?: -1
+        }
         // No safe-call: `emitted` is a List<String>, so element access is
         // non-null and the `?.let` plus the trailing `?: -1` on the line this
         // replaces could never fire. The reference side above does it right.
-        val qry = IntArray(n) { ids[canonicalId(emitted[it])] ?: -1 }
+        //
+        // An emitted symbol is matched through the final-vowel rule only when
+        // the DP can tell it belongs to a word-final position. It cannot, until
+        // the alignment has run - so instead the query side interns BOTH forms
+        // of a consonant that can end a word, and the reference side is the
+        // narrower of the two. That is sound because `symbolIds` is built from
+        // the reference side: a bare `ن` only gets an id here if the ayah
+        // actually asserts one.
+        val qry = IntArray(n) { ids[canonicalId(emitted[it])] ?: finalEmissionId(emitted[it], ids) }
 
         // The traceback itself lives in UnitAligner so CI can execute it on the
         // JVM. Everything below is DERIVED from that one path, so the flags, the
@@ -445,6 +564,25 @@ object PhonemeMapper {
             lastOwner[owner] = k
         }
         for ((owner, k) in lastOwner) if (wrong[k]) wrongAtWordEnd[owner] = true
+        // Where inside each word the contradiction begins, normalised. Built
+        // here because `wrong` is local to align and the caller needs the value
+        // per word, in the same pass that builds the flags above.
+        val wrongStartFrac = FloatArray(m) { -1f }
+        for (k in flat.indices) {
+            val owner = wordOf[k]
+            if (owner !in 0 until m || !wrong[k]) continue
+            if (wrongStartFrac[owner] >= 0f) continue
+            var total = 0
+            var pos = 0
+            var found = false
+            for (j in 0..k) {
+                if (wordOf[j] != owner) continue
+                total++
+                if (j == k) { pos = total - 1; found = true }
+            }
+            if (found && total > 1) wrongStartFrac[owner] = pos / (total - 1).toFloat()
+            else if (found) wrongStartFrac[owner] = 0f
+        }
         // Emissions the DP assigned to each expected word. Used only by the
         // diagnostic dump; the verdict rule reads `bad` alone, and
         // word_rule_sweep.py measures that at zero collateral.
@@ -519,7 +657,10 @@ object PhonemeMapper {
                 if (cnt[wi] > 0) wordProb[wi] = sum[wi] / cnt[wi]
             }
         }
-        return Alignment(statuses, emitWord, wordProb, unitsMatched, len, wordHeard, wrongAtWordStart, wrongAtWordEnd)
+        return Alignment(
+            statuses, emitWord, wordProb, unitsMatched, len, wordHeard,
+            wrongAtWordStart, wrongAtWordEnd, wrongStartFrac,
+        )
     }
 
     /** Word holding the most recent emission within [recencySec] of now. */
