@@ -82,6 +82,8 @@ CHECKS = [
      "no import names a component that is not used - the residue of deleted features"),
     ("device_blame_parity", "none",
      "the record says WHERE a word was blamed, and the reader buckets it"),
+    ("doc_check_count", "none",
+     "the documents name the same number of checks the gate runs"),
 ]
 
 # Scripts that need a dump argument rather than running bare.
