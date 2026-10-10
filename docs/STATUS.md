@@ -383,10 +383,8 @@ becomes a verdict.
 
 **Honest caveat:** on the reference reciter's own surah-67 recording the one
 WRONG word (`67:10:1 وَقَالُوا۟`) has its substitution *not* on the final unit,
-so the guard does not catch it. Whole-corpus sweep in
-`engine/replay/optional_final.py` is running to size the class properly. The
-guard removes some false accusations, not all of them, and the measurement is
-not yet in.
+so the guard does not catch it. The whole-corpus sweep has now run: it removes
+**2%** of them, not most. See "The whole-corpus false-accusation sweep" below.
 
 
 
@@ -402,16 +400,47 @@ built toward ASD-STE100 (short sentences, one idea per sentence, the active
 voice, approved words). Any change to the alignment, the lock policy, the
 verdict rule or the record format must update that file in the same commit.
 
-Three new gate checks now hold the work in place, and each one has been shown to
+Five new gate checks now hold the work in place, and each one has been shown to
 fail by fault injection:
 
 | Check | Stops |
 |---|---|
-| `dead_code.py` | A declaration in the recognition surface that no file references. Deleted 13 dead items in one pass. Known limit: it counts identifiers, not symbols, so a duplicate name shares another name's reference count. |
+| `dead_code.py` | A declaration or a FILE in the recognition surface that no file references. Removed 43 dead declarations and one unreachable screen. Known limit: it counts identifiers, not symbols, so a duplicate name shares another name's reference count. |
+| `unused_imports.py` | An import that names a component that is not used — the residue of a deleted feature. Removed 126. Operator imports (`getValue`/`setValue`) are exempt because `by` delegates with no textual trace. |
 | `honest_numbers.py` | "No data" and "zero percent" collapsing to the same value; the ayah strip sorting two surahs together; the live list painting a whitespace index; a `heard` count that includes words the engine could not hear. |
 | `session_record_integrity.py` | A counter that a browse wipes; timing constants derived from the declared poll interval instead of the measured one; the handoff boundary returning to a page boundary. |
+| `pref_consumption.py` | A switch that nothing reads. |
 
-### Defects found in the user's own session records, and fixed
+### Two defects in the checks themselves, found while writing this
+
+1. `dead_code.py` required four spaces of indentation, so it silently skipped
+   **every** declaration in `MainActivity.kt`, which declares at column 0. It
+   reported dead items in `PracticeViewModel.kt` and passed over a whole file of
+   them in `MainActivity.kt`. Fixed to `^[ \t]{0,4}`; the count it covers went
+   from 832 to 972.
+2. `handoff_boundary.py` grepped for a variable called `atScopeEnd` that I had
+   just deleted. The check failed on a **name**, not a behaviour — the exact
+   failure its own comment warns about. Rewritten to test the surah-boundary
+   guard and re-fault-injected; restoring the page boundary turns it red again.
+
+Both are recorded because "the check was written to catch this" is a claim that
+has to be tested, not asserted.
+
+### Deletions, with the reason each went
+
+| What | Why |
+|---|---|
+| `ui/ProgressScreen.kt` (554 lines) | Unreachable: `Screen.Progress` has called `PracticeScreen` since `592b37f`, and nothing names anything it declares. It also duplicated the live screen and computed mastery with the wrong denominator. A screen nobody can reach still has to be right. |
+| `ml/Levenshtein.kt` | Its only consumer was `ratio`, deleted earlier; after that `distance` had no caller either. |
+| `IqraType` (9 styles) | 4 of 9 used. The other 5 nobody named. |
+| `IqraMotion` (6 specs) | 1 of 6 used. |
+| `Tokens.forVerdict` | Its doc claimed it unified verdict colour across `resolveWordStyle` and `LiveWord`. It was referenced by nothing, and both renderers still carried their own five literals. A comment that describes a state the code did not reach is worse than no comment. |
+| `Charts.RankedBars`, `Charts.Sparkline`, `LiveMode.LiveStat`, `MainActivity.darkMushafScheme`, `MainActivity.ParchmentScaffold`, 5 shapes and 3 motion specs | Declared, referenced from nowhere. |
+| `AssetPaths.privateRoot/engineDir`, `DataFetcher.Cancelled`, `QuranData.getSurah`, `Verse.WordResult`, `AudioRecorder.isRecording` | Dead helpers, including a cancellation exception that was never thrown. |
+| `WordStatus.EXTRA` | Kept out of the deletion: it documents a state the aligner deliberately does not report. Removed from `CORE_LOGIC`'s state table instead, where it was being read as an available verdict. |
+
+### Measured from the user's sessions, 9 October 2026
+
 
 | What | Where | Evidence |
 |---|---|---|

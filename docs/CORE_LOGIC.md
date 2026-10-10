@@ -365,7 +365,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 22 checks. Every check must be shown able to fail. Break the thing that
+It runs 23 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -381,9 +381,17 @@ nothing.
 | `advisory_parity` | An advisory that accuses |
 | `pref_consumption` | A switch that nothing reads |
 | `session_record_integrity` | A counter that a browse wipes |
-| `dead_code` | A declaration that nobody references |
+| `dead_code` | A declaration, or a whole file, that nobody references |
+| `unused_imports` | An import that names a component that is not used |
 | `honest_numbers` | Two meanings of zero |
 | `word_rule_sweep` | Per-word collateral damage over 154 real words |
+
+Three of those checks exist because of defects the ones before them could not
+see. `dead_code` required four spaces of indentation, so it passed over every
+declaration in `MainActivity.kt` while reporting them elsewhere.
+`handoff_boundary` grepped for a variable name I had deleted, so it failed on a
+name rather than a behaviour. Write the check to a behaviour, then break the
+behaviour and watch it go red. Do not write it to a symbol.
 
 When you change a constant in this document, change the measurement too. When
 you fix a defect, write the number that shows the fix.
