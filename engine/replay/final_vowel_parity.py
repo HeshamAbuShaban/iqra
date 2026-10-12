@@ -76,6 +76,17 @@ def main() -> int:
                 if not wv.unit_match_final(c + v, c):
                     bad.append("%s should match %s at a word end" % (c + v, c))
 
+        # 1b. SUKUN. Pausing at the end of an ayah is the most common way to
+        # finish a word, and sukun was missing from the vowel set for one whole
+        # pass - which is why 85% of the user's false accusations survived the
+        # first version of this rule.
+        for c in BARE[:3]:
+            if not wv.unit_match_final(c, c + "ْ"):
+                bad.append("%s should match %sْ at a word end; pausing is "
+                           "the commonest realisation" % (c, c))
+            if not wv.unit_match_final(c + "ْ", c):
+                bad.append("%sْ should match %s at a word end" % (c, c))
+
         # 2. NOT inside a word: plain matching must still refuse
         for c in BARE[:3]:
             for v in VOWELS:

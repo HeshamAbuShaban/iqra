@@ -1434,6 +1434,11 @@ private fun computeWindow(): List<Int> {
         _gateReason.value = ""
         _policyLive.value = PolicyLive()
         _wpmFlow.value = SEED_WPM
+        // The paint map's seed is the retained verdicts, so on teardown it goes
+        // too - otherwise a finished recitation keeps its colours on screen
+        // until the next one begins. The verdicts themselves are cleared by
+        // resetSessionCounters, which every end path reaches.
+        _statusMap.value = emptyMap()
     }
 
     /** Zero the per-session counters so a summary can never report a
@@ -1468,6 +1473,12 @@ private fun computeWindow(): List<Int> {
         // opens with a fast poll is not judged by the previous session's slow
         // one, and so the very first ayah behaves exactly as before.
         pollMsEma = SherpaVad.FEED_POLL_SEC * 1000f
+        // The retained verdicts seed the paint map. They are session state -
+        // "as long as the user is active on the recitation and he carries on" -
+        // so they die here, with the rest of the session's counters. endSession
+        // reaches this on every stop path, which is the only way a finished
+        // recitation's colours can be kept off the next one's screen.
+        sessionStatuses.clear()
         // Counts of the two failure modes this round exists for, so a session
         // record can distinguish them without needing the phone back:
         //   noWindowWords - words whose window was empty although the lock had
@@ -2621,7 +2632,24 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             refreshWindow()
             val window = _activeWindow.value
             val needWrong = wrongLatchFrames()
-            val newMap = LinkedHashMap<String, WordStatus>()
+            // The paint map is the SESSION's verdicts, not the current window's.
+            //
+            // It used to be rebuilt from `window` - lockedAyah ± 1 - every poll,
+            // so a word lost its colour the moment the lock advanced past it and
+            // the reader scrolled. The user's report: "they just stay shortly
+            // and on a short scope, which is super telling".
+            //
+            // Seeding from sessionStatuses carries every verdict the reciter has
+            // EARNED forward. sessionStatuses holds exactly those: an ayah ahead
+            // of the lock is removed rather than retained, so nothing
+            // not-yet-recited sticks. The loop below then overwrites the ayat in
+            // the window with their freshly computed values, which is what makes
+            // the colour move as the reciter speaks.
+            //
+            // Decision, from the user: "as long as the user is active on the
+            // recitation and he carries on". sessionStatuses is cleared on
+            // loadSurah, jump, anchor and a new recite - which is exactly that.
+            val newMap = LinkedHashMap(sessionStatuses)
             var timedKey: String? = null
             for (a in window) {
                 val ws = verseWords[a] ?: emptyList()

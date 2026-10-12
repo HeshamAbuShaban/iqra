@@ -81,7 +81,7 @@ private val YAA_MADD = setOf(
 // real error. The list is measured, not chosen: engine/replay/final_vowel_parity.py
 // asserts every letter here and asserts that waw and ya stay out.
 private val FINAL_VOWELLESS = "نهمردبةقلسعجثزتفطظشح"
-private val SHORT_VOWELS = charArrayOf('َ', 'ُ', 'ِ')
+private val SHORT_VOWELS = charArrayOf('َ', 'ُ', 'ِ', 'ْ')
 
 /**
  * The id for a word-FINAL consonant, ignoring the case vowel on it.

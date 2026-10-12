@@ -349,7 +349,13 @@ def madd_equivalent(a, b):
 # ABSENT: they carry vowels of their own as semi-vowels, so the vowel there is
 # load-bearing and relaxing it would hide a real error.
 FINAL_VOWELLESS = set("نهمردبةقلسعجثزتفطظشح")
-SHORT_VOWELS = set("\u064e\u064f\u0650")
+# Fatha, damma, kasra, AND sukun.
+#
+# Sukun was missing at first, and it matters more than the other three: pausing
+# at the end of an ayah is the single most common way to finish a word, and
+# "م" against "مْ" was charged as a substitution. A reciter who vowels the final
+# letter and a reciter who pauses on it are saying the same word.
+SHORT_VOWELS = set("\u064e\u064f\u0650\u0652")
 
 
 def final_vowel_id(u):

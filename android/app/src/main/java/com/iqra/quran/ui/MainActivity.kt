@@ -1996,15 +1996,39 @@ private fun resolveWordStyle(
     advisoryCue: Boolean = false,
 ): WordStyle {
     if (hide) {
+        // Hide mode reveals a word on its OWN verdict, not on where the lock
+        // happens to be.
+        //
+        // It used to reveal through `HighlightLayer.RECITATION_AYAH`, which
+        // `resolveLayer` only produces inside the active window. So a word you
+        // had recited correctly was masked again the instant the lock moved past
+        // its ayah, and the user's report was the honest one: "in hide they
+        // remain revealed - that isn't the case".
+        //
+        // A memoriser reveals a word by reciting it. That fact does not expire
+        // because the reader has moved on, so it is keyed on the verdict, which
+        // is now carried permanently in the paint map for the whole session.
+        // UNKNOWN and SKIPPED are the absence of a verdict and stay masked:
+        // revealing those would show the answer without being asked for it.
+        when (st) {
+            WordStatus.CORRECT ->
+                return WordStyle(onSurface, Color.Transparent, Color.Transparent,
+                    0f, false, false)
+            WordStatus.WRONG ->
+                return WordStyle(wrongColor, Color.Transparent, wrongColor, 0.6f, true, false)
+            else -> Unit
+        }
         return when (layer) {
             HighlightLayer.AUDIO_WORD -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
             HighlightLayer.AUDIO -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.55f, false, false)
             HighlightLayer.RECITATION_WORD -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
             HighlightLayer.WRONG -> WordStyle(wrongColor, Color.Transparent, wrongColor, 0.6f, true, false)
             HighlightLayer.SELECTION -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.7f, true, false)
+            // An advisory is a masked word the engine had a note about. Revealing
+            // it would leak which word the app noticed, which is the same failure
+            // the advisory-cue suppression already guards against.
             HighlightLayer.RECITATION_AYAH ->
-                if (st == WordStatus.CORRECT) WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
-                else WordStyle(amberColor, Color.Transparent, amberColor, 1f, false, false, hidden = true, outline = true)
+                WordStyle(amberColor, Color.Transparent, amberColor, 1f, false, false, hidden = true, outline = true)
             HighlightLayer.NONE,
             HighlightLayer.UNSTARTED,
             -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false, hidden = true)

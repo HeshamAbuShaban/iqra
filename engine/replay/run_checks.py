@@ -88,6 +88,8 @@ CHECKS = [
      "a word-final consonant cannot decide a verdict, and the rule stays narrow"),
     ("selection_parity", "none",
      "long-press selects then extends a range, order kept, tap or chrome ends it"),
+    ("paint_scope_parity", "none",
+     "a verdict is permanent for the session, and hide reveals on the verdict"),
 ]
 
 # Scripts that need a dump argument rather than running bare.
