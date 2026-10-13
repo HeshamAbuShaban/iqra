@@ -555,6 +555,9 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     var screenCount by rememberSaveable { mutableStateOf(7) }
     // Session record file name for the single-session report route.
     var screenReport by rememberSaveable { mutableStateOf("") }
+    // Captured once, because the screen-dispatch lambdas below are plain lambdas
+    // and cannot read a composition local.
+    val appCtx = LocalContext.current
 
     if (loading || data == null) {
         SplashScreen()
@@ -647,9 +650,15 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                     onRequestMic { vm.startRecite(pg, screen.surah to screen.startAyah) }
                 },
                 onExit = { screenName = "picker" },
-                // Straight to the report. Finishing a session and being dumped on
-                // the surah list is how a report screen goes unused.
-                onFinished = { screenName = "progress" },
+                // Finishing a session goes straight to its report. `stopRecite`
+                // flushes the record synchronously before tearing the session down,
+                // so the file is on disk by the time this runs. Landing on a list
+                // of 114 surahs instead is how a report screen goes unused.
+                onFinished = {
+                    val name = PracticeLog.latestRecordName(appCtx)
+                    if (name != null) { screenReport = name; screenName = "report" }
+                    else screenName = "progress"
+                },
             )
         }
         is Screen.Diag -> DiagScreen(vm) { screenName = "picker" }

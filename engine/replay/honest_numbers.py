@@ -83,8 +83,19 @@ def main() -> int:
         bad.append("the live 'heard' count no longer exists; name where it went")
     else:
         good = 0
-        for m in re.finditer(r"val judged =(.{0,140})", live_body, re.S):
-            if "values.count" in m.group(1) and "WordStatus.WRONG" in m.group(1):
+        for m in re.finditer(r"val judged =(.{0,160})", live_body, re.S):
+            site = m.group(1)
+            if "values.count" in site and "WordStatus.WRONG" in site:
+                good += 1
+            # The durable store. `scopeProgress.sumOf { it.decided }` counts
+            # CORRECT + WRONG and nothing else, because PracticeViewModel builds
+            # `decided` from sessionArchive that way and never prunes it. This
+            # form was added when the live read moved off the pruned paint map,
+            # which is the fix for "16 of 29 heard" on a finished Al-Fatiha.
+            elif ".sumOf { it.decided }" in site:
+                # Only `decided`. `heard` alone is CORRECT only and would
+                # under-report wrong words; `words` is the whole scope and would
+                # make every session read complete.
                 good += 1
         if good != heard_sites:
             bad.append("a 'heard' read site is not a verdict count "

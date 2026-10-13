@@ -10,7 +10,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -26,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -41,12 +41,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlin.math.sin
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.Paint
-import android.graphics.BlurMaskFilter
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.asAndroidPath
-import androidx.compose.ui.graphics.nativeCanvas
 import com.iqra.quran.ui.theme.LiveColors
 import com.iqra.quran.ui.theme.mix
 import com.iqra.quran.ui.theme.LocalIqraColors
@@ -56,6 +50,12 @@ import androidx.compose.animation.core.spring
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.clickable
 
 /**
  * Recitation test: the verse is hidden, you recite it from memory, and each
@@ -110,6 +110,21 @@ fun LiveModeScreen(
     // pitch that is not available.
     val recording by vm.recording.collectAsStateWithLifecycle()
     val statusMap by vm.statusMap.collectAsStateWithLifecycle()
+    // The count of words actually judged this session, per ayah, from the durable
+    // store rather than the live paint map.
+    //
+    // This is the fix for "16 of 29 heard" after completing Al-Fatiha. The live map
+    // (`statusMap`) is pruned to lockedAyah +/- 2 on every poll - the paint behind
+    // the lock is deliberately thrown away, because stale paint can never freeze.
+    // So on the last ayah of a surah only ayah 5..9 can survive, which is
+    // 4 + 3 + 9 = 16 of Fatiha's 29 words. Every other word was deleted from the
+    // map as the lock advanced. That is a truncated trailing window rather than an
+    // accuracy figure, and by the same arithmetic Al-Baqarah finishes near 1.7%.
+    //
+    // `scopeProgress` is already built from `sessionArchive`, the store cf9a2bb
+    // added precisely because the paint map forgets. It records every verdict and
+    // is never pruned, so summing it sums the session instead of the window.
+    val scopeProgress by vm.scopeProgress.collectAsStateWithLifecycle()
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val policy by vm.policyLive.collectAsStateWithLifecycle()
@@ -124,22 +139,32 @@ fun LiveModeScreen(
     )
 
     var started by remember { mutableStateOf(false) }
+    // Listening is live from the moment the tray appears - see the tray note.
+    var paused by remember { mutableStateOf(false) }
     var finished by remember { mutableStateOf(false) }
     var showExit by remember { mutableStateOf(false) }
 
     // The verse text, split on whitespace. The mushaf's own per-word boxes are
     // not needed here: this screen counts words and shows them one at a time,
     // and the word INDEX it feeds statusMap with is the index in this list.
-    val verses = remember(surah, startAyah, ayahCount) {
-        (startAyah until startAyah + ayahCount).mapNotNull { data.getVerse(surah, it) }
-    }
-    // The denominator is a MUSHARF word count, from the same list the statuses
+    // The denominator is a MUSHARAF word count, from the same list the statuses
     // are keyed by - never a whitespace split of `textClean`, whose token count
     // differs from the mushaf's word index from the first multi-word token
     // onward. Counting one and displaying the other made "N of M heard" compare
     // two different populations.
-    val totalWords = remember(verses, vm.wordsVersion.collectAsStateWithLifecycle().value) {
-        verses.sumOf { vm.standWordsFor(it.ayah).size }
+    //
+    // And it is FROZEN, not re-keyed on `wordsVersion`. `wordsVersion` is bumped by
+    // loadSurah, and a surah handoff calls loadSurah(surah + 1) - so the old
+    // `remember(verses, wordsVersion)` re-read the NEXT surah's words while the
+    // header still said "Al-Fatiha . 7 ayat" and the words on screen became
+    // Baqarah's. The scope is chosen in ChooseScreen and must not move under the
+    // reciter mid-session, so neither the count nor the text keys on it.
+    val scopeVerses = remember(surah, startAyah, ayahCount) {
+        (startAyah until startAyah + ayahCount).mapNotNull { data.getVerse(surah, it) }
+    }
+    val verses = scopeVerses
+    val totalWords = remember(scopeVerses) {
+        scopeVerses.sumOf { vm.standWordsFor(it.ayah).size }
     }
 
     val amp = remember { mutableFloatStateOf(0f) }
@@ -362,45 +387,51 @@ fun LiveModeScreen(
                 // mid-recitation is the words and the light.
                 Spacer(Modifier.height(14.dp))
 
-                // Controls live in a floating bar on the light, not in a top row.
-                Surface(
-                    color = lc.bar,
-                    shape = RoundedCornerShape(30.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (!started) {
-                            TextButton(
-                                onClick = {
-                                    startedAt = System.currentTimeMillis()
-                                    started = true
-                                    onRequestMic()
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Begin reciting", color = lcG.accent, fontSize = 16.sp) }
-                        } else {
-                            // "heard" is a verdict, not a paint. UNKNOWN and
-                            // SKIPPED are the ABSENCE of one, so counting the
-                            // map's size let a session the engine never heard
-                            // report "N of N heard".
-                            val judged = statusMap.values.count {
-                                it == WordStatus.CORRECT || it == WordStatus.WRONG
-                            }
-                            Text(
-                                "$judged of $totalWords heard",
-                                fontSize = 13.sp,
-                                color = Color(0xFF8FA0BE),
-                                modifier = Modifier.weight(1f).padding(start = 12.dp),
-                            )
-                            TextButton(onClick = { vm.stopRecite("live done") }) {
-                                Text("End", color = lcG.accent, fontSize = 16.sp)
-                            }
-                        }
-                    }
-                }
+                // The feature tray: circular controls, evenly spaced, centred, at
+                // the bottom of the dark ground.
+                //
+                // This is not decoration, it is the accommodation for three
+                // situations a single Begin button cannot serve: a phone left on a
+                // table while the reciter walks around the room, a crowded room
+                // where the honest move is to stop listening for a minute, and a
+                // reciter who simply needs a break without ending the session.
+                //
+                // So: listening from the moment the tray appears, a Pause toggle
+                // (tap, not hold - holding to recite would break the walk-around
+                // case outright), and an End that leaves the tray entirely.
+                // Progress. Present because the reciter needs to know how far in
+                // they are, and fixed because it used to be wrong: it read the live
+                // paint map, which is pruned to the lock's last three ayat, so a
+                // finished surah always read about 55%.
+                //
+                // Counted from the archive now, so it is complete. `judged` here is
+                // CORRECT + WRONG - a verdict, never UNKNOWN or SKIPPED.
+                val judged = scopeProgress.sumOf { it.decided }
+                Text(
+                    "$judged of $totalWords heard",
+                    fontSize = 12.sp,
+                    color = lcG.inkMuted,
+                )
+                Spacer(Modifier.height(12.dp))
+                TrayButton(
+                    icon = Icons.Filled.Mic,
+                    tint = if (recording && !paused) lcG.accent else lcG.inkFaint,
+                    track = lcG.surfaceHigh,
+                    caption = if (recording && !paused) "Listening" else "Paused",
+                    onClick = {
+                        paused = !paused
+                        if (paused) vm.stopRecite("paused")
+                        else onRequestMic()
+                    },
+                )
+                Spacer(Modifier.width(28.dp))
+                TrayButton(
+                    icon = Icons.Filled.Stop,
+                    tint = lcG.chartBad,
+                    track = lcG.chartBad.copy(alpha = 0.16f),
+                    caption = "End",
+                    onClick = { vm.stopRecite("live done"); finished = true },
+                )
                 Spacer(Modifier.height(20.dp))
             }
         }
@@ -424,45 +455,12 @@ fun LiveModeScreen(
         )
     }
 
+    // No "Done" dialog. A session that judged nothing needs more than a sentence in
+    // a box, and one that went well deserves the report. Finishing navigates
+    // straight to the session report, which is the only surface that can show what
+    // actually happened across the whole scope.
     if (finished) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("Done") },
-            text = {
-                        // "heard" must mean heard. statusMap is the live paint
-                        // map, and it is filled with UNKNOWN for every word the
-                        // engine could NOT judge, so counting its size reported
-                        // "N of N heard" over a session the engine never heard
-                        // at all. UNKNOWN is defined in this repo as the absence
-                        // of a verdict, exactly like SKIPPED, so it is not
-                        // counted here either.
-                        val judged = statusMap.values.count {
-                            it == WordStatus.CORRECT || it == WordStatus.WRONG
-                        }
-                Text(
-                    if (judged == 0) {
-                        // Distinguish the cases. The old copy blamed the microphone
-                        // and the level, which is wrong whenever the mic was fine and
-                        // the room was simply silent - and it did so at exactly the
-                        // moment someone most wants to know what happened.
-                        if (!everRecorded) {
-                            "The microphone was never opened, so nothing could be " +
-                                "heard."
-                        } else {
-                            "No words were judged. The microphone was open and " +
-                                "nothing was said - try again and recite from the " +
-                                "first ayah."
-                        }
-                    } else {
-                        "$judged ${if (judged == 1) "word" else "words"} " +
-                            "heard. Your report is ready."
-                    }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { onFinished() }) { Text("Done") }
-            },
-        )
+        LaunchedEffect(finished) { onFinished() }
     }
 }
 
@@ -492,36 +490,36 @@ private val amberColor = Color(0xFFE09112)
 // colours in two different files.
 
 /**
- * The horizon.
+ * The light.
  *
- * Not a sphere, and not a ball with rings around it. Every reference this is
- * built from puts the light at the BOTTOM of the frame with dark empty ground
- * above it, and that is not a stylistic detail - a centred orb fights the text
- * for the middle of the eye, whereas a low horizon leaves the words somewhere
- * quiet to land.
+ * A rounded rectangle of luminous colour whose PERIMETER deforms with the voice.
  *
- * Five things make it read as light rather than as a filled shape:
+ * That distinction is the whole form. The earlier version drew a mass anchored to
+ * the bottom of the screen with a wavy top edge - a horizon. Every reference puts
+ * the light in a floating, fully-rounded card shape with dark ground around it on
+ * all four sides, which is a different object: the silhouette itself has to wobble
+ * and breathe, not merely the fill inside it. A wavy top edge on a filled block is
+ * the difference between a light and a container.
  *
- *  1. The crest carries the microphone HISTORY, sampled newest-first at a phase
- *     that varies with x. That detail is the whole difference. A curve driven by
- *     the current amplitude pulses in place and looks like a meter; the same
- *     amplitude carried across the width travels sideways, so speech looks like
- *     speech.
- *  2. The fill's gradient is anchored to the crest BAND, not to the box, and is
- *     transparent above it. A gradient tied to the box leaves the moving crest
- *     swimming inside a slab, which is exactly what the first attempt looked
- *     like - a blue rectangle with a ruler on top.
- *  3. The crest is stroked twice: once blurred and wide for the glow, once crisp
- *     for the ridge. Compositing on a soft edge, without a real blur, gives an
- *     edge but no light.
- *  4. Six large low-alpha radial blobs drift inside the mass. Mist is what makes
- *     these references look expensive and no amount of stroking produces it.
- *  5. At rest the crest still moves, on two periods that share no common factor
- *     so the surface never repeats a pattern you could learn and stop seeing.
+ * Four things make it read as light rather than as a drawn shape:
  *
- * The history is a plain FloatArray written by the amplitude poll and read HERE,
- * inside the draw lambda. Neither is touched during composition, so sixty frames
- * a second repaints one canvas and never recomposes the verse behind it.
+ *  1. The perimeter is a closed path of points pushed inward and outward by
+ *     several sines at different frequencies, plus the microphone history read at a
+ *     phase that varies around the perimeter. Because the history is sampled at
+ *     different positions around the edge rather than globally, a single amplitude
+ *     makes the shape breathe unevenly instead of swelling in and out - which is
+ *     what makes it look alive rather than pulsing.
+ *  2. Nothing about it is drawn with a crisp stroke. The previous version put a 2dp
+ *     line along the crest and that line is the single clearest tell of something
+ *     drawn rather than emitted.
+ *  3. A blurred halo pass drawn behind the silhouette, wider for loud speech and
+ *     hotter for a high voice, so the light appears to spill past its own edge.
+ *  4. The fill is a radial gradient anchored to the lattice's centre, brightest at
+ *     the middle and fading at the rim, which is how a glowing body actually
+ *     shades.
+ *
+ * Colours come from `LiveColors`, derived from whatever theme is active, so this
+ * form follows the app's palette rather than carrying a second one.
  */
 @Composable
 private fun HorizonWave(
@@ -530,16 +528,15 @@ private fun HorizonWave(
     head: androidx.compose.runtime.MutableIntState,
     level: androidx.compose.runtime.MutableFloatState,
     onset: androidx.compose.runtime.MutableFloatState,
-    /** 0..1 tone brightness. See the note where it arrives. */
+    /** 0..1 tone brightness. Follows pace until the engine publishes band energy. */
     brightness: Float,
-    /** Amplitude when the user has switched animation off. */
+    /** Whether to animate at all. Off leaves an honest still image. */
     animate: Boolean,
     stall: Float,
     state: LiveState,
     modifier: Modifier = Modifier,
 ) {
-    val mass = remember { Path() }
-    val crest = remember { Path() }
+    val shape = remember { Path() }
     val flow = rememberInfiniteTransition(label = "flow")
     val drift by flow.animateFloat(
         0f, 6.2831855f,
@@ -547,9 +544,6 @@ private fun HorizonWave(
     val mist by flow.animateFloat(
         0f, 6.2831855f,
         infiniteRepeatable(tween(17300, easing = LinearEasing)), label = "mist")
-    // Pinned phases when motion is switched off. The surface stops breathing and
-    // the light still answers the voice, which is the part anyone turning the
-    // setting off still wants.
     val phD = if (animate) drift else 0.9f
     val phM = if (animate) mist else 2.4f
 
@@ -561,123 +555,130 @@ private fun HorizonWave(
         val hd = head.intValue
         val lv = level.floatValue.coerceIn(0f, 1f)
         val on = onset.floatValue.coerceIn(0f, 1f)
-        // A stalled lock visibly loses its light. Silence should read as "not
-        // hearing you" before any words on the screen can tell you.
         val dull = (stall / 5f).coerceIn(0f, 1f)
-        val live = if (state == LiveState.Idle) 0.72f else 1f
-        val clear = (1f - 0.45f * dull) * (if (state == LiveState.Thinking) 0.72f else 1f)
+        val clear = (1f - 0.45f * dull) *
+            (if (state == LiveState.Thinking) 0.72f else 1f)
 
-        // While the engine is thinking the light dims and cools rather than
-        // turning amber. Amber reads as a warning on this ground and turns the
-        // bottom of the screen brown; the waiting state belongs inside the same
-        // blue-violet family, and the amber in the label above already says it.
-        // Brightness carries tone. Gold at rest, paler and whiter as the voice
-        // gets brighter - a lit edge getting hotter, which is what a high voice
-        // looks like. With animation off this is pinned to rest, so the still
-        // image is the resting state rather than a frozen sample of something.
         val hot = (brightness * 0.6f + on * 0.4f).coerceIn(0f, 1f)
-        val tint = if (state == LiveState.Thinking) lc.waiting
-                   else lerp(lc.mist, lc.crest, 0.35f + 0.4f * hot)
-        val core = if (state == LiveState.Thinking) mix(lc.body, lc.crest, 0.3f)
+        val body = if (state == LiveState.Thinking) mix(lc.body, lc.waiting, 0.35f)
+                   else lc.body
+        val core = if (state == LiveState.Thinking) lc.waiting
                    else lerp(lc.bodyDeep, lc.crest, hot)
 
-        // Crest geometry. `restY` is the mean, `lift` how far the crest can climb
-        // above it. Both are fractions of the box so the form is identical on any
-        // screen. The resting lift is deliberately large: a wave that only exists
-        // while someone is talking is not a wave, it is an indicator.
-        val restY = h * 0.52f
-        val lift = h * 0.30f * live * clear * (0.52f + 0.48f * lv + 0.38f * on)
+        // The card. Wide and short, centred horizontally, sitting in the lower
+        // third - the proportions and placement the references use.
+        val cardW = w * 0.78f
+        val cardH = h * (0.56f + 0.13f * lv + 0.10f * on) * clear
+        val cx = w * 0.5f
+        val cy = h * (0.62f + 0.05f * lv + 0.03f * on) * clear
+        val rad = minOf(cardW, cardH) * 0.40f
 
-        mass.reset(); crest.reset()
-        mass.moveTo(0f, h); crest.moveTo(0f, restY)
-        val steps = 88
-        var crestTop = h
-        for (i in 0..steps) {
-            val x = w * i / steps
-            val u = i / steps.toFloat()
-            var shape = 0.50f
-            shape += 0.30f * sin(phD + u * 2.1f)
-            shape += 0.20f * sin(phD * 1.7f + u * 4.7f + 1.1f)
-            shape += 0.12f * sin(phD * 2.3f + u * 9.3f + 2.4f)
-            val k = (u * 0.88f * n).toInt().coerceIn(0, n - 1)
+        // Depth of the perimeter deformation. Breathing at rest, and more under the
+        // voice - but never so much that the rounded corners stop reading as rounded.
+        val amp = minOf(cardW, cardH) * (0.030f + 0.070f * lv + 0.055f * on) * clear
+
+        // Build the perimeter as one closed Catmull-Rom loop through 33 points, so
+        // the shape is smooth and continuous instead of faceted.
+        val pts = ArrayList<androidx.compose.ui.geometry.Offset>(33)
+        for (i in 0 until 33) {
+            val a = (i / 33f) * 6.2831855f
+            // History sampled at a phase that varies WITH the angle: this is what
+            // keeps a single loud syllable from swelling the whole shape uniformly.
+            val k = ((i.toFloat() / 33f) * n).toInt().coerceIn(0, n - 1)
             val hv = history[((hd - 1 - k) % n + n) % n].coerceIn(0f, 1f)
-            val y = restY - lift * (0.26f + 0.42f * shape + 0.58f * hv)
-            if (y < crestTop) crestTop = y
-            mass.lineTo(x, y)
-            crest.lineTo(x, y)
-        }
-        mass.lineTo(w, h); mass.close()
-
-        // The crest band, as fractions of the box. The gradient is anchored here
-        // so the fade always happens where the light actually is.
-        val bandTop = (crestTop / h)
-        val peakA = (0.46f + 0.30f * lv + 0.22f * on) * clear * live
-
-        drawPath(
-            mass,
-            Brush.verticalGradient(
-                0.00f to lc.crest.copy(alpha = 0f),
-                (bandTop * 0.55f).coerceIn(0f, 0.9f) to lc.crest.copy(alpha = 0f),
-                bandTop to tint.copy(alpha = peakA * 0.34f),
-                (bandTop + 0.13f).coerceAtMost(1f) to tint.copy(alpha = peakA * 0.72f),
-                1.00f to core.copy(alpha = (peakA * 0.98f).coerceAtMost(0.94f)),
-            ),
-        )
-
-        // --- drifting mist inside the mass ------------------------------
-        for (i in 0 until 6) {
-            val ph = phM + i * 1.9f
-            val cx = w * (0.5f + 0.42f * sin(ph * 0.7f + i))
-            val cy = h * (0.78f + 0.18f * sin(ph * 1.1f + i * 2.1f))
-            val r = h * (0.36f + 0.11f * sin(ph + i * 0.7f))
-            val c = androidx.compose.ui.geometry.Offset(cx, cy)
-            val t2 = if (i % 2 == 0) tint else core
-            drawCircle(
-                brush = Brush.radialGradient(
-                    0f to t2.copy(alpha = 0.30f * live * clear),
-                    1f to t2.copy(alpha = 0f),
-                    center = c, radius = r,
-                ),
-                radius = r, center = c,
+            var shape01 = 0.5f
+            shape01 += 0.30f * sin(phD * 1.0f + a * 2f)
+            shape01 += 0.16f * sin(phD * 1.7f + a * 3f + 1.1f)
+            shape01 += 0.09f * sin(phD * 2.3f + a * 5f + 2.4f)
+            val r = 1f + (shape01 - 0.5f) * 0.42f * (0.35f + 0.65f * (hv + lv))
+            pts.add(
+                androidx.compose.ui.geometry.Offset(
+                    cx + androidAppCos(a) * (cardW * 0.5f + amp * r),
+                    cy + androidAppSin(a) * (cardH * 0.5f + amp * r),
+                )
             )
         }
-
-        // --- the crest: a blurred glow, then the ridge ------------------
-        // A blur filter is what separates "light" from "edge". Without it the
-        // crest is a drawn line sitting on a fill and the whole thing looks flat.
-        drawIntoCanvas { canvas ->
-            val blur = Paint().asFrameworkPaint().apply {
-                maskFilter = BlurMaskFilter(26f + 22f * on, BlurMaskFilter.Blur.NORMAL)
-                color = lerp(tint, lc.crestHot, on * 0.7f)
-                    .copy(alpha = (0.42f + 0.42f * on).coerceAtMost(0.85f))
-                    .toArgb()
-                style = android.graphics.Paint.Style.STROKE
-                strokeWidth = 5f + 5f * on
-            }
-            canvas.nativeCanvas.drawPath(crest.asAndroidPath(), blur)
+        shape.reset()
+        shape.moveTo(pts[0].x, pts[0].y)
+        for (i in 0 until 33) {
+            val p0 = pts[if (i == 0) 32 else i - 1]
+            val p1 = pts[i]
+            val p2 = pts[(i + 1) % 33]
+            val p3 = pts[(i + 2) % 33]
+            shape.cubicTo(
+                p1.x + (p2.x - p0.x) / 6f, p1.y + (p2.y - p0.y) / 6f,
+                p2.x - (p3.x - p1.x) / 6f, p2.y - (p3.y - p1.y) / 6f,
+                p2.x, p2.y,
+            )
         }
-        drawPath(
-            crest,
-            color = lerp(tint, lc.crestHot, 0.4f + 0.5f * on)
-                .copy(alpha = (0.34f + 0.50f * on + 0.20f * lv) * clear * live),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f + 2.4f * on),
-        )
+        shape.close()
 
-        // --- bloom sitting on the crest ---------------------------------
-        val gx = w * 0.5f
-        val gy = crestTop + (restY - crestTop) * 0.45f
-        val gr = h * (0.46f + 0.18f * on)
-        val g = androidx.compose.ui.geometry.Offset(gx, gy)
+        // --- halo, behind and wider, so the light appears to spill out ------
+        val haloR = minOf(cardW, cardH) * (1.2f + 0.5f * lv + 0.4f * on)
         drawCircle(
             brush = Brush.radialGradient(
-                0f to lerp(core, lc.crestHot, on * 0.6f).copy(alpha = (0.26f + 0.24f * on) * live),
-                1f to lc.bodyDeep.copy(alpha = 0f),
-                center = g, radius = gr,
+                0f to core.copy(alpha = (0.16f + 0.20f * lv + 0.18f * on) * clear),
+                0.55f to core.copy(alpha = (0.06f + 0.10f * lv + 0.08f * on) * clear),
+                1f to body.copy(alpha = 0f),
+                center = androidx.compose.ui.geometry.Offset(cx, cy),
+                radius = haloR,
             ),
-            radius = gr, center = g,
+            radius = haloR,
+            center = androidx.compose.ui.geometry.Offset(cx, cy),
+        )
+
+        // --- the body: a radial fill, brightest at the core, fading at the rim --
+        drawPath(
+            shape,
+            Brush.radialGradient(
+                0.00f to core.copy(alpha = (0.52f + 0.34f * lv + 0.16f * on) * clear),
+                0.55f to body.copy(alpha = (0.40f + 0.28f * lv) * clear),
+                1.00f to body.copy(alpha = (0.34f + 0.26f * lv) * clear),
+                center = androidx.compose.ui.geometry.Offset(cx, cy - cardH * 0.15f),
+                radius = minOf(cardW, cardH) * 0.95f,
+            ),
+        )
+
+        // --- drifting mist, clipped to the shape so it never escapes it -----
+        clipPath(shape) {
+            for (i in 0 until 6) {
+                val ph = phM + i * 1.9f
+                val mx = cx + (cardW * 0.30f) * sin(ph * 0.7f + i)
+                val my = cy + (cardH * 0.22f) * sin(ph * 1.1f + i * 2.1f)
+                val mr = minOf(cardW, cardH) * (0.42f + 0.13f * sin(ph + i * 0.7f))
+                val c2 = androidx.compose.ui.geometry.Offset(mx, my)
+                val t2 = if (i % 2 == 0) mix(body, lc.mist, 0.5f)
+                         else mix(core, lc.crest, 0.35f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        0f to t2.copy(alpha = (0.24f + 0.16f * lv) * clear),
+                        1f to t2.copy(alpha = 0f),
+                        center = c2, radius = mr,
+                    ),
+                    radius = mr, center = c2,
+                )
+            }
+        }
+
+        // A faint rim so the silhouette still reads as a card while its perimeter
+        // deforms - present, but nowhere near enough to look like an outline.
+        drawRoundRect(
+            color = core.copy(
+                alpha = (0.05f + 0.05f * on) * clear,
+            ),
+            topLeft = androidx.compose.ui.geometry.Offset(cx - cardW / 2f, cy - cardH / 2f),
+            size = androidx.compose.ui.geometry.Size(cardW, cardH),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(rad, rad),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = (1.5f + 2.5f * on).dp.toPx(),
+            ),
         )
     }
 }
+
+/** cos/sin on floats, without importing kotlin.math at every call site. */
+private fun androidAppCos(v: Float): Float = kotlin.math.cos(v)
+private fun androidAppSin(v: Float): Float = kotlin.math.sin(v)
 
 @Composable
 private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean) {
@@ -832,5 +833,39 @@ private fun GirihLattice(
                 drawPath(p, a, style = Stroke(width = stroke))
             }
         }
+    }
+}
+
+/**
+ * One circular control in the feature tray.
+ *
+ * Round, because the tray is a row of round buttons and a pill in the middle of
+ * them reads as a different kind of thing. The caption sits under the circle
+ * rather than inside it, which is what keeps the hit target generous without the
+ * glyph needing to shrink.
+ */
+@Composable
+private fun TrayButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    track: Color,
+    caption: String,
+    onClick: () -> Unit,
+) {
+    val lcG = LocalIqraColors.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(60.dp)
+                .clip(CircleShape)
+                .background(track)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = caption, tint = tint,
+                modifier = Modifier.size(25.dp))
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(caption, fontSize = 11.sp, color = lcG.inkMuted)
     }
 }

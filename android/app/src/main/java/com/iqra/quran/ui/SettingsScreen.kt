@@ -40,6 +40,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
 /**
  * The app's settings screen.
@@ -57,7 +59,7 @@ import androidx.compose.foundation.layout.ColumnScope
  * tuning brightness mid-session is exactly when you want it. This screen is the
  * discoverable copy, not the replacement.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
@@ -602,7 +604,19 @@ private fun ChoiceRow(
             )
             Spacer(Modifier.height(6.dp))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // A running row, not a Row.
+        //
+        // The old `Row` gave its pills the width that was left after the ones
+        // before them took their natural width, so the last pill in a four-option
+        // row was handed almost nothing and soft-wrapped to many lines - one tall
+        // tower of text growing the whole Section Surface around it. Three of the
+        // four ChoiceRows had at least one option long enough to trigger it, which
+        // is why the section looked deformed rather than merely full.
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             options.forEach { opt ->
                 val on = opt == selected
                 Box(

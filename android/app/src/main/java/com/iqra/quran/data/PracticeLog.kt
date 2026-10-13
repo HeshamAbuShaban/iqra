@@ -830,6 +830,28 @@ object PracticeLog {
 
     // ---- read ------------------------------------------------------------
 
+    /**
+     * Name of the session record most recently written to disk, or null if none.
+     *
+     * Exists so a finished recitation can jump straight to its own report. The
+     * engine flushes the final record synchronously inside `stopRecite`, before it
+     * tears the session down, so by the time the UI reacts to the stop the file is
+     * already there - and reading for the newest file is reliable without needing a
+     * handoff from the view model.
+     *
+     * By last-modified rather than by name: the engine names records by start time
+     * and rewrites them on a timer during the session, so a name sort can put an
+     * older, still-being-rewritten record last.
+     */
+    fun latestRecordName(ctx: Context): String? = try {
+        File(ctx.filesDir, SESSIONS)
+            .listFiles { _, n -> n.endsWith(".json") }
+            ?.maxByOrNull { it.lastModified() }
+            ?.name
+    } catch (e: Exception) {
+        Log.w(TAG, "could not list session records", e); null
+    }
+
     private fun recordByName(ctx: Context, name: String): Record? = try {
         val f = File(File(ctx.filesDir, SESSIONS), name)
         if (f.isFile) parseRecord(name, f.readText()) else null
