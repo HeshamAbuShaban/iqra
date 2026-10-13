@@ -182,7 +182,32 @@ class MainActivity : ComponentActivity() {
 private fun pageMat(ctx: android.content.Context, night: Boolean): Color =
     if (night) NightPalette.mat(ctx) else Color(0xFFF6F1E3)
 
-internal val quranFont = FontFamily(Font(R.font.amiri))
+/**
+ * The face for Quranic text.
+ *
+ * Amiri is a Naskh revival, which is not the same thing as the Uthmani script the
+ * mushaf is written in. It carries the whole Unicode Arabic block so nothing goes
+ * missing, but its `ccmp` has no rule for the tatweel + superscript-alef pair
+ * (U+0640 U+0670) that 5,805 mushaf words use for the dagger alef, so
+ * `ٱلرَّحْمَـٰنِ` draws a stray baseline kashida with a small mark floating above it
+ * instead of one Uthmani dagger alef. The text data is already correct Uthmani
+ * orthography in plain codepoints, so this was purely a letterform problem.
+ *
+ * DigitalKhatt Old Madina is Uthmani-style calligraphic and is what this font
+ * family leads with. Amiri stays in the chain because DigitalKhatt lacks exactly
+ * two codepoints the text uses - U+06EA and U+06EB, the empty-centre stop marks,
+ * one occurrence of each in the whole Quran - and a missing glyph is a tofu box on
+ * a page of scripture, which is not a trade worth making for the sake of two
+ * characters.
+ *
+ * SIL Open Font License 1.1. The KFGQPC Uthmani faces were rejected: their
+ * embedded EULA reserves all rights and forbids modification, which collides with
+ * Play's automatic font subsetting.
+ */
+internal val quranFont = FontFamily(
+    Font(R.font.oldmadina),
+    Font(R.font.amiri),
+)
 internal val accentColor = Color(0xFF2BB6A0)
 
 /**

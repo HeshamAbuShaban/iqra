@@ -31,17 +31,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.iqra.quran.data.QuranData
@@ -75,6 +80,26 @@ import com.iqra.quran.ui.theme.LocalIqraColors
  */
 @Composable
 fun ChooseScreen(
+    data: QuranData,
+    lastRead: Pair<Int, Int>?,
+    onBegin: (surah: Int, startAyah: Int, count: Int) -> Unit,
+    onBack: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val prefTick by ReaderPrefs.tick.collectAsStateWithLifecycle()
+    val rtl = remember(ctx, prefTick) { ReaderPrefs.rightToLeft(ctx) }
+    // The whole screen, top bar included. This is what moves the surah-number
+    // circle in each row to the right: it is the first child of the Row, and
+    // Compose lays Row children out from the right when the direction is RTL.
+    CompositionLocalProvider(
+        LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+    ) {
+        ChooseContent(data, lastRead, onBegin, onBack)
+    }
+}
+
+@Composable
+private fun ChooseContent(
     data: QuranData,
     lastRead: Pair<Int, Int>?,
     onBegin: (surah: Int, startAyah: Int, count: Int) -> Unit,

@@ -269,6 +269,19 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
     val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
     val metric = remember(tick) { ReaderPrefs.metric(ctx) }
 
+    // The words in the scope, summed from each ayah's own word count where the
+    // record carries one. Derived from the record rather than passed in, so a
+    // report read months later still knows what it was a report OF.
+    //
+    // `getOrNull(4)`, not `[4]`: parseRecord builds every per-ayah entry as
+    // IntArray(4) - [correct, wrong, skipped, unknown] - so a subscript here
+    // throws and takes the entire report down with it, on every record written
+    // so far. A sum of zero therefore means "this record does not say", which is
+    // not the same claim as "a scope of zero words"; `judgedLine` prints the
+    // bare count in that case rather than an invented denominator.
+    val scopeWords = remember(r.perAyah) { r.perAyah.values.sumOf { it.getOrNull(4) ?: 0 } }
+    val judgedLine = if (scopeWords > 0) "${r.judged} of $scopeWords" else "${r.judged}"
+
     val reached = r.judged + r.unknown
     val coverage = if (reached > 0) r.judged.toFloat() / reached else null
     val headlineValue: String
@@ -286,12 +299,12 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
             headlineFraction = coverage
         }
         ReaderPrefs.Metric.DECIDED -> {
-            headlineValue = "${r.judged}"
+            headlineValue = judgedLine
             headlineLabel = "words decided"
             headlineFraction = null
         }
         ReaderPrefs.Metric.NET -> {
-            headlineValue = "${r.correct}/${r.wrong}"
+            headlineValue = "${r.correct} / ${r.wrong}"
             headlineLabel = "correct / wrong"
             headlineFraction = null
         }
@@ -299,20 +312,42 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
 
     Panel(c) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // A ring is a fraction, so it only ever carries one. DECIDED and NET
+            // have no fraction to draw, and putting their bare counts inside the
+            // dial claimed a score the session never earned: "23" in a
+            // percentage ring reads as 23%. Those metrics draw an empty
+            // decorative ring and put the number in the column beside it, where
+            // its unit is stated rather than implied.
             AccuracyRing(
                 fraction = headlineFraction,
                 accent = c.accent,
                 track = c.chartEmpty,
-                caption = headlineValue,
+                caption = headlineFraction?.let { "$headlineValue%" },
                 captionColor = c.ink,
                 accentColor = c.ink,
             )
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
-                Text(headlineLabel, fontSize = 11.sp, color = c.inkMuted)
-                Spacer(Modifier.height(4.dp))
-                Stat(c.ink, "${r.judged}", "words decided")
+                // The headline is named exactly once. It used to be printed as a
+                // label above a Stat that repeated the same words below it, so the
+                // DECIDED metric read "words decided" twice in a row. With a
+                // fraction the ring already shows the number and the column only
+                // names it; without one the pair moves down here.
+                if (headlineFraction != null) {
+                    Text(headlineLabel, fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+                } else {
+                    Stat(c.ink, headlineValue, headlineLabel)
+                }
                 Spacer(Modifier.height(10.dp))
+                // The denominator, finally. "23 words decided" answers nothing on
+                // its own - 23 out of a 29-word surah is a good session and 23 out
+                // of a 600-word one is barely started, and the report could not tell
+                // those apart. `scopeWords` is the scope the session was chosen for,
+                // and is omitted rather than faked when the record does not carry it.
+                if (metric != ReaderPrefs.Metric.DECIDED) {
+                    Stat(c.ink, judgedLine, "words decided")
+                    Spacer(Modifier.height(10.dp))
+                }
                 Stat(c.ink, r.durationSec?.let { formatSecs(it) } ?: "—", "duration")
                 Spacer(Modifier.height(10.dp))
                 Stat(
@@ -324,13 +359,17 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
         }
         val full = r.accuracyWithUnknown
         val acc0 = r.accuracy
-        if (full != null && acc0 != null && acc0 - full > 0.005f) {
+        // Only where there is an accuracy to revise. Without one there is nothing
+        // to say about unheard words, and "accuracy is —" is not a sentence.
+        // pct1 carries no unit, so the percent sign is spelled out here: the
+        // sentence used to close on a bare "72.4.", which reads as a count.
+        if (acc0 != null && full != null && acc0 - full > 0.005f) {
             Spacer(Modifier.height(14.dp))
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.hairline))
             Spacer(Modifier.height(12.dp))
             Text(
                 "The engine never heard ${r.unknown} of these words. " +
-                    "Counting those, accuracy is ${pct1(full)}.",
+                    "Counting those, accuracy is ${pct1(full)}%.",
                 fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
             )
         }
@@ -429,7 +468,7 @@ private fun BreakdownCard(r: PracticeLog.Record, c: IqraColors) {
                     full?.takeIf { it > 0f && (acc == null || it < acc - 0.001f) }
                         ?.let { "Including unheard" to it },
                 ),
-                valueFmt = { pct1(it) },
+                valueFmt = { "${pct1(it)}%" },
                 primary = c.accent,
                 secondary = c.inkFaint,
                 track = c.chartEmpty,
@@ -532,9 +571,9 @@ fun reportText(r: PracticeLog.Record, data: QuranData): String = buildString {
     appendLine("$name — ${shortDate(r.dayKey)}")
     val a = r.accuracy
     val fu = r.accuracyWithUnknown
-    a?.let { appendLine("Accuracy: ${pct1(it)}") }
+    a?.let { appendLine("Accuracy: ${pct1(it)}%") }
     if (fu != null && a != null && a - fu > 0.005f) {
-        appendLine("Including unheard: ${pct1(fu)}")
+        appendLine("Including unheard: ${pct1(fu)}%")
     }
     appendLine("Words judged: ${r.judged}")
     r.durationSec?.let { appendLine("Duration: ${formatSecs(it)}") }

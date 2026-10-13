@@ -280,7 +280,7 @@ fun liveColorsFor(c: IqraColors): LiveColors = LiveColors(
     // 3.5% is deliberate, and it was 7% first. The lattice is a texture, not a
     // pattern. At 7% on a near-black ground it read as geometric wallpaper and
     // dominated the screen - the exact opposite of a background that recedes.
-    lattice = c.gold.copy(alpha = 0.035f),
+    lattice = c.gold.copy(alpha = 0.022f),
     waiting = mix(c.accent, c.gold, 0.20f),
     ink = c.ink,
     inkMuted = c.inkMuted,
@@ -361,3 +361,4 @@ fun iqraScheme(c: IqraColors): androidx.compose.material3.ColorScheme =
         error = c.chartBad,
         onError = c.ground,
     )
+

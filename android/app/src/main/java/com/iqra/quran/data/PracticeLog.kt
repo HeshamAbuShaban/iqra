@@ -164,7 +164,16 @@ object PracticeLog {
         val surahNow: Int,
         /** surah -> [correct, wrong, skipped, unknown], accumulated across that surah. */
         val perSurah: Map<Int, IntArray>,
-        /** "surah:ayah" -> [correct, wrong, skipped, unknown]. The unit a report is drawn over. */
+        /**
+         * "surah:ayah" -> [correct, wrong, skipped, unknown, words].
+         *
+         * The fifth slot is the ayah's OWN word count from the mushaf, carried so a
+         * record knows what it was a fraction OF. Without it every report could say
+         * "23 words decided" and not whether that was a good session or a bad one:
+         * 23 of a 29-word surah is nearly perfect and 23 of a 600-word surah is
+         * barely started. Records written before this slot existed carry four, which
+         * is why every reader of it must use `getOrNull(4)`.
+         */
         val perAyah: Map<String, IntArray>,
         /** "surah:ayah:word" -> [times missed, session startedAt]. Misses ONLY - see parseRecord. */
         val hardWords: Map<String, LongArray>,
@@ -641,8 +650,13 @@ object PracticeLog {
                 val cc = a.optInt("correct", 0); val ww = a.optInt("wrong", 0)
                 val ss = a.optInt("skipped", 0); val uu = a.optInt("unknown", 0)
                 v[0] += cc; v[1] += ww; v[2] += ss; v[3] += uu
-                val pa = perAyah.getOrPut("$sn:$an") { IntArray(4) }
+                val pa = perAyah.getOrPut("$sn:$an") { IntArray(5) }
                 pa[0] += cc; pa[1] += ww; pa[2] += ss; pa[3] += uu
+                // The engine's own count for the ayah, when it states one. It is the
+                // only figure here that is not a sum of verdicts, and it is what the
+                // report's denominator must be.
+                val total = a.optInt("words", 0)
+                if (total > pa[4]) pa[4] = total
                 correct += cc; wrong += ww; skipped += ss; unknown += uu
             }
         }

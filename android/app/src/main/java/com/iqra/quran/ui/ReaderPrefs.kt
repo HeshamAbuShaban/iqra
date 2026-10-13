@@ -95,6 +95,23 @@ object ReaderPrefs {
 
     fun setLiveAnimation(ctx: Context, v: Boolean) = write(ctx) { putBoolean("liveAnim", v) }
 
+    /**
+     * Lay the recitation and choose screens out right-to-left.
+     *
+     * The reader screen forces RTL because the mushaf page image is printed
+     * that way, but these two screens carry no page image: their chrome, their
+     * text alignment and their ayah-number gutter sat left-to-right while the
+     * mushaf read them the other way. That mismatch is the reason this exists.
+     *
+     * A preference rather than a rule, because the strings on both screens are
+     * still English - an English reader is the default user here, and forcing
+     * RTL on them would be the surprising choice rather than the correct one.
+     * Default false so nothing moves for an existing install.
+     */
+    fun rightToLeft(ctx: Context): Boolean = prefs(ctx).getBoolean("rtl", false)
+
+    fun setRightToLeft(ctx: Context, v: Boolean) = write(ctx) { putBoolean("rtl", v) }
+
     // ---- recognition ------------------------------------------------------
     //
     // These are not cosmetics. Each one decides whether the app is ALLOWED to

@@ -113,6 +113,17 @@ fun SettingsScreen(
                 TextSizeRow(tick)
                 SettingDivider()
                 NightSettings(tick)
+                SettingDivider()
+                // RTL belongs here rather than in its own section: it is a reading
+                // preference like text size, it mirrors every screen at once, and the
+                // recitation screen's control order depends on it.
+                SwitchRow(
+                    title = "Right to left layout",
+                    subtitle = "Mirrors the recitation and passage screens for " +
+                        "Arabic. Word order and the ayah gutter follow.",
+                    checked = remember(tick) { ReaderPrefs.rightToLeft(ctx) },
+                    onChange = { ReaderPrefs.setRightToLeft(ctx, it) },
+                )
             }
 
             // Scoped separately from the app theme on purpose. The recitation screen
