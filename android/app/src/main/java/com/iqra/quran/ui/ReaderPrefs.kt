@@ -84,6 +84,35 @@ object ReaderPrefs {
     fun theme(ctx: Context): com.iqra.quran.ui.theme.IqraTheme =
         com.iqra.quran.ui.theme.IqraTheme.from(themeId(ctx))
 
+    /** Sentinel: "the recitation screen follows the app theme". */
+    const val NO_LIVE_OVERRIDE = -1
+
+    /**
+     * The recitation screen's own theme id, or [NO_LIVE_OVERRIDE].
+     *
+     * Scoped to Live on purpose. That screen is the one surface whose entire
+     * design is a single glowing element on a dark ground, so the theme that
+     * reads best on a page of tafseer is not necessarily the one that reads
+     * best reciting in a dim room - and its palette is derived from the app's
+     * rather than shared with it, so the two were never going to agree by
+     * accident.
+     *
+     * Stored as an int alongside `themeId` for the same reason: the enum order
+     * is not a storage contract, and -1 cannot collide with a real theme the
+     * way a sentinel name could.
+     */
+    fun liveThemeId(ctx: Context): Int =
+        prefs(ctx).getInt("liveThemeId", NO_LIVE_OVERRIDE)
+
+    fun setLiveThemeId(ctx: Context, v: Int) = write(ctx) { putInt("liveThemeId", v) }
+
+    /** What Live paints with: its own theme if set, otherwise the app's. */
+    fun liveTheme(ctx: Context): com.iqra.quran.ui.theme.IqraTheme {
+        val id = liveThemeId(ctx)
+        return if (id == NO_LIVE_OVERRIDE) theme(ctx)
+        else com.iqra.quran.ui.theme.IqraTheme.from(id)
+    }
+
     /**
      * Whether the recitation screen may animate at all.
      *

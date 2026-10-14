@@ -181,7 +181,13 @@ class MainActivity : ComponentActivity() {
             }
 
             val cols = remember(t) { IqraPalettes.of(t) }
-            val liveCols = remember(cols) { liveColorsFor(cols) }
+            // The recitation screen may paint with a theme of its own. Derived
+            // from its own palette, not from `cols`, so the override is a real
+            // palette change rather than a tint of the app's - which is what
+            // makes it worth having on a screen that is one glowing element on
+            // a dark ground.
+            val liveTheme = remember(themeState.value) { ReaderPrefs.liveTheme(this) }
+            val liveCols = remember(liveTheme) { liveColorsFor(IqraPalettes.of(liveTheme)) }
             CompositionLocalProvider(
                 LocalIqraColors provides cols,
                 LocalLiveColors provides liveCols,

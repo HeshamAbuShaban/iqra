@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import com.iqra.quran.ui.theme.IqraTheme
 import com.iqra.quran.ui.theme.IqraPalettes
 import com.iqra.quran.ui.theme.LocalIqraColors
+import com.iqra.quran.ui.theme.liveColorsFor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Card
@@ -134,7 +135,15 @@ fun SettingsScreen(
                 ThemeChooser(tick)
             }
 
-            SettingsSection("Practice") {
+            // The recitation screen gets its own theme, because it is not a page.
+            // It is one glowing element on a dark ground, and its palette is
+            // derived rather than shared, so the app theme was never really
+            // deciding it - it was only supplying the seed. Someone reading
+            // tafseer in daylight and reciting in a dim room at night can want
+            // two different answers, and before this there was one knob for both.
+            SettingsSection("Recitation screen") {
+                LiveThemeChooser(tick)
+                SettingDivider()
                 SwitchRow(
                     title = "Animate the recitation light",
                     subtitle = "The horizon on the recitation screen moves " +
@@ -691,6 +700,113 @@ private fun fmtMb(b: Long): String =
  * Arabic set in the real typeface - so the choice is made on the thing that will
  * actually be on screen.
  */
+/**
+ * The recitation screen's theme, with "follows the app" as a real option.
+ *
+ * "Same as the app" is a row like any other rather than an absence of one,
+ * because the alternative - a Live screen silently repainting when the app theme
+ * changes - is how a setting becomes untrustworthy. Choosing it writes the
+ * sentinel; the app theme is then genuinely inherited, not merely unset.
+ *
+ * The swatches show the LIVE palette, derived, because that is the palette the
+ * reciter will actually be looking at. A swatch built from the app palette would
+ * be a promise the screen does not keep.
+ */
+@Composable
+private fun LiveThemeChooser(tick: Int) {
+    val ctx = LocalContext.current
+    val liveId = remember(tick) { ReaderPrefs.liveThemeId(ctx) }
+    val appTheme = remember(tick) { ReaderPrefs.theme(ctx) }
+    val live = LocalIqraColors.current
+
+    Column {
+        val follow = liveId == ReaderPrefs.NO_LIVE_OVERRIDE
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 5.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    if (follow) live.accent.copy(alpha = 0.12f) else Color.Transparent
+                )
+                .toggleable(
+                    value = follow,
+                    onValueChange = {
+                        if (it) ReaderPrefs.setLiveThemeId(ctx, ReaderPrefs.NO_LIVE_OVERRIDE)
+                    },
+                    role = Role.RadioButton,
+                )
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(width = 52.dp, height = 52.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(IqraPalettes.of(appTheme).ground),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("A", fontSize = 17.sp, color = live.inkFaint)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Same as the app",
+                    fontSize = 14.sp, color = live.ink,
+                    fontWeight = if (follow) FontWeight.SemiBold else FontWeight.Normal,
+                )
+                Text(
+                    "Follows ${appTheme.name} - currently selected",
+                    fontSize = 11.sp, color = live.inkFaint,
+                )
+            }
+        }
+
+        IqraTheme.entries.forEach { t ->
+            val pal = liveColorsFor(IqraPalettes.of(t))
+            val on = t.id == liveId
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (on) pal.crestHot.copy(alpha = 0.12f) else Color.Transparent)
+                    .toggleable(
+                        value = on,
+                        onValueChange = { if (it) ReaderPrefs.setLiveThemeId(ctx, t.id) },
+                        role = Role.RadioButton,
+                    )
+                    .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .size(width = 52.dp, height = 52.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(pal.ground),
+                ) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(14.dp)
+                            .background(pal.crestHot),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        t.name,
+                        fontSize = 14.sp, color = live.ink,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                    Text(t.blurb, fontSize = 11.sp, color = live.inkFaint)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ThemeChooser(tick: Int) {
     val ctx = LocalContext.current
