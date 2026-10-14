@@ -156,13 +156,13 @@ private fun ChooseContent(
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
-                        if (stage == 0) "Recite from memory" else "Which part?",
+                        ltr(if (stage == 0) "Recite from memory" else "Which part?"),
                         fontSize = 19.sp, color = c.ink,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
                     Text(
-                        if (stage == 0) "Nothing is shown until you say it"
-                        else "Surah ${info?.number ?: surahNo} · ${info?.ayahCount ?: 0} ayat",
+                        ltr(if (stage == 0) "Nothing is shown until you say it"
+                        else "Surah ${info?.number ?: surahNo} · ${info?.ayahCount ?: 0} ayat"),
                         fontSize = 11.sp, color = c.inkFaint,
                     )
                 }
@@ -181,14 +181,14 @@ private fun ChooseContent(
                             .background(c.surface).padding(16.dp)
                     ) {
                         Text(
-                            "What would you like to recite?",
+                            ltr("What would you like to recite?"),
                             fontSize = 17.sp, lineHeight = 24.sp, color = c.ink,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Pick the surah, then choose whether to do all of it " +
-                                "or just a stretch.",
+                            ltr("Pick the surah, then choose whether to do all of it " +
+                                "or just a stretch."),
                             fontSize = 12.sp, lineHeight = 18.sp, color = c.inkMuted,
                         )
                         if (lastRead != null) {
@@ -198,17 +198,17 @@ private fun ChooseContent(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
-                                        "Last passage",
+                                        ltr("Last passage"),
                                         fontSize = 13.sp, color = c.ink,
                                     )
                                     Text(
-                                        "${data.surahInfo(lastRead.first)?.nameEn
-                                            ?: "Surah ${lastRead.first}"}",
+                                        ltr("${data.surahInfo(lastRead.first)?.nameEn
+                                            ?: "Surah ${lastRead.first}"}"),
                                         fontSize = 11.sp, color = c.inkFaint,
                                     )
                                 }
                                 Text(
-                                    "Drill it",
+                                    ltr("Drill it"),
                                     fontSize = 13.sp, color = c.accent,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(10.dp))
@@ -226,7 +226,7 @@ private fun ChooseContent(
                         onValueChange = { query = it },
                         singleLine = true,
                         placeholder = {
-                            Text("Search by name or number",
+                            Text(ltr("Search by name or number"),
                                 color = c.inkFaint, fontSize = 13.sp)
                         },
                         leadingIcon = { Icon(Icons.Filled.Search, null, tint = c.inkFaint) },
@@ -245,7 +245,7 @@ private fun ChooseContent(
                 }
                 if (filtered.isEmpty()) {
                     item {
-                        Text("Nothing matches \u201C${query.text}\u201D.",
+                        Text(ltr("Nothing matches \u201C${query.text}\u201D."),
                             fontSize = 13.sp, color = c.inkMuted,
                             modifier = Modifier.padding(vertical = 8.dp))
                     }
@@ -273,13 +273,13 @@ private fun ChooseContent(
                                 lineHeight = 48.sp, color = c.ink,
                             )
                             Text(
-                                "${info?.nameEn ?: ""} · ${ayahCount} ayat · " +
-                                    "starts on page ${info?.startPage ?: 1}",
+                                ltr("${info?.nameEn ?: ""} · ${ayahCount} ayat · " +
+                                    "starts on page ${info?.startPage ?: 1}"),
                                 fontSize = 11.sp, color = c.inkFaint,
                             )
                         }
                         Text(
-                            "Change",
+                            ltr("Change"),
                             fontSize = 12.sp, color = c.accent,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
@@ -306,7 +306,7 @@ private fun ChooseContent(
                                 .background(c.surface).padding(16.dp)
                         ) {
                             Text(
-                                "All $ayahCount ayat",
+                                ltr("All $ayahCount ayat"),
                                 fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp,
                             )
                             Spacer(Modifier.height(10.dp))
@@ -317,7 +317,7 @@ private fun ChooseContent(
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "The whole surah. ${ayahCount} ayat, starting from the first.",
+                                ltr("The whole surah. ${ayahCount} ayat, starting from the first."),
                                 fontSize = 12.sp, lineHeight = 18.sp, color = c.inkMuted,
                             )
                         }
@@ -326,7 +326,7 @@ private fun ChooseContent(
                             Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp))
                                 .background(c.surface).padding(16.dp)
                         ) {
-                            Text("Range", fontSize = 11.sp, color = c.inkMuted,
+                            Text(ltr("Range"), fontSize = 11.sp, color = c.inkMuted,
                                 letterSpacing = 1.1.sp)
                             Spacer(Modifier.height(6.dp))
                             AyahStepper("From ayah", startAyah, ayahCount, c) {
@@ -337,10 +337,10 @@ private fun ChooseContent(
                             }
                             Spacer(Modifier.height(10.dp))
                             Text(
-                                buildString {
+                                ltr(buildString {
                                     append(if (startAyah == endAyah) "Ayah $startAyah"
                                     else "Ayat $startAyah\u2013$endAyah")
-                                },
+                                }),
                                 fontSize = 11.sp, color = c.inkFaint,
                             )
                             Spacer(Modifier.height(10.dp))
@@ -361,7 +361,7 @@ private fun ChooseContent(
                                         )
                                         if (i == 3 && endAyah - startAyah + 1 > 4) {
                                             Text(
-                                                "\u2026 and ${endAyah - startAyah + 1 - 4} more",
+                                                ltr("\u2026 and ${endAyah - startAyah + 1 - 4} more"),
                                                 fontSize = 11.sp, color = c.inkFaint,
                                             )
                                         }
@@ -384,9 +384,9 @@ private fun ChooseContent(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        if (wholeRange) "Recite ${info?.nameEn ?: ""}"
+                        ltr(if (wholeRange) "Recite ${info?.nameEn ?: ""}"
                         else "Recite " + (if (startAyah == endAyah) "ayah $startAyah"
-                                         else "${endAyah - startAyah + 1} ayat"),
+                                         else "${endAyah - startAyah + 1} ayat")),
                         fontSize = 16.sp, color = c.ground,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     )
@@ -416,7 +416,7 @@ private fun ModeChip(
             .padding(vertical = 11.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, fontSize = 13.sp, color = fg,
+        Text(ltr(label), fontSize = 13.sp, color = fg,
             fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.SemiBold
             else androidx.compose.ui.text.font.FontWeight.Normal)
     }
@@ -441,7 +441,7 @@ private fun SurahChoice(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                "${s.number}", fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                ltr("${s.number}"), fontFamily = FontFamily.Monospace, fontSize = 12.sp,
                 color = c.inkMuted,
             )
         }
@@ -452,10 +452,10 @@ private fun SurahChoice(
             maxLines = 1, textAlign = TextAlign.Start,
         )
         Column(Modifier.weight(1f)) {
-            Text(s.nameEn, fontSize = 13.sp, color = c.ink,
+            Text(ltr(s.nameEn), fontSize = 13.sp, color = c.ink,
                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             Text(
-                "${s.ayahCount} ayat · page ${s.startPage}",
+                ltr("${s.ayahCount} ayat · page ${s.startPage}"),
                 fontSize = 10.sp, color = c.inkFaint,
             )
         }
@@ -470,10 +470,10 @@ private fun AyahStepper(
         Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, fontSize = 13.sp, color = c.inkMuted, modifier = Modifier.weight(1f))
+        Text(ltr(label), fontSize = 13.sp, color = c.inkMuted, modifier = Modifier.weight(1f))
         StepButton("–", enabled = value > 1, c) { onChange(value - 1) }
         Text(
-            "$value",
+            ltr("$value"),
             fontFamily = FontFamily.Monospace, fontSize = 17.sp, color = c.ink,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(52.dp),
@@ -491,6 +491,6 @@ private fun StepButton(glyph: String, enabled: Boolean, c: IqraColors, onClick: 
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(glyph, fontSize = 18.sp, color = if (enabled) c.ink else c.inkFaint)
+        Text(ltr(glyph), fontSize = 18.sp, color = if (enabled) c.ink else c.inkFaint)
     }
 }

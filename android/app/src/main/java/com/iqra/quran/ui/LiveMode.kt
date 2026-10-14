@@ -373,12 +373,12 @@ private fun LiveModeContent(
                         tint = Color(0xFF8FA0BE))
                 }
                 Text(
-                    // The name, not the number. "Surah 1" is a lookup; the name
+                    ltr(// The name, not the number. "Surah 1" is a lookup; the name
                     // is what the reciter is holding in their head.
                     listOfNotNull(
                         data.surahInfo(surah)?.nameEn,
                         "$ayahCount ${if (ayahCount == 1) "ayah" else "ayat"}",
-                    ).joinToString("  ·  "),
+                    ).joinToString("  ·  ")),
                     fontSize = 14.sp,
                     color = Color(0xFF8FA0BE),
                     modifier = Modifier.weight(1f),
@@ -436,12 +436,12 @@ private fun LiveModeContent(
             ) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    when (state) {
+                    ltr(when (state) {
                         LiveState.Idle -> if (started) "Listening" else "Tap the light to begin"
                         LiveState.Quiet -> "I can't hear you"
                         LiveState.Hearing -> "Go ahead"
                         LiveState.Thinking -> "Let me think…"
-                    },
+                    }),
                     fontSize = 13.sp,
                     color = when (state) {
                         LiveState.Thinking -> lc.crestHot
@@ -477,7 +477,7 @@ private fun LiveModeContent(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
-                                    "$ayah",
+                                    ltr("$ayah"),
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                     fontSize = 11.sp,
                                     color = lcG.inkFaint.copy(alpha = 0.35f),
@@ -495,7 +495,7 @@ private fun LiveModeContent(
                         }
                         Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
                             Text(
-                                "$ayah",
+                                ltr("$ayah"),
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 color = lcG.inkFaint,
@@ -553,7 +553,7 @@ private fun LiveModeContent(
                 // its own denominator.
                 val inScope = scopeProgress.filter { it.ayah in scopeAyahs }
                 val judged = minOf(inScope.sumOf { it.decided }, totalWords)
-                Text("$judged of $totalWords heard", fontSize = 12.sp, color = lcG.inkMuted)
+                Text(ltr("$judged of $totalWords heard"), fontSize = 12.sp, color = lcG.inkMuted)
                 Spacer(Modifier.height(16.dp))
 
                 // The controls: a pair, close together, on the dark ground below
