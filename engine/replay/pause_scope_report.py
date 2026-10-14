@@ -43,6 +43,7 @@ from pathlib import Path
 UI = Path("android/app/src/main/java/com/iqra/quran/ui")
 VM_SRC = (UI / "PracticeViewModel.kt").read_text(encoding="utf-8")
 LIVE_SRC = (UI / "LiveMode.kt").read_text(encoding="utf-8")
+MAIN_SRC = (UI / "MainActivity.kt").read_text(encoding="utf-8")
 LOG_SRC = (UI.parent / "data/PracticeLog.kt").read_text(encoding="utf-8")
 
 bad = []
@@ -68,7 +69,7 @@ def body_of(src, signature):
     return "\n".join(out)
 
 
-def live_check(live=LIVE_SRC, vm=VM_SRC, log=LOG_SRC):
+def live_check(live=LIVE_SRC, vm=VM_SRC, log=LOG_SRC, act=MAIN_SRC):
     del bad[:]
 
     # ---- pause -------------------------------------------------------------
@@ -153,6 +154,27 @@ def live_check(live=LIVE_SRC, vm=VM_SRC, log=LOG_SRC):
     require(re.search(r"Mushaf\.wordsForSurah", live) is not None,
             "LiveMode lost its pre-session mushaf word count")
 
+    # ---- keep the screen on ------------------------------------------------
+    # One owner. Three of them meant the phone dimmed on whichever screen was
+    # not thinking about it, and the recitation screen - the one where a dark
+    # screen reads as the session ending - was the only one that could not be
+    # opted out of.
+    require(re.search(r"addFlags\(WindowManager\.LayoutParams\.FLAG_KEEP_SCREEN_ON\)", act)
+            is not None,
+            "no screen holds FLAG_KEEP_SCREEN_ON, so the phone dims mid-ayah")
+    require(re.search(r"clearFlags\(WindowManager\.LayoutParams\.FLAG_KEEP_SCREEN_ON\)", act)
+            is not None,
+            "the keep-screen-on flag is set but never cleared: the setting could "
+            "not be turned off again without leaving the app")
+    for src, label in ((live, "LiveMode"), (act, "MainActivity")):
+        # Comments stripped first, for the reason the whole file works this way:
+        # describing the fix in prose must not satisfy the assertion for it.
+        code = "\n".join(l.split("//")[0] for l in src.splitlines()
+                         if not l.strip().startswith("//"))
+        require("keepScreenOn" not in code,
+                f"{label} still sets keepScreenOn on a view; a view-local flag and "
+                "a window flag are two owners of one behaviour")
+
     return list(bad)
 
 
@@ -189,12 +211,20 @@ MUTANTS = {
         lambda s: s.replace('.append(",\\"words\\":").append(expected)', '.append("")', 1)),
     "record counts the verse-end marker": (
         lambda s: s.replace("ws.count { !it.isVerseEnd }", "ws.size", 1)),
+    "the window stops holding the screen on": (
+        lambda s: s.replace(
+            "window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)", "Unit", 1)),
+    "a view takes the keep-awake duty back": (
+        lambda s: s.replace("val themeState =", "keepScreenOn = true\n            val themeState =", 1)),
 }
 
 undetected = []
 for label, mutate in MUTANTS.items():
-    target = LIVE_SRC if "Live" in label or "amplitude" in label or "Paused" in label \
-        or "scope" in label else VM_SRC
+    if label.startswith("the window") or label.startswith("a view takes"):
+        target = MAIN_SRC
+    else:
+        target = LIVE_SRC if "Live" in label or "amplitude" in label or "Paused" in label \
+            or "scope" in label else VM_SRC
     try:
         mutated = mutate(target)
     except Exception as exc:                      # pragma: no cover
@@ -206,7 +236,8 @@ for label, mutate in MUTANTS.items():
         continue
     got = live_check(LIVE_SRC if target is not LIVE_SRC else mutated,
                      VM_SRC if target is not VM_SRC else mutated,
-                     LOG_SRC)
+                     LOG_SRC,
+                     MAIN_SRC if target is not MAIN_SRC else mutated)
     if not got:
         undetected.append(f"{label}: SURVIVED - no assertion caught it")
 

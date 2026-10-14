@@ -144,9 +144,12 @@ fun SettingsScreen(
                 )
                 SettingDivider()
                 SwitchRow(
-                    title = "Keep the screen on while reciting",
-                    subtitle = "A recitation usually runs past the ~30 s before " +
-                        "Android dims the screen. Turn off to save battery.",
+                    title = "Keep the screen on",
+                    subtitle = "Holds the screen awake everywhere in the app, " +
+                        "reciting included. A recitation usually runs past the " +
+                        "~30 s before Android dims the screen, and a screen that " +
+                        "goes dark mid-ayah looks like the session ended. " +
+                        "Turn off to save battery.",
                     checked = remember(tick) { ReaderPrefs.keepAwake(ctx) },
                     onChange = { ReaderPrefs.setKeepAwake(ctx, it) },
                 )

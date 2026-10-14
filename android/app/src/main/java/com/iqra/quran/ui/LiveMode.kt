@@ -29,7 +29,6 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -296,20 +295,12 @@ private fun LiveModeContent(
     // on. Read inside the draw lambda, never in composition.
     val onset = remember { mutableFloatStateOf(0f) }
 
-    // Never let the screen dim.
-    //
-    // The reader applies this, and the recite screen did not - so a session ran
-    // against the phone's own timeout and the screen went dark mid-ayah, which
-    // reads as the session having ended. It is applied for the WHOLE session,
-    // pause included, and deliberately not behind the existing setting: someone
-    // who has opened a recitation test has already decided not to have the
-    // screen turn off, and a toggle that has to be re-discovered at that moment
-    // is a toggle that will be missed.
-    val keepView = LocalView.current
-    DisposableEffect(Unit) {
-        keepView.keepScreenOn = true
-        onDispose { keepView.keepScreenOn = false }
-    }
+    // The screen no longer sleeps, and it is not this screen's job any more:
+    // `MainActivity` holds `FLAG_KEEP_SCREEN_ON` for the whole app, because a
+    // recitation, a reading and a walk-around are the same phone on the same
+    // table. This block used to be unconditional, which meant the one screen
+    // where the reciter most needed it was also the only screen they could not
+    // opt out of - while every other screen ran against the phone's own timeout.
 
     // Always listening. The references have no Begin button at all - the
     // microphone is live from the moment the screen appears and the controls only

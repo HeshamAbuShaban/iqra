@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Share
 import android.content.Intent
+import android.view.WindowManager
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -92,7 +93,6 @@ import kotlin.math.max
 import kotlin.math.min
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -151,6 +151,35 @@ class MainActivity : ComponentActivity() {
             // MaterialTheme for themselves.
             val themeState = ReaderPrefs.tick.collectAsStateWithLifecycle()
             val t = remember(themeState.value) { ReaderPrefs.theme(this) }
+
+            // The screen stays on for the whole app.
+            //
+            // This used to be three unrelated decisions: a view-local
+            // `keepScreenOn = true` inside LiveMode, and a preference read by
+            // the reader but only applied while `recording`. So the one screen
+            // where it mattered most - a recitation, with the phone on a table
+            // and the reciter walking around the room - was the one screen whose
+            // behaviour could not be turned off, while every other screen ran
+            // against the phone's own timeout. A recitation whose screen dimmed
+            // mid-ayah does not read as a dimmed screen. It reads as the session
+            // having ended.
+            //
+            // `FLAG_KEEP_SCREEN_ON` is set on the window rather than on a view so
+            // there is exactly one place that owns it, and so it covers screens
+            // that have no view of their own to hang it on. The preference is
+            // still honoured and still defaults to on: someone who deliberately
+            // reads a long passage on a battery they are trying to protect has
+            // asked for something specific, and silently overriding that would be
+            // its own kind of surprise.
+            val keepAwake = remember(themeState.value) { ReaderPrefs.keepAwake(this) }
+            LaunchedEffect(keepAwake) {
+                if (keepAwake) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+
             val cols = remember(t) { IqraPalettes.of(t) }
             val liveCols = remember(cols) { liveColorsFor(cols) }
             CompositionLocalProvider(
@@ -1401,17 +1430,12 @@ fun ReaderScreen(
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Hold the screen on for the duration of a recitation. Android starts
-    // dimming after ~30 s and a session routinely runs longer with the phone
-    // flat on a table, so without this the screen goes dark mid-ayah and the
-    // session looks like it ended. Set on the view rather than through a
-    // Window flag so it lifts automatically when the reader leaves.
-    val keepOn = ReaderPrefs.keepAwake(ctx)
-    val view = LocalView.current
-    DisposableEffect(recording, keepOn) {
-        view.keepScreenOn = keepOn && recording
-        onDispose { view.keepScreenOn = false }
-    }
+    // The screen is held on for the whole app by `FLAG_KEEP_SCREEN_ON`, set once
+    // in `onCreate`'s composition. This block used to be the reader's own,
+    // conditional on `recording`, and it is gone for the same reason the one in
+    // LiveMode is: three owners meant the phone dimmed on whichever screen was
+    // not thinking about it. A recitation and a reading are the same phone on the
+    // same table, and the screen going dark mid-ayah reads as the session ending.
 
     // ---- record the result ------------------------------------------------
     //

@@ -36,6 +36,24 @@ than no verdict. There are six states of a word:
 | `ADVISORY` | The engine has a note. It does not accuse. | Amber (muted in hide mode) |
 | `EXTRA` | Not in use. The aligner does not report it. | - |
 
+### Why `EXTRA` is not in use, in one paragraph
+
+`PhonemeMapper.align` returns `List(expected.wordCount)` — one status per
+**expected** word. The output array is indexed by the words the ayah is known to
+contain, so an emission that matches nothing has nowhere to go: CTC forces it
+onto the nearest expected word, where it becomes `WRONG`. There is no free-running
+text hypothesis anywhere in the pipeline (`res.symbols` are phoneme/token ids),
+so the app cannot name a word the reciter said that is not in the ayah, and
+guessing would be worse than silence.
+
+Detecting *unmatched speech* instead — VAD-positive audio arriving where no
+expected word was active — is technically possible, but it would be a new
+accusation surface with no real recitation behind it. A false positive reads to a
+reciter as "you said something wrong", and shipping that untested would be the
+opposite of this app's purpose. It needs a labelled corpus of real recitations
+first. The honest state is the current one: the app says what it heard, and
+nothing more.
+
 Two states show the absence of a verdict: `SKIPPED` and `UNKNOWN`. Keep them
 out of any count of judged words.
 
