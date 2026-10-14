@@ -29,13 +29,14 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.iqra.quran.data.MushafWord
+import com.iqra.quran.data.Mushaf
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.WordStatus
 import kotlinx.coroutines.Dispatchers
@@ -168,7 +169,10 @@ private fun LiveModeContent(
 
     var started by remember { mutableStateOf(false) }
     // Listening is live from the moment the tray appears - see the tray note.
-    var paused by remember { mutableStateOf(false) }
+    // The ENGINE's pause, not a local flag. `vm.paused` is written by
+    // `setListening` and read back by the poll loop, so the icon and the thing
+    // that is actually not judging can never disagree.
+    val paused by vm.paused.collectAsStateWithLifecycle()
     var finished by remember { mutableStateOf(false) }
     var showExit by remember { mutableStateOf(false) }
 
@@ -204,10 +208,56 @@ private fun LiveModeContent(
     // That happens when the microphone opens, which is before any handoff could,
     // so it captures this scope's words and then refuses to be moved by anything
     // the engine does afterwards.
-    var latchedTotal by remember(surah, startAyah, ayahCount) { mutableIntStateOf(0) }
-    val liveTotal = scopeVerses.sumOf { vm.standWordsFor(it.ayah).size }
-    if (latchedTotal == 0 && liveTotal > 0) latchedTotal = liveTotal
-    val totalWords = latchedTotal
+    // The SCOPE, and only the scope.
+    //
+    // Three separate things used to be called "the scope" and none of them was the
+    // range the user picked:
+    //
+    //  - `standWordsFor` reads the ENGINE's active surah, so a test of 2:255 alone
+    //    latched Al-Baqarah's 6,116 words.
+    //  - `scopeProgress` is built from every ayah of the active surah
+    //    (PracticeViewModel.rebuildScopeProgress), so its totals run past the end
+    //    of the chosen range whenever the lock walks on.
+    //  - after a handoff, both describe the NEXT surah entirely.
+    //
+    // So the denominator is counted from QuranData over exactly the chosen ayat,
+    // once, and never moved; and the numerator is filtered back into that same
+    // range before it is summed. A count can then never exceed its denominator,
+    // because the two are drawn from the same set of ayat.
+    // The ayah being recited, with a fallback for before the engine has said.
+    val lockedHint = scopeProgress.firstOrNull { it.isLocked }?.ayah
+    val scopeAyahs = remember(surah, startAyah, ayahCount) {
+        (startAyah until startAyah + ayahCount).toList()
+    }
+    // The denominator is the SAME word population the statuses are keyed by -
+    // `standWordsFor`, which is what the status keys are built from - with one
+    // guard added on top.
+    //
+    // The guard is the whole fix. `standWordsFor(ayah)` is scoped to whatever surah
+    // the ENGINE has loaded, so after a handoff it answers about the next surah
+    // entirely; each `MushafWord` carries its own `surah`, so filtering by it
+    // makes the count describe the scope the user chose and nothing else. Counting
+    // the verse-end marker as a word is the other half - the mushaf appends the
+    // ayah number to the last word of each ayah, and it is not a word anyone said.
+    //
+    // Before the engine has loaded the surah this reads empty, so the mushaf pages
+    // are used as the pre-session figure: the same words from the same source,
+    // counted once the engine catches up.
+    val mushafPages by vm.mushaf.collectAsStateWithLifecycle()
+    val liveScopeWords = remember(scopeAyahs, vm.wordsVersion.collectAsStateWithLifecycle().value) {
+        scopeAyahs.sumOf { a ->
+            emptyList<Any>().size.let { vm.standWordsFor(a) }.count { it.surah == surah && !it.isVerseEnd }
+        }
+    }
+    val totalWords = remember(scopeAyahs, liveScopeWords, mushafPages) {
+        if (liveScopeWords > 0) liveScopeWords
+        else {
+            val pages = mushafPages ?: return@remember 0
+            val inScope = scopeAyahs.toHashSet()
+            Mushaf.wordsForSurah(pages, surah)
+                .count { it.verse in inScope && it.surah == surah && !it.isVerseEnd }
+        }
+    }
 
     val amp = remember { mutableFloatStateOf(0f) }
     val voice = remember { mutableFloatStateOf(0f) }
@@ -227,6 +277,21 @@ private fun LiveModeContent(
     // the moment a syllable actually begins, and that is what the horizon snaps
     // on. Read inside the draw lambda, never in composition.
     val onset = remember { mutableFloatStateOf(0f) }
+
+    // Never let the screen dim.
+    //
+    // The reader applies this, and the recite screen did not - so a session ran
+    // against the phone's own timeout and the screen went dark mid-ayah, which
+    // reads as the session having ended. It is applied for the WHOLE session,
+    // pause included, and deliberately not behind the existing setting: someone
+    // who has opened a recitation test has already decided not to have the
+    // screen turn off, and a toggle that has to be re-discovered at that moment
+    // is a toggle that will be missed.
+    val keepView = LocalView.current
+    DisposableEffect(Unit) {
+        keepView.keepScreenOn = true
+        onDispose { keepView.keepScreenOn = false }
+    }
 
     // Always listening. The references have no Begin button at all - the
     // microphone is live from the moment the screen appears and the controls only
@@ -385,36 +450,55 @@ private fun LiveModeContent(
                     },
                 )
 
-                // The passage. Scrollable and given the leftover height, because
-                // a test can be a whole surah. No card, no panel, no placeholder
-                // text: the words arrive only once they have been said.
+                // The passage. TWO ayat on screen: the one being recited, and the
+                // next as a ghost.
+                //
+                // Rendering the whole range means a surah test puts 286 ayah
+                // numbers on the screen at once, and each becomes a visible skeleton
+                // of unhinted placeholders the moment its lock window opens - the
+                // reciter can see how much is LEFT, which is both useless and
+                // discouraging. It is the same failure as showing a verse before it
+                // has been said, one level up.
+                //
+                // The ghost carries no words at all until the ayah before it is
+                // finished, at which point it materialises and becomes the live one.
+                // Anything further ahead is never composed, so it cannot leak.
                 Column(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                 ) {
-                    verses.forEachIndexed { i, v ->
-                        val ayah = startAyah + i
-                                // The words come from the mushaf, not from a
-                                // whitespace split of the uthmani text.
-                                //
-                                // statusMap is keyed by MushafWord.wordInVerse,
-                                // and the mushaf's own word is not always one
-                                // whitespace token: ٱلذَّـٰلَّكِ' appears in the
-                                // mushaf as two words printed as one, and
-                                // 'بَعْدَ مَا' (2:89 w3, 8:6 w4) is one mushaf
-                                // word drawn as two. Splitting on spaces
-                                // therefore shifts every index from the first
-                                // such word onward and lights up the WRONG
-                                // WORD - the one failure this app exists to
-                                // prevent.
-                                val parts = remember(v, vm.wordsVersion.collectAsStateWithLifecycle().value) {
-                                    vm.standWordsFor(ayah).map { it.text }
-                                }
+                    val focus = activeVerse ?: lockedHint ?: scopeAyahs.first()
+                    listOf(focus, focus + 1).forEach { ayah ->
+                        val reached = ayah <= focus
+                        if (!reached) {
+                            // A thin rule and the ayah number only: the place this
+                            // passage continues, with nothing of it shown.
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "$ayah",
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = lcG.inkFaint.copy(alpha = 0.35f),
+                                    modifier = Modifier.width(26.dp),
+                                )
+                                Box(
+                                    Modifier.weight(1f).height(1.dp)
+                                        .background(lcG.hairline),
+                                )
+                            }
+                            return@forEach
+                        }
+                        val parts = remember(ayah, vm.wordsVersion.collectAsStateWithLifecycle().value) {
+                            vm.standWordsFor(ayah).map { it.text }
+                        }
                         Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
                             Text(
                                 "$ayah",
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 fontSize = 11.sp,
-                                color = Color(0xFF4A5A80),
+                                color = lcG.inkFaint,
                                 modifier = Modifier.width(26.dp).padding(top = 8.dp),
                             )
                             FlowRow(
@@ -423,12 +507,14 @@ private fun LiveModeContent(
                                 verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
                                 parts.forEachIndexed { wi, w ->
+                                    val key = "$surah:$ayah:${wi + 1}"
                                     LiveWord(
                                         w,
-                                        statusMap["$surah:$ayah:${wi + 1}"],
-                                        "$surah:$ayah:${wi + 1}" == currentKey,
+                                        statusMap[key],
+                                        key == currentKey,
                                     )
-                                }                            }
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
@@ -462,7 +548,11 @@ private fun LiveModeContent(
                 //
                 // Counted from the archive now, so it is complete. `judged` is
                 // CORRECT + WRONG - a verdict, never UNKNOWN or SKIPPED.
-                val judged = scopeProgress.sumOf { it.decided }
+                // Filtered to the chosen ayat AND the active surah, so a handoff or
+                // a lock that walked past the range cannot inflate the count past
+                // its own denominator.
+                val inScope = scopeProgress.filter { it.ayah in scopeAyahs }
+                val judged = minOf(inScope.sumOf { it.decided }, totalWords)
                 Text("$judged of $totalWords heard", fontSize = 12.sp, color = lcG.inkMuted)
                 Spacer(Modifier.height(16.dp))
 
@@ -481,8 +571,13 @@ private fun LiveModeContent(
                         tint = lcG.ink,
                         track = lcG.surfaceHigh,
                         onClick = {
-                            paused = !paused
-                            if (paused) vm.stopRecite("paused") else onRequestMic()
+                            // This used to call `stopRecite("paused")` - the same
+                            // call as End - so tapping Pause ended the recitation,
+                            // flushed the record, and the auto-finish took the user
+                            // to the report. `setListening` suspends judging without
+                            // touching any session state; see its KDoc for why there
+                            // is no stop/start alternative.
+                            vm.setListening(!paused)
                         },
                     )
                     RoundControl(
@@ -517,6 +612,29 @@ private fun LiveModeContent(
                 TextButton(onClick = { showExit = false }) { Text("Stay") }
             },
         )
+    }
+
+    // The test is over when the passage is.
+    //
+    // Reciting the final ayah to the end is the natural end of a test, and asking
+    // someone to then find and press End is asking them to do a gesture that has
+    // nothing left to do. Coverage is measured on the FINAL ayah of the scope only,
+    // and "covered" means every word carries a verdict - correct or wrong. A wrong
+    // word still counts as covered: the reciter said it, the engine heard it, and
+    // insisting on correctness here would mean a test could never end while the
+    // person still had something to work on, which is the opposite of what the
+    // report is for.
+    //
+    // End stays available throughout, so nothing is taken away - only the one
+    // extra tap is removed.
+    val lastAyah = scopeAyahs.last()
+    val lastProgress = scopeProgress.firstOrNull { it.ayah == lastAyah }
+    LaunchedEffect(lastAyah, lastProgress?.decided, lastProgress?.words) {
+        val w = lastProgress?.words ?: 0
+        if (w > 0 && (lastProgress?.decided ?: 0) >= w) {
+            if (recording) vm.stopRecite("scope complete")
+            finished = true
+        }
     }
 
     // No "Done" dialog. A session that judged nothing needs more than a sentence in
@@ -868,21 +986,25 @@ private fun RoundControl(
     tint: Color,
     track: Color,
     border: Color = Color.Transparent,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Box(
         Modifier
             .size(58.dp)
             .clip(CircleShape)
-            .background(track)
+            .background(if (enabled) track else track.copy(alpha = 0.4f))
             .then(
                 if (border == Color.Transparent) Modifier
                 else Modifier.border(1.dp, border, CircleShape)
             )
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(glyph, contentDescription = null, tint = tint,
-            modifier = Modifier.size(24.dp))
+        Icon(
+            glyph, contentDescription = null,
+            tint = if (enabled) tint else tint.copy(alpha = 0.35f),
+            modifier = Modifier.size(24.dp),
+        )
     }
 }

@@ -570,6 +570,61 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** True between startRecite and stopRecite; gates the periodic flush. */
     private var sessionActive = false
 
+    /**
+     * True while the reader has asked the engine to stop listening.
+     *
+     * Deliberately neither `sessionActive` nor `!_recording.value`: both of those
+     * mean the session is OVER. This is the third state - the session is live, the
+     * lock is where it was, the archive holds every verdict earned so far, and
+     * nothing new is being judged. Only [setListening] writes it.
+     */
+    @Volatile private var listeningPaused = false
+
+    private val _paused = MutableStateFlow(false)
+
+    /** Mirrors [listeningPaused]: session live, nothing being judged. */
+    val paused: StateFlow<Boolean> = _paused
+
+    /**
+     * Stop judging without ending the session.
+     *
+     * Pause used to call `stopRecite("paused")` - the same call as End - so
+     * tapping it ended the recitation, flushed the record, released the
+     * AudioRecord and closed the decoder, and the UI auto-finished 700 ms later
+     * into the session report. It could not be undone: `startRecite` refuses to
+     * run twice, and `sessionArchive` had already been cleared on the way in.
+     *
+     * There is no recorder-level pause to reach for instead. `AudioRecorder`
+     * offers start/stop/reset and nothing between them; `stop()` RELEASES the
+     * AudioRecord, and `start()` calls `reset()`, which rewinds the absolute
+     * sample cursor to zero while `fedAbs` keeps the old value - so `readSince`
+     * would return null on every poll for ever. A stop/start pause is not slow,
+     * it is broken. The VAD cannot be deafened either: sherpa-onnx has no
+     * SetThreshold, and `noiseFloor` cannot help because the gate is
+     * `quiet && vadSilent != false` - a Silero speech detection opens it however
+     * high the floor is.
+     *
+     * So the pause is enforced at the only seam that can be: the poll loop's
+     * handoff to the recogniser. The loop keeps ticking, the ring keeps filling,
+     * the session stays armed, and every poll while paused returns before the
+     * decoder is touched.
+     *
+     * Read-only with respect to session state: `sessionActive`, `sessionGen`,
+     * `lockedAyah`, `sessionArchive`, `sessionStatuses` and `frameRing` are all
+     * left exactly as they were, so pausing cannot cost a verdict already
+     * earned. Safe to call repeatedly - the early return means the state it
+     * already holds writes nothing and logs nothing.
+     */
+    fun setListening(listen: Boolean) {
+        val pause = !listen
+        if (listeningPaused == pause) return
+        listeningPaused = pause
+        _paused.value = pause
+        // The gate reason is left to the loop, which owns that flow and rewrites it
+        // within 250 ms either way; two writers would race for no benefit.
+        diag(if (pause) "listening paused (session live)" else "listening resumed")
+    }
+
     /** Force a write. Called on a timer, and on session end. */
     fun flushSessionRecord(ended: Boolean, reason: String? = null) {
         if (!sessionCaptureEnabled() && !ended) return
@@ -2098,6 +2153,28 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 }
                 if (fresh.isEmpty()) continue
                 fedAbs += fresh.size
+                // PAUSE - suspend judging without ending the session.
+                //
+                // Deliberately placed here, before anything reads `fresh` into the
+                // recogniser, and deliberately placed ABOVE the starvation watchdog
+                // at the end of runZipformerFrame (which is gated on fedThisFrame).
+                // A pause that fed one frame before returning would let a long pause
+                // trip the idleSec >= 4 reset loop, stamp DECODER_STARVATION, and
+                // escalate to "Voice decoder stopped responding - tap Recite to start
+                // a new session", manufacturing an engine fault out of the reader's
+                // own thumb.
+                //
+                // The VAD is still fed, because it answers "is there speech NOW" and a
+                // hole in its input is a wrong answer rather than a neutral one.
+                // gateClosedFrames is NOT incremented: endSession reports that as
+                // `gateClosed`, where it means "the room was too quiet and the engine
+                // dropped it", and counting a deliberate pause there makes a report
+                // read as a fault the reader did not cause.
+                if (listeningPaused) {
+                    if (vadReady) SherpaVad.feedAndDetect(fresh)
+                    _gateReason.value = "paused"
+                    continue
+                }
                 // Gate the audio actually being fed, not a window that is mostly
                 // already-seen audio. Diluting 0.25s of speech into 3s of
                 // history dropped it below the noise floor and closed the gate on

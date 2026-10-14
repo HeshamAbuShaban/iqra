@@ -72,9 +72,25 @@ def main() -> int:
         bad.append("the live word list is not built from the mushaf words the statuses use")
     if "uthmaniWords(" in live_body:
         bad.append("a whitespace splitter is still indexing words the statuses do not share")
+    # The denominator must be drawn from the same word population the status keys
+    # are built from. This originally looked for `standWordsFor` within 220 chars
+    # of `totalWords = remember`, which could not see through an intermediate
+    # value - so a correct implementation that hoisted the count into a named
+    # local was reported as a different population. It now follows the real
+    # dataflow: `standWordsFor` must appear anywhere in the same composable, AND
+    # the surah guard must be present, because `standWordsFor(ayah)` answers
+    # about whatever surah the ENGINE has loaded, not the one being tested.
     total = live_body.split("totalWords = remember")
-    if len(total) > 1 and "standWordsFor" not in total[1][:220]:
-        bad.append("the live denominator is still a different word population from the numerator")
+    if len(total) > 1:
+        window = live_body[max(0, live_body.index("totalWords = remember") - 900):
+                           live_body.index("totalWords = remember") + 400]
+        if "standWordsFor" not in window:
+            bad.append("the live denominator is not built from standWordsFor, "
+                       "which is the population the status keys use")
+        elif "it.surah ==" not in window and "it.surah==" not in window:
+            bad.append("the live denominator counts standWordsFor without checking "
+                       "the word's own surah, so a handoff re-keys it to the next "
+                       "surah while the header still names the old one")
 
     # 4. "heard" counts verdicts only - and there is more than one read site, so
     # every one of them must be a verdict count.

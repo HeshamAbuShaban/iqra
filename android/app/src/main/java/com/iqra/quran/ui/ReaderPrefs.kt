@@ -108,7 +108,15 @@ object ReaderPrefs {
      * RTL on them would be the surprising choice rather than the correct one.
      * Default false so nothing moves for an existing install.
      */
-    fun rightToLeft(ctx: Context): Boolean = prefs(ctx).getBoolean("rtl", false)
+    // RTL BY DEFAULT, because the content is Arabic.
+    //
+    // The default was false on the argument that English is the more common UI
+    // language in the app. That is backwards for this app: every string that
+    // matters on the recite screen is a word of Quran, the mushaf runs right to
+    // left, and a left-to-right gutter beside right-to-left scripture is wrong
+    // even when the labels are English. English tafsier can flip this per content
+    // type when it exists; for now the Arabic is what the layout is for.
+    fun rightToLeft(ctx: Context): Boolean = prefs(ctx).getBoolean("rtl", true)
 
     fun setRightToLeft(ctx: Context, v: Boolean) = write(ctx) { putBoolean("rtl", v) }
 

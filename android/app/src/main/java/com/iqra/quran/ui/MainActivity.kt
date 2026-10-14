@@ -1089,6 +1089,113 @@ fun EmptyHint(text: String) {
     }
 }
 
+/**
+ * Verdicts the reciter has actually earned, kept by the READER.
+ *
+ * `PracticeViewModel.statusMap` is the only per-word paint source the UI is
+ * handed, and it is rebuilt every poll out of a window of lockedAyah +/- 2: the
+ * retained verdicts are expired outside it (PracticeViewModel.kt:2844) and the
+ * whole map is emptied on a surah load, a jump, an anchor and a new recitation.
+ * So a word coloured and then went blank again two ayat later, which is what
+ * "the colours just stay shortly" describes - while `resolveWordStyle`'s
+ * hide-mode comment claimed the verdict "is now carried permanently in the
+ * paint map for the whole session", which that pruning denies. `scopeProgress`
+ * is the archive-backed, never-pruned half of the truth and is ayah-granular;
+ * this is the per-word half, built from the one per-word feed the reader is
+ * given.
+ *
+ * Contract copied from `archiveVerdict()` and from the `sessionStatuses`
+ * retention: the FIRST terminal verdict wins and nothing overwrites it. A
+ * later UNKNOWN or SKIPPED means the evidence window has moved on, not that the
+ * verdict was withdrawn, so it must not be able to take one back.
+ */
+private class EarnedVerdicts {
+    private val byWord = LinkedHashMap<String, WordStatus>()
+
+    /**
+     * Bumped only when something actually changes, because the page draw is
+     * remembered on it - `byWord` is one instance for the whole session and
+     * would compare equal to itself as a `remember` key.
+     */
+    var version by mutableIntStateOf(0)
+        private set
+
+    /**
+     * The furthest word judged so far, as (surah, ayah, wordInVerse) in reading
+     * order. Tracked as a running maximum while folding rather than scanned on
+     * demand: the scan would be over the whole session's map, and it would call
+     * `standWordsFor` per entry, on a key that changes several times a second.
+     *
+     * A back-move cannot lower it - a repetition of earlier words yields
+     * verdicts behind the furthest point reached - which is what stops a repeat
+     * from dragging the page backwards. Reading order, not page order: a handoff
+     * takes the session into the next surah, and the next surah is further on.
+     */
+    var judgedPosition: Triple<Int, Int, Int>? = null
+        private set
+
+    /**
+     * The verdicts themselves. ONE instance for the whole session, so a caller
+     * cannot tell it changed by comparing it - that is what [version] is for.
+     */
+    val words: Map<String, WordStatus> get() = byWord
+
+    fun fold(live: Map<String, WordStatus>) {
+        var changed = false
+        for ((k, v) in live) {
+            if (v != WordStatus.CORRECT && v != WordStatus.WRONG) continue
+            val prev = byWord[k]
+            if (prev == WordStatus.CORRECT || prev == WordStatus.WRONG) continue
+            byWord[k] = v
+            val p = k.split(':')
+            if (p.size == 3) {
+                val s = p[0].toIntOrNull()
+                val a = p[1].toIntOrNull()
+                val wi = p[2].toIntOrNull()
+                if (s != null && a != null && wi != null) {
+                    val cur = judgedPosition
+                    // Triple is not Comparable, so the order is spelled out.
+                    if (cur == null || s > cur.first ||
+                        (s == cur.first && a > cur.second) ||
+                        (s == cur.first && a == cur.second && wi > cur.third)
+                    ) {
+                        judgedPosition = Triple(s, a, wi)
+                    }
+                }
+            }
+            changed = true
+        }
+        if (changed) version++
+    }
+
+    /**
+     * Forget everything, driven by the engine emptying its own paint map:
+     * teardown, jump, anchor, new recitation. So this holds exactly as long as
+     * the session that produced it and cannot leak one recitation's verdicts
+     * onto the next one's page.
+     */
+    fun clear() {
+        if (byWord.isEmpty()) return
+        byWord.clear()
+        judgedPosition = null
+        version++
+    }
+}
+
+/** Whether the session archive holds a verdict for any word of this ayah. */
+private fun ScopeAyah?.judged(): Boolean = (this?.decided ?: 0) > 0
+
+/**
+ * Whether [word] is exactly the word a verdict key named.
+ *
+ * `standWordsFor(ayah)` answers for the session's ACTIVE surah, so after a
+ * handoff it returns a different surah's words for the same ayah number. The
+ * ayah and the word index alone would then match a word on some unrelated page
+ * and turn the reader there, so all three parts of the key are compared.
+ */
+private fun isSameWord(word: MushafWord, surah: Int, ayah: Int, wordInVerse: Int): Boolean =
+    word.surah == surah && word.verse == ayah && word.wordInVerse == wordInVerse
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderScreen(
@@ -1135,21 +1242,48 @@ fun ReaderScreen(
         val av = activeVerse ?: return@remember emptyList<MushafWord>()
         vm.standWordsFor(av)
     }
+    // The session's decided words, held here because the engine's paint map
+    // forgets them. Fed on every emission below, and emptied whenever the
+    // engine empties its own, so it can never outlive the recitation that
+    // produced it.
+    val earned = remember { EarnedVerdicts() }
+    LaunchedEffect(recording, statusMap) {
+        // An empty paint map is the engine's own "this session's verdicts are
+        // gone" signal - stopRecite, jumpToPage, anchorToVerse and startRecite
+        // all emit one - so the reader's copy goes with it rather than being
+        // pinned to a page the engine has already moved off.
+        if (statusMap.isEmpty()) earned.clear() else earned.fold(statusMap)
+    }
+    // scopeProgress indexed by ayah, for the paint. It is built from the DURABLE
+    // session archive and never pruned, so unlike the per-word map it still
+    // knows after a rotation that an ayah three ayat back was judged.
+    val judgedByAyah = remember(scopeProgress) { scopeProgress.associateBy { it.ayah } }
     val bookmarkPages by vm.bookmarks.collectAsStateWithLifecycle()
     var showGoto by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
 
-    // The header must describe the page currently on screen. It used to be
-    // remember(data, surah) - frozen at the surah you opened - so the title and
-    // page indicator stayed on the original surah after swiping into another.
-    val headerSurah = data?.surahAtPage(currentPage ?: (startPage ?: 1))?.number ?: surah
-    val surahInfo = remember(data, headerSurah) {
-        data?.surahList()?.firstOrNull { it.number == headerSurah }
-    }
     val active = recording || statusMap.isNotEmpty()
     val startIdx = remember(surah, startPage) { (startPage ?: Mushaf_firstPage(mushaf, surah)) - 1 }
     val pagerState = rememberPagerState(initialPage = startIdx, pageCount = { mushaf.size })
+    // The page actually on screen.
+    //
+    // `currentPage` is what the ENGINE publishes and it follows the lock, so it
+    // no longer describes the page the reader is looking at whenever the reciter
+    // has read past an ayah boundary the lock has not reached - which is exactly
+    // the case the follow below exists for. The poll rewrites it at poll rate,
+    // so reading the header off it would make the page number flicker between
+    // two pages while the reader sits on one. The pager's settled page is the
+    // truth about what is in front of the reader, so everything the reader is
+    // told uses it.
+    val shownPage = pagerState.currentPage + 1
+    // The header must describe the page currently on screen. It used to be
+    // remember(data, surah) - frozen at the surah you opened - so the title and
+    // page indicator stayed on the original surah after swiping into another.
+    val headerSurah = data?.surahAtPage(shownPage)?.number ?: surah
+    val surahInfo = remember(data, headerSurah) {
+        data?.surahList()?.firstOrNull { it.number == headerSurah }
+    }
     // Whether the CURRENT settled page came from a drag or from a programmatic
     // scroll. The intent handoff must only fire for the former: a swipe is the
     // reciter choosing, while animateScrollToPage/scrollToPage are the app
@@ -1160,12 +1294,75 @@ fun ReaderScreen(
     LaunchedEffect(startPage) {
         if (startPage != null) vm.jumpToPage(startPage)
     }
-    LaunchedEffect(currentPage) {
-        val target = (currentPage ?: (startIdx + 1)) - 1
-        if (target != pagerState.currentPage) {
-            pagerState.animateScrollToPage(target)
+    // ---- which page the reader should be on -----------------------------
+    //
+    // `currentPage` is the page of the LOCKED ayah's FIRST word. Two ways that
+    // leaves the reader behind the reciter, both reported on the phone:
+    //
+    //  - an ayah that spans a page break: `versePage` names the page the ayah
+    //    BEGINS on (PracticeViewModel.kt:1550), so for the rest of that ayah
+    //    the words being recited are printed on a page nobody is looking at;
+    //  - the lock only leaves an ayah once the NEXT one is ADVANCE_COVERAGE
+    //    (0.60) covered, so across a page break the reader is held on the old
+    //    page for the whole opening ayah of the new one. The page-turn fight
+    //    the user described is this: the app turns when the lock reaches a
+    //    coordinate, and the reciter is already on the next one.
+    //
+    // So the target is the page carrying the last word that has EARNED a
+    // verdict - the reciter's actual position, not the lock's.
+    val judgedPos = earned.judgedPosition
+    val judgedPage = remember(earned.version, judgedPos, wordsVersion) {
+        val p = judgedPos ?: return@remember null
+        // standWordsFor is the ACTIVE surah's word list, so a word key from a
+        // surah the session has left names no page here and this is null - the
+        // lock's own page is used instead. See isSameWord.
+        vm.standWordsFor(p.second).firstOrNull { isSameWord(it, p.first, p.second, p.third) }?.page
+    }
+    // Archive-backed fallback for the case `earned` cannot cover: a reader
+    // rebuilt mid-recitation (rotation, or leaving and re-entering) starts with
+    // an empty per-word record while `scopeProgress` still knows which ayat hold
+    // verdicts. Ayah-granular, so it names the page of the last RECITED ayah
+    // rather than of its last word - never further on than judgedPage is.
+    val recitedPage = remember(scopeProgress, wordsVersion) {
+        val last = scopeProgress.lastOrNull { it.judged() } ?: return@remember null
+        vm.standWordsFor(last.ayah).firstOrNull { it.wordInVerse == 1 }?.page
+    }
+    // The lock's page still leads, so everything that publishes `currentPage` -
+    // a jump, a double-tap anchor, the surah-end latch and the handoff - keeps
+    // working exactly as before; this only adds a turn the lock's coordinate
+    // cannot produce on its own.
+    //
+    // While RECITING there is a floor at the page the reader is actually on,
+    // and that is the guard against the page fighting both sides of this: the
+    // poll rewrites `currentPage` back to the lock's page at poll rate, so
+    // taking it literally dragged the reader off a page they had swiped to,
+    // and a lock retreat over a repetition dragged them off a page they were
+    // reading. Neither can be undone from under them any more.
+    //
+    // NOT while reading: a search hit, a jump and an anchor are explicit
+    // navigation and must be able to take the reader anywhere, backwards
+    // included - that is the opposite case, and flooring it would strand a
+    // reader who picked a word from the far end of the mushaf.
+    val followPage = remember(currentPage, judgedPage, recitedPage, recording, shownPage) {
+        maxOf(
+            if (recording) shownPage else 0,
+            currentPage ?: 0,
+            if (recording) judgedPage ?: 0 else 0,
+            if (recording) recitedPage ?: 0 else 0,
+        ).takeIf { it in 1..mushaf.size }
+    }
+    LaunchedEffect(followPage, pagerState.isScrollInProgress) {
+        val target = followPage ?: (currentPage ?: (startIdx + 1))
+        val targetIdx = target - 1
+        // Never turn out from under a drag. The pager reports a settled page
+        // only between gestures, so an in-progress scroll means the reader's
+        // finger owns this page; the effect re-runs when the drag settles.
+        if (!pagerState.isScrollInProgress && targetIdx != pagerState.currentPage) {
+            pagerState.animateScrollToPage(targetIdx)
         }
-        vm.saveLastRead(currentPage ?: (startIdx + 1))
+        // Saved as the page actually followed, not the lock's page, so "resume"
+        // reopens the page the reader was left on.
+        vm.saveLastRead(target)
     }
     // USER-driven page turn only. This effect also fires for programmatic
     // scrolls (scrollToPage from the lock, a search deep link, the handoff
@@ -1304,6 +1501,7 @@ fun ReaderScreen(
                     selectionOpen = selectedAyah != null,
                     selectedAyah = selectedAyah, activeWindow = activeWindow,
                     advisories = advisoryMap,
+                    earned = earned.words, earnedVersion = earned.version, judgedAyahs = judgedByAyah,
                     night = night, pageInk = pageInk, mat = mat,
                     chromeVisible = chromeVisible, onTapChrome = { chromeVisible = !chromeVisible },
                 )
@@ -1311,11 +1509,11 @@ fun ReaderScreen(
             // Immersive reader header
             ReaderHeader(
                 info = surahInfo,
-                page = (currentPage ?: (startIdx + 1)),
+                page = shownPage,
                 playing = playingSurah == surah,
-                bookmarked = bookmarkPages.contains(currentPage ?: -1),
+                bookmarked = bookmarkPages.contains(shownPage),
                 onPlayToggle = { vm.togglePlaySurah(surah) },
-                onToggleBookmark = { vm.toggleBookmark(currentPage ?: (startIdx + 1)) },
+                onToggleBookmark = { vm.toggleBookmark(shownPage) },
                 onBack = onBack,
                 onToggleNight = { night = !night; ReaderPrefs.setNightMode(ctx, night) },
                 night = night,
@@ -1379,7 +1577,7 @@ fun ReaderScreen(
                     Button(
                         onClick = {
                             if (recording) vm.stopRecite()
-                            else onRequestMic { vm.startRecite(currentPage ?: (startIdx + 1)) }
+                            else onRequestMic { vm.startRecite(shownPage) }
                         },
                         shape = Pill,
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
@@ -1459,7 +1657,7 @@ fun ReaderScreen(
                     text = {
                         Column {
                             Text(
-                                "Page ${currentPage ?: (startIdx + 1)} of ${mushaf.size}",
+                                "Page $shownPage of ${mushaf.size}",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
@@ -1552,7 +1750,7 @@ fun ReaderScreen(
                             vm.anchorToVerse(selSurah, selAyah)
                             onRequestMic {
                                 vm.startRecite(
-                                    selPage ?: (currentPage ?: (startIdx + 1)),
+                                    selPage ?: shownPage,
                                     selSurah to selAyah,
                                 )
                             }
@@ -2010,6 +2208,15 @@ private fun resolveLayer(
     isPlayHead: Boolean,
     inActiveAyah: Boolean,
     isSelected: Boolean,
+    // Set when the word holds a verdict that the recitation window no longer
+    // covers, which is the normal case for an ayah more than one behind the
+    // lock: the engine expires those, the reader's own record does not.
+    //
+    // It earns the settled wash and nothing more. WRONG deliberately stays
+    // gated on the window above: this record is first-verdict-wins, so a word
+    // the reciter has since put right would otherwise keep a red it no longer
+    // deserves, and a stale red is the one failure this app exists to prevent.
+    judged: Boolean = false,
 ): HighlightLayer = when {
     st == WordStatus.WRONG && inActiveAyah -> HighlightLayer.WRONG
     isCurrent -> HighlightLayer.RECITATION_WORD
@@ -2017,7 +2224,46 @@ private fun resolveLayer(
     isPlayHead -> HighlightLayer.AUDIO_WORD
     isPlayed -> HighlightLayer.AUDIO
     inActiveAyah -> HighlightLayer.RECITATION_AYAH
+    judged && st == WordStatus.CORRECT -> HighlightLayer.RECITATION_AYAH
     else -> HighlightLayer.NONE
+}
+
+/**
+ * The layer a word paints with, from the two things the reader knows about it:
+ * the engine's live paint map (fresh, but pruned to the lock +/- 2) and the
+ * reader's own record of the verdicts it has seen this session.
+ *
+ * The two new branches are both gaps rather than new behaviour. `st == null`
+ * used to short-circuit straight to UNSTARTED before [resolveLayer] was ever
+ * consulted, so the one word the engine had explicitly placed the reciter on -
+ * `currentKey` - was the one word guaranteed never to be highlighted whenever
+ * the pruned map had forgotten it, and an ayah the archive could prove was
+ * judged went back to looking untouched as soon as the lock passed it.
+ */
+private fun resolveWordLayer(
+    status: WordStatus?,
+    isCurrent: Boolean,
+    isPlayed: Boolean,
+    isPlayHead: Boolean,
+    inActiveAyah: Boolean,
+    isSelected: Boolean,
+    hide: Boolean,
+    judgedAyah: Boolean,
+): HighlightLayer = when {
+    status != null -> resolveLayer(
+        status, isCurrent, isPlayed, isPlayHead, inActiveAyah, isSelected, judged = true,
+    )
+    // The word being spoken right now. Not while hiding: `currentKey` is also
+    // published for a lock that was merely anchored or jumped to, and a mask
+    // must not be broken by where the reader is looking rather than by what
+    // the reciter said.
+    isCurrent && !hide -> HighlightLayer.RECITATION_WORD
+    // No verdict in hand, but the durable archive holds one for this ayah. Only
+    // reachable for a reader rebuilt mid-session, where its own record starts
+    // empty while `scopeProgress` does not forget. Both of these stay out of
+    // hide mode, which may only ever be opened by this word's own verdict.
+    !hide && judgedAyah -> HighlightLayer.RECITATION_AYAH
+    else -> HighlightLayer.UNSTARTED
 }
 
 private fun resolveWordStyle(
@@ -2028,8 +2274,16 @@ private fun resolveWordStyle(
     background: Color,
     advisory: Advisory? = null,
     advisoryCue: Boolean = false,
+    // This word's ayah was judged but its own verdict is not in hand. It only
+    // ever selects the settled wash, and only outside hide mode: the archive
+    // counts verdicts per ayah, so it can say the ayah was judged and not that
+    // THIS word was, and the reader has no proof for anything stronger.
+    judgedAyah: Boolean = false,
 ): WordStyle {
     if (hide) {
+        // `judgedAyah` is deliberately not read below. An ayah being judged
+        // says nothing about any one word in it, so it must never open a mask;
+        // only a verdict carried by this word can.
         // Hide mode reveals a word on its OWN verdict, not on where the lock
         // happens to be.
         //
@@ -2041,7 +2295,9 @@ private fun resolveWordStyle(
         //
         // A memoriser reveals a word by reciting it. That fact does not expire
         // because the reader has moved on, so it is keyed on the verdict, which
-        // is now carried permanently in the paint map for the whole session.
+        // the reader now carries for the whole session - the paint map alone
+        // expired each verdict two ayat after the lock passed it, which is the
+        // mask re-appearing the user reported.
         // UNKNOWN and SKIPPED are the absence of a verdict and stay masked:
         // revealing those would show the answer without being asked for it.
         when (st) {
@@ -2082,7 +2338,15 @@ private fun resolveWordStyle(
         // reserved for a real WRONG verdict, which resolveLayer only produces
         // for WordStatus.WRONG. No evidence is simply muted.
         HighlightLayer.RECITATION_AYAH ->
-            if (st == WordStatus.SKIPPED || st == WordStatus.UNKNOWN) WordStyle(
+            if (judgedAyah) WordStyle(
+                // Judged in the archive, detail not in hand: the settled wash a
+                // decided word gets, and deliberately not more. No amber (that
+                // is the advisory mark, and there is no note here) and no red -
+                // an accusation needs this word's own verdict, which is exactly
+                // what is missing.
+                onSurface, accentColor.copy(alpha = 0.10f), accentColor, 0.10f, false, false,
+            )
+            else if (st == WordStatus.SKIPPED || st == WordStatus.UNKNOWN) WordStyle(
                 onSurface.copy(alpha = 0.45f),
                 // The advisory mark: an amber wash on a word the engine flagged
                 // it could not judge. NEVER on hide-mode words - that would leak
@@ -2118,6 +2382,14 @@ fun MushafPageView(
     selectedAyah: String? = null,
     activeWindow: List<Int> = emptyList(),
     advisories: Map<String, Advisory> = emptyMap(),
+    // Verdicts the reader has seen this session (see [EarnedVerdicts], passed as
+    // its map) and the archive-backed per-ayah verdict counts. Both are consulted
+    // only to fill a gap the pruned paint map has left; the live map always wins.
+    // `earnedVersion` is a separate argument because the map is one instance for
+    // the whole session and cannot be compared to detect a change.
+    earned: Map<String, WordStatus> = emptyMap(),
+    earnedVersion: Int = 0,
+    judgedAyahs: Map<Int, ScopeAyah> = emptyMap(),
     night: Boolean = false,
     pageInk: Color = Color(0xFF505050),
     mat: Color = Color(0xFFF4EAD3),
@@ -2159,7 +2431,7 @@ fun MushafPageView(
                 when (line.type) {
                     "surah-header" -> SurahHeader(line.text ?: "")
                     "basmala" -> Basmala()
-                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead, selectedAyah, activeWindow, advisories)
+                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead, selectedAyah, activeWindow, advisories, earned, judgedAyahs)
                 }
             }
         }
@@ -2190,6 +2462,10 @@ fun MushafPageView(
     }
     val draws = remember(
         page.page, statusMap, advisories, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, slotsByAyah,
+        // earnedVersion rather than earned: the map is the same object for the
+        // whole session and would compare equal to itself, so the draw list
+        // would never rebuild when a new verdict arrives.
+        earned, earnedVersion, judgedAyahs,
     ) {
         buildList {
             // Join on (sura, ayah, position) — NEVER on line numbers. Mushaf
@@ -2225,18 +2501,24 @@ fun MushafPageView(
                     val rect = rects[i] ?: continue
                     val w = words[i]
                     val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
-                    val st = statusMap[key]
+                    // The live map first, the reader's own record only to fill
+                    // what it has expired. Never the other way round: the live
+                    // map is the one that knows a word is being re-judged now.
+val st = statusMap[key] ?: earned[key]
                     val isCur = key == currentKey
                     val gi = playOrder[key]
                     val isPlayed = gi != null && gi <= playHead
                     val isPlayHead = gi != null && gi == playHead
                     val inActive = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
-                    val layer = if (st == null) HighlightLayer.UNSTARTED
-                    else resolveLayer(st, isCur, isPlayed, isPlayHead, inActive, "${w.surah}:${w.verse}" == selectedAyah)
+                    val layer = resolveWordLayer(
+                        st, isCur, isPlayed, isPlayHead, inActive, "${w.surah}:${w.verse}" == selectedAyah,
+                        hide, judgedAyahs[w.verse].judged(),
+                    )
                     val style = resolveWordStyle(
                         layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background,
                         advisory = advisories[key],
                         advisoryCue = !hide && ReaderPrefs.advisoryDisplay(ctx) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
+                        judgedAyah = st == null && !hide && judgedAyahs[w.verse].judged(),
                     )
                     add(WordDraw(rect, style))
                 }
@@ -2487,6 +2769,12 @@ fun LineText(
     selectedAyah: String? = null,
     activeWindow: List<Int> = emptyList(),
     advisories: Map<String, Advisory> = emptyMap(),
+    // Same two sources the page draw uses. This renderer has to agree with it:
+    // it exists only when a page bitmap will not load, and a reader who gets
+    // one page with the old colouring and the next with the new one would read
+    // that as the engine changing its mind.
+    earned: Map<String, WordStatus> = emptyMap(),
+    judgedAyahs: Map<Int, ScopeAyah> = emptyMap(),
 ) {
     if (words.isEmpty()) return
     // This is the only renderer where the app draws the mushaf text itself, so
@@ -2504,19 +2792,22 @@ fun LineText(
     val builder = AnnotatedString.Builder()
     words.forEachIndexed { i, w ->
         val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
-        val st = statusMap[key]
+        val st = statusMap[key] ?: earned[key]
         val isCur = key == currentKey
         val inActiveAyah = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
         val gi = playOrder[key]
         val isPlayed = gi != null && gi <= playHead
         val isPlayHead = gi != null && gi == playHead
         val cs = MaterialTheme.colorScheme
-        val layer = if (st == null) HighlightLayer.UNSTARTED
-        else resolveLayer(st, isCur, isPlayed, isPlayHead, inActiveAyah, "${w.surah}:${w.verse}" == selectedAyah)
+        val layer = resolveWordLayer(
+            st, isCur, isPlayed, isPlayHead, inActiveAyah, "${w.surah}:${w.verse}" == selectedAyah,
+            hide, judgedAyahs[w.verse].judged(),
+        )
         val style = resolveWordStyle(
             layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background,
             advisory = advisories[key],
             advisoryCue = !hide && ReaderPrefs.advisoryDisplay(LocalContext.current) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
+            judgedAyah = st == null && !hide && judgedAyahs[w.verse].judged(),
         )
         builder.pushStyle(
             SpanStyle(
