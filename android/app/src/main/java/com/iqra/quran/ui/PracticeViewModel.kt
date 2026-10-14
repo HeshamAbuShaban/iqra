@@ -760,10 +760,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         for ((k, a) in byAyah) {
             if (!firstA) sb.append(',')
             firstA = false
+            // "surah:ayah" -> expected word count, so the record carries its own
+            // denominator. Zero is written rather than omitted when the surah was
+            // never loaded, which the report already treats as "this record does
+            // not say" instead of "a scope of zero words".
+            val sn = k.substringBefore(':').toIntOrNull() ?: 0
+            val an = k.substringAfter(':').toIntOrNull() ?: 0
+            val expected = surahAyahWordCount[sn]?.get(an) ?: 0
             sb.append("{\"ayah\":\"").append(k).append("\",\"correct\":").append(a[0])
                 .append(",\"wrong\":").append(a[1])
                 .append(",\"skipped\":").append(a[2])
-                .append(",\"unknown\":").append(a[3]).append('}')
+                .append(",\"unknown\":").append(a[3])
+                .append(",\"words\":").append(expected).append('}')
         }
         sb.append("]")
         // The diag tail carries the lock moves, handoffs and any diag() the
@@ -918,6 +926,29 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     fun standWordsFor(ayah: Int): List<MushafWord> =
         verseWords[ayah].orEmpty().sortedBy { it.wordInVerse }
     private var versePage: Map<Int, Int> = emptyMap()
+
+    /**
+     * Expected words per ayah, per surah, for the ayat this process has loaded.
+     *
+     * This exists so a session record can say what the denominator WAS, and it
+     * did not: the writer emitted `correct/wrong/skipped/unknown` per ayah and
+     * nothing else, while the reader was already looking for a `words` field.
+     * A sum of zero is what the report then had to print, so a session of 23
+     * words correctly judged from a 29-word scope rendered as a bare "23" with
+     * no denominator - honest, and useless, because the one number that tells a
+     * reciter whether they finished is the one that was missing.
+     *
+     * Keyed by surah as well as ayah, and deliberately NOT cleared on handoff: a
+     * session that walks into the next surah still has to be able to report the
+     * ayat it left behind.
+     *
+     * The count excludes the verse-end marker, matching the live denominator in
+     * `LiveMode`. Two numbers called "words" that disagree by one per ayah would
+     * put the live counter and the report permanently out of step, which is the
+     * exact bug this was added to close.
+     */
+    private val surahAyahWordCount = HashMap<Int, Map<Int, Int>>()
+
     private var pendingNextAyah: Int? = null
     private var pendingBackAyah: Int? = null
     private var pendingBackFrames: Int = 0
@@ -1603,6 +1634,9 @@ private fun computeWindow(): List<Int> {
         val byAyah = all.groupBy { it.verse }
         verseWords = byAyah.mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
         versePage = byAyah.mapValues { (_, ws) -> ws.minOf { it.page } }
+        surahAyahWordCount[surah] = byAyah.mapValues { (_, ws) ->
+            ws.count { !it.isVerseEnd }
+        }
         _wordsVersion.value = _wordsVersion.value + 1
     }
 

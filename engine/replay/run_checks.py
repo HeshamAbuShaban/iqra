@@ -78,6 +78,8 @@ CHECKS = [
      "nothing in the recognition surface is declared and never referenced"),
     ("honest_numbers", "none",
      "no data and zero percent stay distinct, and the live list paints one word index"),
+    ("pause_scope_report", "none",
+     "pause is visible, the default scope is non-empty, and a record carries its denominator"),
     ("unused_imports", "none",
      "no import names a component that is not used - the residue of deleted features"),
     ("device_blame_parity", "none",

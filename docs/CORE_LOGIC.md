@@ -272,7 +272,7 @@ The record holds:
 | Header | Start time, flush time, surahs, lock, generation, words-per-minute |
 | `counters` | Moves, reversals, polls, words evaluated, words judged, words with no window, empty windows, unjudgeable ayat |
 | `words` | Every word the archive holds, with its verdict. A WRONG word also carries `wu`: the fraction of its own units at which the contradiction began, 0..1000. Without that field the app cannot say WHY a word was accused, and it cannot be argued with. |
-| `ayahStatus` | Per-ayah counts, including `SKIPPED` and `CORRECT` |
+| `ayahStatus` | Per-ayah counts, including `SKIPPED` and `CORRECT`, and `words`: how many words that ayah was expected to have. Without the denominator the report can only print a bare judged count, and "did I finish the scope" is a question only a denominator can answer. It excludes the verse-end marker, because the mushaf appends the ayah number to the last word and that is not a word anyone said — the live counter excludes it too, so the two can never disagree by one per ayah. |
 | `advisories` | The engine's notes, by kind and count |
 | `frames` | The policy state at each poll |
 | `diagTail` | Lock moves, handoffs, and engine notes |
@@ -308,8 +308,75 @@ loses its comparison. The app encodes `-1` for no data and `0` for zero.
 ### What can fail here
 
 Any counter that one path clears and a sibling path does not clear. That class
-of fault produced the self-contradictory record above. `resetSessionCounters`
+of fault produced the self-contradicting record above. `resetSessionCounters`
 now clears the siblings too: `consecutiveRetreats` and `noiseFloor`.
+
+---
+
+## Pausing
+
+Pause is not the opposite of reciting. It is not End with a delay, and it is not
+a flag on the screen.
+
+**Pause used to call `stopRecite("paused")` — the same call as End.** So tapping
+it flushed the record, released the `AudioRecord`, closed the decoder, and the
+auto-finish took the reciter to the session report. It could not be undone:
+`startRecite` refuses to run twice, and the archive had already been cleared on
+the way in.
+
+There is no recorder-level pause to reach for instead. `AudioRecorder` offers
+`start`/`stop`/`reset` and nothing between them. `stop()` **releases** the
+`AudioRecord`, and `start()` calls `reset()`, which rewinds the absolute sample
+cursor to zero while `fedAbs` keeps its old value — so `readSince` returns null
+on every poll, for ever. A stop/start pause is not slow, it is broken.
+
+The VAD cannot simply be deafened: sherpa-onnx has no `SetThreshold`, and
+`noiseFloor` cannot help, because the gate is `quiet && vadSilent != false` — a
+Silero speech detection opens it however high the floor is.
+
+So pause is enforced at the one seam that can carry it: **the poll loop's
+handoff to the recogniser.** Three rules make it safe:
+
+1. **The recorder keeps running.** The loop keeps ticking and the ring keeps
+   filling, which is what lets the session survive a pause at all.
+2. **The check sits above the starvation watchdog**, which is gated on
+   `fedThisFrame`. One line lower and a long pause would trip the `idleSec >= 4`
+   reset loop, stamp `DECODER_STARVATION`, and escalate to "Voice decoder stopped
+   responding" — manufacturing an engine fault out of the reciter's thumb.
+3. **`gateClosedFrames` is not incremented.** `endSession` reports it as
+   `gateClosed`, where it means "the room was too quiet and the engine dropped
+   it". Counting a deliberate pause there makes a report accuse the reader of a
+   fault they chose.
+
+It is read-only with respect to session state: `sessionActive`, `sessionGen`,
+`lockedAyah`, the archive and the per-word statuses are all untouched, so a
+pause cannot cost a verdict already earned.
+
+**And the screen has to say so.** The engine genuinely is still listening — that
+is the design — so `micLevel()` keeps returning real levels and the
+engine-derived states keep reporting normally. A pause that only stopped
+judging left the status line reading "Listening" with a wave still undulating,
+which is the reciter being told the opposite of the truth by the one screen
+they were looking at. `LiveState.Paused` therefore outranks the engine states,
+and the amplitude reads zero rather than a real level. `pause_scope_report`
+holds all of this in place.
+
+---
+
+## The scope is a boundary, and `0` is not a scope
+
+ChooseScreen sends `count = 0` for "The whole surah" — the chip it opens on.
+`startAyah until startAyah + 0` is an **empty range**: no ayat, a denominator of
+zero, and `scopeAyahs.last()` in the auto-finish throwing `NoSuchElementException`
+on the first frame. The default option crashed the screen before it drew.
+
+So `0` is resolved once, on entry, to "to the end of the surah", and every
+downstream use reads the resolved `scopeCount`. Both bounds are clamped, because
+the same screen is reachable from a restored `rememberSaveable` count.
+
+Numerator and denominator are then drawn from the same set of ayat, and the
+numerator is clamped to the denominator. A count can never exceed the number it
+is a fraction of.
 
 ---
 
@@ -364,7 +431,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 28 checks. Every check must be shown able to fail. Break the thing that
+It runs 29 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -389,6 +456,7 @@ nothing.
 | `selection_parity` | A long-press range that cannot open, or a reversed one |
 | `paint_scope_parity` | A verdict that dies when the lock moves on, or hide revealing on the layer |
 | `honest_numbers` | Two meanings of zero |
+| `pause_scope_report` | A pause that is silent about being paused, an empty default scope, or a record with no denominator |
 | `word_rule_sweep` | Per-word collateral damage over 154 real words |
 
 Three of those checks exist because of defects the ones before them could not

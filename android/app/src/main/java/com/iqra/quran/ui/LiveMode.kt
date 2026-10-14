@@ -191,8 +191,26 @@ private fun LiveModeContent(
     // header still said "Al-Fatiha . 7 ayat" and the words on screen became
     // Baqarah's. The scope is chosen in ChooseScreen and must not move under the
     // reciter mid-session, so neither the count nor the text keys on it.
-    val scopeVerses = remember(surah, startAyah, ayahCount) {
-        (startAyah until startAyah + ayahCount).mapNotNull { data.getVerse(surah, it) }
+    // NORMALISE THE SCOPE ONCE, HERE.
+    //
+    // ChooseScreen sends `count = 0` for its "The whole surah" chip - which is the
+    // chip it opens on, the default, the option with the least reading attached.
+    // Left unnormalised, `startAyah until startAyah + 0` is an EMPTY range: the
+    // scope had no ayat, the denominator was 0, and `scopeAyahs.last()` in the
+    // auto-finish threw NoSuchElementException on the first frame. Picking the
+    // obvious option crashed before the screen had drawn anything.
+    //
+    // So `0` is resolved here, once, to "to the end of the surah", and every
+    // downstream use reads the resolved number. Both bounds are clamped, because
+    // the same screen is reachable by a restored `rememberSaveable` count from a
+    // previous surah, and a range that runs past the last ayah would put the
+    // denominator and the ayat on screen out of step again.
+    val surahAyat = data.surahInfo(surah)?.ayahCount ?: 7
+    val firstAyah = startAyah.coerceIn(1, surahAyat)
+    val scopeCount = if (ayahCount <= 0) surahAyat - firstAyah + 1
+        else ayahCount.coerceIn(1, surahAyat - firstAyah + 1)
+    val scopeVerses = remember(surah, firstAyah, scopeCount) {
+        (firstAyah until firstAyah + scopeCount).mapNotNull { data.getVerse(surah, it) }
     }
     val verses = scopeVerses
     val wordsVersion by vm.wordsVersion.collectAsStateWithLifecycle()
@@ -226,8 +244,8 @@ private fun LiveModeContent(
     // because the two are drawn from the same set of ayat.
     // The ayah being recited, with a fallback for before the engine has said.
     val lockedHint = scopeProgress.firstOrNull { it.isLocked }?.ayah
-    val scopeAyahs = remember(surah, startAyah, ayahCount) {
-        (startAyah until startAyah + ayahCount).toList()
+    val scopeAyahs = remember(surah, firstAyah, scopeCount) {
+        (firstAyah until firstAyah + scopeCount).toList()
     }
     // The denominator is the SAME word population the statuses are keyed by -
     // `standWordsFor`, which is what the status keys are built from - with one
@@ -246,7 +264,7 @@ private fun LiveModeContent(
     val mushafPages by vm.mushaf.collectAsStateWithLifecycle()
     val liveScopeWords = remember(scopeAyahs, vm.wordsVersion.collectAsStateWithLifecycle().value) {
         scopeAyahs.sumOf { a ->
-            emptyList<Any>().size.let { vm.standWordsFor(a) }.count { it.surah == surah && !it.isVerseEnd }
+            vm.standWordsFor(a).count { it.surah == surah && !it.isVerseEnd }
         }
     }
     val totalWords = remember(scopeAyahs, liveScopeWords, mushafPages) {
@@ -315,7 +333,14 @@ private fun LiveModeContent(
         var last = 0f
         var floor = 0.04f
         while (isActive) {
-            val raw = withContext(Dispatchers.IO) { vm.micLevel() }
+            // Zero while paused, and not merely scaled down afterwards. The
+            // recorder is deliberately left running - that is how the session
+            // survives a pause at all - so a real reading here would keep the
+            // wave undulating and keep re-arming the onset detector for audio
+            // the engine is deliberately not judging. The reciter taps Pause and
+            // the screen has to go quiet, because the one thing they asked for
+            // is not being listened to.
+            val raw = withContext(Dispatchers.IO) { if (paused) 0f else vm.micLevel() }
             // 0.12 is roughly where a close-mic voice sits on this recorder's
             // scale; anything above that is treated as "as loud as it gets" so a
             // loud room does not pin the orb open.
@@ -339,9 +364,19 @@ private fun LiveModeContent(
         }
     }
 
+    // Paused sits ABOVE the engine-derived states, not below them, and the
+    // ordering is the fix.
+    //
+    // The engine keeps running while paused - that is deliberate, see
+    // `setListening` - so `vadSpeech` and `stallSec` both keep reporting
+    // normally. Derived below them, a paused screen would still say "Go ahead"
+    // or "Let me think..." with the words appearing as if nothing had happened,
+    // because the microphone is genuinely still open. The reciter had asked for
+    // silence and the screen argued with them.
     val state = when {
         !started || finished -> LiveState.Idle
         !recording -> LiveState.Idle
+        paused -> LiveState.Paused
         policy.vadSpeech == false -> LiveState.Quiet
         policy.stallSec > 4f -> LiveState.Thinking
         else -> LiveState.Hearing
@@ -377,7 +412,7 @@ private fun LiveModeContent(
                     // is what the reciter is holding in their head.
                     listOfNotNull(
                         data.surahInfo(surah)?.nameEn,
-                        "$ayahCount ${if (ayahCount == 1) "ayah" else "ayat"}",
+                        "$scopeCount ${if (scopeCount == 1) "ayah" else "ayat"}",
                     ).joinToString("  ·  ")),
                     fontSize = 14.sp,
                     color = Color(0xFF8FA0BE),
@@ -436,16 +471,22 @@ private fun LiveModeContent(
             ) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    ltr(when (state) {
+                    when (state) {
                         LiveState.Idle -> if (started) "Listening" else "Tap the light to begin"
                         LiveState.Quiet -> "I can't hear you"
                         LiveState.Hearing -> "Go ahead"
                         LiveState.Thinking -> "Let me think…"
-                    }),
+                        // Says what Pause did and how to undo it. "Listening"
+                        // here was the actual complaint: the engine really is
+                        // still open, so every other string on this screen was
+                        // true and still read as "you are being judged".
+                        LiveState.Paused -> "Paused — tap ▶ to resume"
+                    },
                     fontSize = 13.sp,
                     color = when (state) {
                         LiveState.Thinking -> lc.crestHot
                         LiveState.Quiet -> Color(0xFF64748B)
+                        LiveState.Paused -> lcG.ink
                         else -> Color(0xFF8FA0BE)
                     },
                 )
@@ -568,8 +609,14 @@ private fun LiveModeContent(
                     RoundControl(
                         glyph = if (recording && !paused) Icons.Filled.Pause
                                 else Icons.Filled.PlayArrow,
-                        tint = lcG.ink,
-                        track = lcG.surfaceHigh,
+                        tint = if (paused) lcG.gold else lcG.ink,
+                        // While paused this control is not "pause" any more, it is
+                        // "resume", and it is the only thing on the screen that
+                        // does anything. Filling it says so before it is read.
+                        track = if (paused) lcG.gold.copy(alpha = 0.22f)
+                                else lcG.surfaceHigh,
+                        border = if (paused) lcG.gold.copy(alpha = 0.55f)
+                                 else Color.Transparent,
                         onClick = {
                             // This used to call `stopRecite("paused")` - the same
                             // call as End - so tapping Pause ended the recitation,
@@ -646,7 +693,7 @@ private fun LiveModeContent(
     }
 }
 
-private enum class LiveState { Idle, Quiet, Hearing, Thinking }
+private enum class LiveState { Idle, Quiet, Hearing, Thinking, Paused }
 
 
 /** The one warm accent this screen owns, so a stalled lock reads differently. */
@@ -723,7 +770,13 @@ private fun HorizonWave(
         val lv = level.floatValue.coerceIn(0f, 1f)
         val on = onset.floatValue.coerceIn(0f, 1f)
         val dull = (stall / 5f).coerceIn(0f, 1f)
-        val clear = (1f - 0.4f * dull) * (if (state == LiveState.Thinking) 0.75f else 1f)
+        // Paused dims the band rather than hiding it. The wave stays on screen
+        // so the screen does not jump when it comes back - a flat crest that
+        // brightens on resume reads as "it woke up", which is exactly what
+        // happened. Hiding it would read as a crash and a relayout.
+        val clear = (1f - 0.4f * dull) *
+            (if (state == LiveState.Thinking) 0.75f else 1f) *
+            (if (state == LiveState.Paused) 0.45f else 1f)
 
         // The crest rides high when quiet and stays high when loud: the band is
         // always present, and the VOICE adds height on top of it rather than
