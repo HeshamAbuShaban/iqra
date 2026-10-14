@@ -78,6 +78,9 @@ CHECKS = [
      "nothing in the recognition surface is declared and never referenced"),
     ("honest_numbers", "none",
      "no data and zero percent stay distinct, and the live list paints one word index"),
+    ("mic_gate", "none",
+     "the speech-admission path nothing else tests: the gate stays an OR, a missing "
+     "VAD means no opinion, and a quiet reciter is not gated shut"),
     ("pause_scope_report", "none",
      "pause is visible, the default scope is non-empty, and a record carries its denominator"),
     ("unused_imports", "none",

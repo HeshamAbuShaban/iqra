@@ -648,6 +648,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .append(",\"gen\":").append(sessionGen)
             .append(",\"wpmEma\":").append(f1(wpmEma))
             .append(",\"noiseFloor\":").append(f3(noiseFloor))
+            .append(",\"vad\":").append(sessionVad)
             .append(",\"thresholds\":{")
             .append("\"advance\":").append(f3(ADVANCE_COVERAGE))
             .append(",\"strong\":").append(f3(STRONG_COVERAGE))
@@ -985,6 +986,23 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _decoderState = MutableStateFlow("idle")
     val decoderState: StateFlow<String> = _decoderState
     private var noiseFloor = SILENCE_RMS
+
+    /**
+     * Whether this session had a working voice-activity detector.
+     *
+     * The gate admits audio when EITHER the level clears the floor OR the VAD
+     * hears speech, so the VAD is what rescues a quiet reciter: without it, a
+     * whisper is judged by RMS alone and sits under the calibrated floor. That
+     * is the whole difference between "whispering was not heard" and "the app
+     * was deaf for that session", and the record could not tell them apart -
+     * `noiseFloor` was written, the VAD's availability was not, and it existed
+     * only in a live label that was gone by the time anyone read the record.
+     *
+     * So it is evidence now. A session that judged badly and ran without a VAD
+     * is diagnosable; the same session with one is a different question, and
+     * they no longer look alike.
+     */
+    private var sessionVad = false
     private var lastTokenTime = 0L
     private var lastRecoveryTime = 0L
     /** Consecutive zero-token recovery attempts; escalates to a real error
@@ -1555,6 +1573,7 @@ private fun computeWindow(): List<Int> {
         // reading "silence" - the engine appearing deaf for a reason that
         // belongs to an earlier session.
         noiseFloor = SILENCE_RMS
+        sessionVad = false
         // Restart the measured cadence at the declared one, so a session that
         // opens with a fast poll is not judged by the previous session's slow
         // one, and so the very first ayah behaves exactly as before.
@@ -2129,6 +2148,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             starvedRecoveries = 0
             speechFramesSinceAdvance = 0
             _engineLabel.value = "zipformer/" + (if (vadReady) "VAD" else "RMS")
+            sessionVad = vadReady
             // A pulled log cannot otherwise be attributed to the gate that
             // produced it, and the gate is a prime suspect when recognition
             // stalls.

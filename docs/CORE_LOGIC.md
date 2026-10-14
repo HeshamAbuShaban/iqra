@@ -449,7 +449,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 29 checks. Every check must be shown able to fail. Break the thing that
+It runs 30 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -474,6 +474,7 @@ nothing.
 | `selection_parity` | A long-press range that cannot open, or a reversed one |
 | `paint_scope_parity` | A verdict that dies when the lock moves on, or hide revealing on the layer |
 | `honest_numbers` | Two meanings of zero |
+| `mic_gate` | The gate closed on a whisper, or an absent VAD read as silence |
 | `pause_scope_report` | A pause that is silent about being paused, an empty default scope, or a record with no denominator |
 | `word_rule_sweep` | Per-word collateral damage over 154 real words |
 
