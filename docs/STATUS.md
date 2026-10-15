@@ -687,6 +687,47 @@ word, the expected units beside what was actually emitted. That is the missing
 half of the diagnosis — it is written, it is gated, and it has not yet been
 exercised by a real session.
 
+## The LiveTest bug that ended a test before it began
+
+Reported by the user from real use: *"a bug that happened almost every time I
+wanted to LiveTest screen, I feel that it comes after a successful session, which
+makes the buggy one end fast on it, something to do with finalizing and loading."*
+
+The mechanism, read off the code: `LiveMode.kt` ends a test when the scope's last
+ayah reads `decided >= words`. The value it reads is `vm.scopeProgress` —
+**ViewModel state, which outlives the screen.** Open Live straight after a
+finished session and the screen composes against the *previous* session's
+progress, where the final ayah already satisfies that test. The new test is
+declared complete and the app navigates to the previous session's report.
+
+Two faults, both fixed and both gated:
+
+| fault | fix |
+|---|---|
+| the auto-finish's guard was asymmetric — its sibling path in the same function is gated on `everRecorded`, this one guarded only the `stopRecite` and left `finished = true` unconditional | the guard is now on the assignment's own path, and the effect keys on it |
+| `scopeProgress` was only *rebuilt* at the next start, so a complete scope survived the teardown into the next screen | `clearScopeProgress()` runs from `resetSessionUi`, which every end path reaches |
+
+Gate: `live_scope_inherit_parity.py`, four injections red. Two of those injections
+were defects in the CHECK that had to be fixed first — it counted `everRecorded`
+appearing anywhere in the block, including the key list, so deleting the guard
+statement entirely left it green while the bug was fully restored. A mention is
+not a guard.
+
+**Verified against your four noise sessions** (19:39–19:49): three surahs
+completed, two with zero WRONG verdicts, `noWindowWords=0` throughout. The
+sessions themselves were healthy; the defect was entirely in the hand-off
+between one session's end and the next screen's start.
+
+## Where everything is
+
+Answered directly: **no, the phases are not all done.** Phase 2a's first piece
+shipped — the record now carries the emitted phonemes, the absolute base, and
+the per-ayah arrival, and `device_blame.py` reconstructs the judged window. The
+*desktop replay screen* and the *on-phone screen* are not built, the engine
+comparison has not run, and the crowd handling is untouched. `docs/TODO.md`
+carries them in order, and the noise sessions put one question at the top that
+all of it depends on.
+
 ## What is open next
 
 **1. The unexplained 71% - and the first session that carries `wu`.**
