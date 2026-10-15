@@ -169,7 +169,7 @@ private fun LiveModeContent(
     var started by remember { mutableStateOf(false) }
     // Listening is live from the moment the tray appears - see the tray note.
     // The ENGINE's pause, not a local flag. `vm.paused` is written by
-    // `setListening` and read back by the poll loop, so the icon and the thing
+    // `setPaused` and read back by the poll loop, so the icon and the thing
     // that is actually not judging can never disagree.
     val paused by vm.paused.collectAsStateWithLifecycle()
     var finished by remember { mutableStateOf(false) }
@@ -253,9 +253,17 @@ private fun LiveModeContent(
     // The guard is the whole fix. `standWordsFor(ayah)` is scoped to whatever surah
     // the ENGINE has loaded, so after a handoff it answers about the next surah
     // entirely; each `MushafWord` carries its own `surah`, so filtering by it
-    // makes the count describe the scope the user chose and nothing else. Counting
-    // the verse-end marker as a word is the other half - the mushaf appends the
-    // ayah number to the last word of each ayah, and it is not a word anyone said.
+    // makes the count describe the scope the user chose and nothing else.
+    //
+    // NOT filtered by `isVerseEnd`, which looks like it should be and is not.
+    // That flag marks the LAST REAL WORD of each ayah - the one the ayah number
+    // is printed after - and `stripVerseNumber` already removes the number from
+    // its text. Al-Fatiha is 29 words, and this denominator read 22: 29 minus
+    // one real word for each of its 7 ayat, thrown away for carrying a digit it
+    // had already given up. `scopeProgress` counts `verseWords[a].size` with no
+    // such filter, so the numerator was on 29 while the denominator sat on 22 -
+    // which is the "23 of 29" family of reports, arrived at from the other
+    // direction.
     //
     // Before the engine has loaded the surah this reads empty, so the mushaf pages
     // are used as the pre-session figure: the same words from the same source,
@@ -263,7 +271,7 @@ private fun LiveModeContent(
     val mushafPages by vm.mushaf.collectAsStateWithLifecycle()
     val liveScopeWords = remember(scopeAyahs, vm.wordsVersion.collectAsStateWithLifecycle().value) {
         scopeAyahs.sumOf { a ->
-            vm.standWordsFor(a).count { it.surah == surah && !it.isVerseEnd }
+            vm.standWordsFor(a).count { it.surah == surah }
         }
     }
     val totalWords = remember(scopeAyahs, liveScopeWords, mushafPages) {
@@ -272,7 +280,7 @@ private fun LiveModeContent(
             val pages = mushafPages ?: return@remember 0
             val inScope = scopeAyahs.toHashSet()
             Mushaf.wordsForSurah(pages, surah)
-                .count { it.verse in inScope && it.surah == surah && !it.isVerseEnd }
+                .count { it.verse in inScope && it.surah == surah }
         }
     }
 
@@ -359,7 +367,7 @@ private fun LiveModeContent(
     // ordering is the fix.
     //
     // The engine keeps running while paused - that is deliberate, see
-    // `setListening` - so `vadSpeech` and `stallSec` both keep reporting
+    // `setPaused` - so `vadSpeech` and `stallSec` both keep reporting
     // normally. Derived below them, a paused screen would still say "Go ahead"
     // or "Let me think..." with the words appearing as if nothing had happened,
     // because the microphone is genuinely still open. The reciter had asked for
@@ -462,7 +470,13 @@ private fun LiveModeContent(
             ) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    when (state) {
+                    // `ltr` here because this block was rewritten once to add
+                    // Paused, and the rewrite dropped the wrap. "Let me think…"
+                    // went back to rendering as "…Let me think" on the next build,
+                    // silently, because a missing bidi isolate looks exactly like a
+                    // working one until you read the glyphs. Any edit to this Text
+                    // must keep it; latin_wrap_parity holds the whole screen to it.
+                    ltr(when (state) {
                         LiveState.Idle -> if (started) "Listening" else "Tap the light to begin"
                         LiveState.Quiet -> "I can't hear you"
                         LiveState.Hearing -> "Go ahead"
@@ -472,7 +486,7 @@ private fun LiveModeContent(
                         // still open, so every other string on this screen was
                         // true and still read as "you are being judged".
                         LiveState.Paused -> "Paused — tap ▶ to resume"
-                    },
+                    }),
                     fontSize = 13.sp,
                     color = when (state) {
                         LiveState.Thinking -> lc.crestHot
@@ -612,10 +626,10 @@ private fun LiveModeContent(
                             // This used to call `stopRecite("paused")` - the same
                             // call as End - so tapping Pause ended the recitation,
                             // flushed the record, and the auto-finish took the user
-                            // to the report. `setListening` suspends judging without
+                            // to the report. `setPaused` suspends judging without
                             // touching any session state; see its KDoc for why there
                             // is no stop/start alternative.
-                            vm.setListening(!paused)
+                            vm.setPaused(!paused)
                         },
                     )
                     RoundControl(
@@ -637,17 +651,17 @@ private fun LiveModeContent(
     if (showExit) {
         AlertDialog(
             onDismissRequest = { showExit = false },
-            title = { Text("Leave this session?") },
-            text = { Text("What you have recited so far is still counted.") },
+            title = { Text(ltr("Leave this session?")) },
+            text = { Text(ltr("What you have recited so far is still counted.")) },
             confirmButton = {
                 TextButton(onClick = {
                     showExit = false
                     if (recording) vm.stopRecite("live exit")
                     onExit()
-                }) { Text("Leave") }
+                }) { Text(ltr("Leave")) }
             },
             dismissButton = {
-                TextButton(onClick = { showExit = false }) { Text("Stay") }
+                TextButton(onClick = { showExit = false }) { Text(ltr("Stay")) }
             },
         )
     }

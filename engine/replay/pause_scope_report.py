@@ -73,10 +73,32 @@ def live_check(live=LIVE_SRC, vm=VM_SRC, log=LOG_SRC, act=MAIN_SRC):
     del bad[:]
 
     # ---- pause -------------------------------------------------------------
-    set_listening = body_of(vm, r"fun setListening\b")
-    require(set_listening != "", "setListening not found")
-    require("stopRecite" not in set_listening,
-            "setListening calls stopRecite - pause would end the session again")
+    set_paused = body_of(vm, r"fun setPaused\b")
+    require(set_paused != "", "setPaused not found")
+    require("stopRecite" not in set_paused,
+            "setPaused calls stopRecite - pause would end the session again")
+    require(re.search(r"fun setPaused\(paused: Boolean\)", vm) is not None,
+            "setPaused does not take the state it sets. A parameter named for what "
+            "the ENGINE should do ('listen') forces every caller to pass a "
+            "negation, and the one that did was inverted: pressing Pause asked the "
+            "engine to keep listening, matched the state already held, hit the "
+            "early return and did nothing at all.")
+    require(re.search(r"if \(listeningPaused == paused\) return", set_paused) is not None,
+            "setPaused lost its idempotence guard")
+    # Shadowing is the quiet version of the same inversion: a local named like
+    # the parameter, holding its negation, leaves the signature and the guard
+    # reading exactly right while the comparison is against the opposite state.
+    require(re.search(r"\bval paused\b", set_paused) is None,
+            "setPaused declares a local named `paused`: if it holds the negation, "
+            "the signature and the guard both read correctly while every "
+            "comparison is against the opposite state")
+    require(re.search(r"vm\.setPaused\(!paused\)", live) is not None,
+            "the pause control does not pass `!paused`: asking setPaused for the "
+            "state already held is a no-op, which is how Pause came to do nothing "
+            "on every press")
+    require(re.search(r"vm\.setPaused\(paused\)", live) is None,
+            "the pause control passes `paused` directly, so pressing it asks for "
+            "the state that is already set and the guard swallows the call")
 
     loop = re.search(r"while \(_recording\.value && gen == sessionGen\) \{", vm)
     require(loop is not None, "the poll loop was not found to place pause in")
@@ -117,6 +139,22 @@ def live_check(live=LIVE_SRC, vm=VM_SRC, log=LOG_SRC, act=MAIN_SRC):
                 "keeps undulating for audio the engine is deliberately ignoring")
 
     # ---- scope -------------------------------------------------------------
+    # The verse-ending word IS a word. `isVerseEnd` marks the last real word of
+    # an ayah - the one the ayah number is printed after - and stripVerseNumber
+    # has already taken the number off its text. Excluding it drops one genuine
+    # word per ayah: Al-Fatiha's 29 read as 22, while scopeProgress (which counts
+    # verseWords[a].size) stayed on 29. That is the "23 of 29" family of reports
+    # reached from the other side, and it is asserted here against the real
+    # mushaf so the number cannot drift again.
+    for src, label in ((live, "LiveMode"), (body_of(vm, r"fun loadSurah\b"),
+                                            "the record writer")):
+        code = "\n".join(l.split("//")[0] for l in src.splitlines()
+                         if not l.strip().startswith("//"))
+        require("!it.isVerseEnd" not in code,
+                f"{label} subtracts the verse-ending word from the denominator; it "
+                "is a real word that merely carries the ayah number, and dropping it "
+                "loses one word per ayah")
+
     require(re.search(r"if \(ayahCount <= 0\)", live) is not None,
             "LiveMode does not resolve ayahCount == 0, so ChooseScreen's default "
             "'The whole surah' leaves the scope empty")
@@ -142,15 +180,8 @@ def live_check(live=LIVE_SRC, vm=VM_SRC, log=LOG_SRC, act=MAIN_SRC):
                 "so the report has no denominator to show")
         require("expected" in obj,
                 "the per-ayah `words` field is not written from the counted value")
-    require("isVerseEnd" in body_of(vm, r"fun loadSurah\b"),
-            "the per-ayah word count does not exclude the verse-end marker")
     require('optInt("words"' in log,
             "PracticeLog no longer reads the `words` field the record writes")
-    for src, label in ((live, "LiveMode"), (body_of(vm, r"fun loadSurah\b"),
-                                            "the record writer")):
-        require("isVerseEnd" in src,
-                f"{label} counts the verse-end marker as a word; the live counter "
-                "and the report would disagree by one per ayah")
     require(re.search(r"Mushaf\.wordsForSurah", live) is not None,
             "LiveMode lost its pre-session mushaf word count")
 
@@ -178,7 +209,25 @@ def live_check(live=LIVE_SRC, vm=VM_SRC, log=LOG_SRC, act=MAIN_SRC):
     return list(bad)
 
 
+# Measured against the shipped mushaf rather than trusted. The denominator has
+# to agree with the word list the statuses are keyed by, or "N of M" is two
+# populations wearing one label.
+import json
+_mushaf = json.load(open("android/app/src/main/assets/mushaf.json", encoding="utf-8"))
+_al_fatiha = 0
+for _pg in _mushaf:
+    for _ln in _pg.get("lines", []):
+        if _ln.get("type") != "text":
+            continue
+        for _w in (_ln.get("words") or []):
+            if _w["location"].startswith("1:"):
+                _al_fatiha += 1
+# The traditional word count of Al-Fatiha, and the number the app must agree with.
 failures = live_check()
+if _al_fatiha != 29:
+    failures.append(
+        f"the shipped mushaf has {_al_fatiha} words in Al-Fatiha, not the 29 the "
+        "denominator is asserted against - the data moved, the assertion did not")
 if failures:
     print("FAIL pause_scope_report")
     for f in failures:
@@ -187,57 +236,67 @@ if failures:
 
 # Each assertion has to be able to fail, or it is decoration. Break one thing at
 # a time and confirm exactly one more failure appears.
-MUTANTS = {
-    "pause no longer skips judging": (
-        lambda s: s.replace("if (listeningPaused) {", "if (false) {", 1)),
-    "pause check moved below the decoder feed": (
-        lambda s: s.replace("if (listeningPaused) {", "// moved\n        if (false) {", 1)),
-    "pause after the feed, by reordering the branch": (
-        lambda s: s.replace("if (listeningPaused) {", "if (false) {", 1)
-                   .replace("// PAUSE - suspend judging",
-                            "if (listeningPaused) { _gateReason.value = \"paused\" }// PAUSE", 1)),
-    "Paused state removed": (
-        lambda s: s.replace("LiveState.Paused", "LiveState.Idle")),
-    "Paused ranked below the engine states": (
-        lambda s: s.replace("paused -> LiveState.Paused\n", "", 1)),
-    "amplitude reads a real level while paused": (
-        lambda s: s.replace("if (paused) 0f else vm.micLevel()", "vm.micLevel()", 1)),
-    "scope normalisation removed": (
-        lambda s: s.replace("if (ayahCount <= 0)", "if (false)", 1)),
-    "scope built from the raw count": (
-        lambda s: s.replace("(firstAyah until firstAyah + scopeCount)",
-                            "(startAyah until startAyah + ayahCount)", 1)),
-    "record stops writing words": (
-        lambda s: s.replace('.append(",\\"words\\":").append(expected)', '.append("")', 1)),
-    "record counts the verse-end marker": (
-        lambda s: s.replace("ws.count { !it.isVerseEnd }", "ws.size", 1)),
-    "the window stops holding the screen on": (
-        lambda s: s.replace(
-            "window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)", "Unit", 1)),
-    "a view takes the keep-awake duty back": (
-        lambda s: s.replace("val themeState =", "keepScreenOn = true\n            val themeState =", 1)),
-}
+# (file, label, mutation). The file is explicit, never inferred from the label:
+# a mutant aimed at the wrong file changes nothing and reports itself as
+# "cannot fail", which is a true statement about the wrong thing.
+MUTANTS = [
+    ("vm", "pause no longer skips judging",
+     lambda s: s.replace("if (listeningPaused) {", "if (false) {", 1)),
+    ("vm", "pause check moved below the decoder feed",
+     lambda s: s.replace("if (listeningPaused) {", "// moved\n        if (false) {", 1)),
+    ("live", "the pause button asks for the state it already holds",
+     lambda s: s.replace("vm.setPaused(!paused)", "vm.setPaused(paused)", 1)),
+    ("vm", "setPaused returns the inverse of what it is given",
+     lambda s: s.replace("fun setPaused(paused: Boolean) {",
+                         "fun setPaused(paused: Boolean) { val paused = !paused;", 1)),
+    ("live", "amplitude reads a real level while paused",
+     lambda s: s.replace("if (paused) 0f else vm.micLevel()", "vm.micLevel()", 1)),
+    ("live", "Paused state removed",
+     lambda s: s.replace("LiveState.Paused", "LiveState.Idle")),
+    ("live", "Paused ranked below the engine states",
+     lambda s: s.replace("paused -> LiveState.Paused\n", "", 1)),
+    ("live", "scope normalisation removed",
+     lambda s: s.replace("if (ayahCount <= 0)", "if (false)", 1)),
+    ("live", "scope built from the raw count",
+     lambda s: s.replace("(firstAyah until firstAyah + scopeCount)",
+                         "(startAyah until startAyah + ayahCount)", 1)),
+    ("live", "the live denominator subtracts the verse-ending word",
+     lambda s: s.replace("vm.standWordsFor(a).count { it.surah == surah }",
+                         "vm.standWordsFor(a).count { it.surah == surah && !it.isVerseEnd }", 1)),
+    ("live", "the pre-session mushaf count subtracts the verse-ending word",
+     lambda s: s.replace(".count { it.verse in inScope && it.surah == surah }",
+                         ".count { it.verse in inScope && it.surah == surah && !it.isVerseEnd }", 1)),
+    ("vm", "record stops writing words",
+     lambda s: s.replace('.append(",\\"words\\":").append(expected)', '.append("")', 1)),
+    ("vm", "record subtracts the verse-ending word",
+     lambda s: s.replace("surahAyahWordCount[surah] = byAyah.mapValues { (_, ws) -> ws.size }",
+                         "surahAyahWordCount[surah] = byAyah.mapValues { (_, ws) -> ws.count { !it.isVerseEnd } }", 1)),
+    ("main", "the window stops holding the screen on",
+     lambda s: s.replace(
+         "window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)", "Unit", 1)),
+    ("main", "a view takes the keep-awake duty back",
+     lambda s: s.replace("val themeState =", "keepScreenOn = true\n            val themeState =", 1)),
+]
 
 undetected = []
-for label, mutate in MUTANTS.items():
-    if label.startswith("the window") or label.startswith("a view takes"):
-        target = MAIN_SRC
-    else:
-        target = LIVE_SRC if "Live" in label or "amplitude" in label or "Paused" in label \
-            or "scope" in label else VM_SRC
+FILES = {"live": LIVE_SRC, "vm": VM_SRC, "main": MAIN_SRC}
+for target, label, mutate in MUTANTS:
+    original = FILES[target]
     try:
-        mutated = mutate(target)
-    except Exception as exc:                      # pragma: no cover
+        mutated = mutate(original)
+    except Exception as exc:                       # pragma: no cover
         undetected.append(f"{label}: mutation raised {exc!r}")
         continue
-    if mutated == target:
+    if mutated == original:
         undetected.append(f"{label}: mutation changed nothing - the assertion is "
                           f"matching text the fix does not control")
         continue
-    got = live_check(LIVE_SRC if target is not LIVE_SRC else mutated,
-                     VM_SRC if target is not VM_SRC else mutated,
-                     LOG_SRC,
-                     MAIN_SRC if target is not MAIN_SRC else mutated)
+    got = live_check(
+        mutated if target == "live" else LIVE_SRC,
+        mutated if target == "vm" else VM_SRC,
+        LOG_SRC,
+        mutated if target == "main" else MAIN_SRC,
+    )
     if not got:
         undetected.append(f"{label}: SURVIVED - no assertion caught it")
 

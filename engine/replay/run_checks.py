@@ -78,6 +78,9 @@ CHECKS = [
      "nothing in the recognition surface is declared and never referenced"),
     ("honest_numbers", "none",
      "no data and zero percent stay distinct, and the live list paints one word index"),
+    ("latin_wrap_parity", "none",
+     "every Latin string on a right-to-left screen is bidi-isolated, so a trailing "
+     "full stop cannot migrate to the left"),
     ("mic_gate", "none",
      "the speech-admission path nothing else tests: the gate stays an OR, a missing "
      "VAD means no opinion, and a quiet reciter is not gated shut"),

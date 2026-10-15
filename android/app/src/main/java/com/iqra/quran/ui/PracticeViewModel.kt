@@ -576,7 +576,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * Deliberately neither `sessionActive` nor `!_recording.value`: both of those
      * mean the session is OVER. This is the third state - the session is live, the
      * lock is where it was, the archive holds every verdict earned so far, and
-     * nothing new is being judged. Only [setListening] writes it.
+     * nothing new is being judged. Only [setPaused] writes it.
      */
     @Volatile private var listeningPaused = false
 
@@ -615,14 +615,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * earned. Safe to call repeatedly - the early return means the state it
      * already holds writes nothing and logs nothing.
      */
-    fun setListening(listen: Boolean) {
-        val pause = !listen
-        if (listeningPaused == pause) return
-        listeningPaused = pause
-        _paused.value = pause
+    fun setPaused(paused: Boolean) {
+        if (listeningPaused == paused) return
+        listeningPaused = paused
+        _paused.value = paused
         // The gate reason is left to the loop, which owns that flow and rewrites it
         // within 250 ms either way; two writers would race for no benefit.
-        diag(if (pause) "listening paused (session live)" else "listening resumed")
+        diag(if (paused) "listening paused (session live)" else "listening resumed")
     }
 
     /** Force a write. Called on a timer, and on session end. */
@@ -943,10 +942,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * session that walks into the next surah still has to be able to report the
      * ayat it left behind.
      *
-     * The count excludes the verse-end marker, matching the live denominator in
-     * `LiveMode`. Two numbers called "words" that disagree by one per ayah would
-     * put the live counter and the report permanently out of step, which is the
-     * exact bug this was added to close.
+     * The count is the whole word list, matching the live denominator in
+     * `LiveMode` and `scopeProgress`. It must NOT drop the verse-ending word:
+     * `isVerseEnd` marks a real word that merely carries the ayah number after
+     * it, and excluding it loses one word per ayah - 29 counted as 22 for Al-
+     * Fatiha. Three numbers called "words" must agree, and the only way they do
+     * is if none of them quietly subtracts a word somebody actually recited.
      */
     private val surahAyahWordCount = HashMap<Int, Map<Int, Int>>()
 
@@ -1653,9 +1654,13 @@ private fun computeWindow(): List<Int> {
         val byAyah = all.groupBy { it.verse }
         verseWords = byAyah.mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
         versePage = byAyah.mapValues { (_, ws) -> ws.minOf { it.page } }
-        surahAyahWordCount[surah] = byAyah.mapValues { (_, ws) ->
-            ws.count { !it.isVerseEnd }
-        }
+        // `ws.size`, with no `isVerseEnd` filter. That flag marks the last REAL
+        // word of the ayah - the one the ayah number is printed after - and
+        // `stripVerseNumber` has already removed the number from its text. Al-
+        // Fatiha is 29 words; filtering here made the report say 22, losing one
+        // genuine word per ayah, and disagreeing with the live counter and with
+        // `scopeProgress`, both of which count the whole list.
+        surahAyahWordCount[surah] = byAyah.mapValues { (_, ws) -> ws.size }
         _wordsVersion.value = _wordsVersion.value + 1
     }
 
