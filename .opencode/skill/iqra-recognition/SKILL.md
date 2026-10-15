@@ -48,7 +48,7 @@ result depends on how a human actually recites, say so.
 
 ## The gate contract
 
-`engine/replay/run_checks.py` is the **only** source of truth. It runs 32 checks.
+`engine/replay/run_checks.py` is the **only** source of truth. It runs 33 checks.
 
 **Every check must be proven able to fail before its result is believed.** This
 is not a formality. Three checks were green while unable to report failure:
@@ -74,7 +74,7 @@ To add or trust a check:
 Run it: `engine/.venv-replay/bin/python engine/replay/run_checks.py`.
 Add `--only <name>` for one check. Some need token dumps under `engine/corpus/out/`.
 
-**32 checks.** A check that cannot fail measures nothing — see the failure
+**33 checks.** A check that cannot fail measures nothing — see the failure
 section below before trusting any of them.
 
 ## The failure that cost the most time

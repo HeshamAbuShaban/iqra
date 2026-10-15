@@ -690,9 +690,22 @@ private fun LiveModeContent(
     //
     // End stays available throughout, so nothing is taken away - only the one
     // extra tap is removed.
+    //
+    // `everRecorded` is the guard that makes this safe, and its absence was a real
+    // bug reported by the user: "almost every time I wanted to LiveTest screen [it
+    // breaks], it comes after a successful session, which makes the buggy one end
+    // fast". `scopeProgress` is ViewModel state that outlives the screen, so a
+    // newly opened Live screen composes against the PREVIOUS session's progress -
+    // where its final ayah already reads `decided >= words`. This effect then fired
+    // on that inherited value, declared a brand-new test complete, and jumped to
+    // the previous session's report. The sibling path above is guarded by
+    // `everRecorded`; this one was not, which is the kind of asymmetry that is
+    // indefensible in the same function. A session that never recorded cannot be
+    // "scope complete".
     val lastAyah = scopeAyahs.last()
     val lastProgress = scopeProgress.firstOrNull { it.ayah == lastAyah }
-    LaunchedEffect(lastAyah, lastProgress?.decided, lastProgress?.words) {
+    LaunchedEffect(everRecorded, lastAyah, lastProgress?.decided, lastProgress?.words) {
+        if (!everRecorded) return@LaunchedEffect
         val w = lastProgress?.words ?: 0
         if (w > 0 && (lastProgress?.decided ?: 0) >= w) {
             if (recording) vm.stopRecite("scope complete")

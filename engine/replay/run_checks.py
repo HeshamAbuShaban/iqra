@@ -101,6 +101,8 @@ CHECKS = [
      "long-press selects then extends a range, order kept, tap or chrome ends it"),
     ("paint_scope_parity", "none",
      "a verdict is permanent for the session, and hide reveals on the verdict"),
+    ("live_scope_inherit_parity", "none",
+     "a session that never began cannot be finished, nor a finished scope inherited"),
 ]
 
 # Scripts that need a dump argument rather than running bare.

@@ -449,7 +449,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 32 checks. Every check must be shown able to fail. Break the thing that
+It runs 33 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -473,6 +473,7 @@ nothing.
 | `final_vowel_parity` | A word-final consonant deciding a verdict, or the rule leaking inside a word |
 | `selection_parity` | A long-press range that cannot open, or a reversed one |
 | `paint_scope_parity` | A verdict that dies when the lock moves on, or hide revealing on the layer |
+| `live_scope_inherit_parity` | A LiveTest that ends before it began, by inheriting the previous session's scope |
 | `honest_numbers` | Two meanings of zero |
 | `tone_measurement` | A crest that reads reading speed instead of tone |
 | `latin_wrap_parity` | A trailing full stop migrating to the left of an English sentence |

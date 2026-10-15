@@ -1451,6 +1451,23 @@ private fun computeWindow(): List<Int> {
     }
 
     /**
+     * Drop the scope progress, so a finished session cannot be inherited.
+     *
+     * LiveMode ends a test when its scope's last ayah reads `decided >= words`.
+     * That value lived on in this StateFlow after the session ended, so the next
+     * screen to open read a complete scope belonging to a recitation that had
+     * already finished - and ended its own test immediately. Reported as "after
+     * a successful session, LiveTest ends fast".
+     *
+     * Cleared here, where the rest of the session state is torn down, rather
+     * than only rebuilt at the next start: the next screen may compose before
+     * the next start.
+     */
+    private fun clearScopeProgress() {
+        _scopeProgress.value = emptyList()
+    }
+
+    /**
      * The last ayah of the surah being recited. The handoff boundary is this,
      * never a page boundary: leaving a surah mid-way is what produced the
      * 18:27 -> 19:1 excursion in the Al-Kahf session.
@@ -1652,6 +1669,11 @@ private fun computeWindow(): List<Int> {
         // until the next one begins. The verdicts themselves are cleared by
         // resetSessionCounters, which every end path reaches.
         _statusMap.value = emptyMap()
+        // And the scope progress, for the same reason as the paint map, but with
+        // a nastier symptom: LiveMode ends a test the moment the scope's last
+        // ayah reads decided >= words, so a stale complete scope made the NEXT
+        // screen end its own test before the reciter had said a word.
+        clearScopeProgress()
     }
 
     /** Zero the per-session counters so a summary can never report a
