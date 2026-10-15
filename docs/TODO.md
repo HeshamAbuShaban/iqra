@@ -3,37 +3,84 @@
 Canonical backlog for the recognition work. Update at commit boundaries;
 check items only when the shipped code proves them.
 
-## Shipped 10 October 2026 (measured, not hoped)
+## Where this sits right now — measured, 15 October 2026
 
-- **Word-final vowel rule.** 34.5% of the table's words end on a bare
-  consonant; the model says the vowel; they are different tokens. The DP now
-  treats them as one class at a word's last unit only. `final_vowel_parity.py`.
-- **Page-turn follow.** The lock follows an explicit page choice when the
-  reciter is silent, and credits nothing.
-- **Verdict latency in the record (`wt`).** The colour complaint could not be
-  checked because nothing recorded when a word was decided. It does now.
-- **Tap / long-press selection.** Long-press selects, extends a range, tap
-  collapses, chrome ends. `selection_parity.py`.
-- **Hide-mode progress strip.** How far through the surah the recitation has
-  come, in the same place whether or not the words are masked.
-- **In-reader search.** The magnifier searches the mushaf and jumps to the
-  ayah; page jump moved into the same sheet.
+Four sessions recited **with background noise**, through the app, on the build
+that contains every fix below (APK built 04:57, sessions 18:03–18:13).
+
+| session | length | lock | moves | evaluated | decided | noWindow | pollSec |
+|---|---|---|---|---|---|---|---|
+| 1 → 2:20 | 300 s | 2:20 | 25 | 269 | 193 | **0** | 0.556 |
+| 1 → 1:7 | 55 s | 1:7 | 6 | 29 | 29 | **0** | 0.299 |
+| 109 complete | 102 s | 6 | 4 | 26 | 20 | **0** | 0.310 |
+| 112 complete | 52 s | 4 | 3 | 15 | 14 | **0** | 0.288 |
+
+Three surahs finished to their last ayah (1:7, 109:6, 112:4) and **two of them
+produced zero WRONG verdicts.** `noWindowWords` is 0 in every session, including
+the longest, on a phone in a noisy room. That is the record-integrity and
+window work holding under real conditions.
+
+**And the thing that did not hold.** 14 WRONG verdicts, and 10 of them (71%) are
+still blamed on the word's LAST unit. Every last unit is a bare `م`, `ن`, `هُ` or
+`رَ` — letters inside `FINAL_VOWELLESS`, where `final_vowel_parity.py` proves the
+rule fires. The APK contains the fix. **So the emission is not the bare/vowelled
+pair the rule covers, and nothing currently on record can say what it is.**
+
+That single unanswered question is now the top item, because every other blame
+finding is a guess without it.
 
 ## Next, in order
 
-1. **Recite on the new build and read it back.** The final-vowel rule, the
-   page-turn follow and the latency field all want one session:
-   ```
-   adb -s 35d5637e shell run-as com.iqra.quran cat files/sessions/<file>.json > /tmp/x.json
-   python3 engine/replay/device_blame.py /tmp/x.json
-   ```
-   Expect: the last-unit blame class gone, page-turn wait under 6 s, and a `wt`
-   distribution that says whether colour is late in the engine or in the paint.
-2. **The residual accusation classes.** With the final-vowel class gone, what
-   is left is the real measurement: interior elisions (`اا بِ` for `بِ`) and
-   window misplacement, both visible in the harness dump of surah 3.
-3. **Standing-word pointer**, which can still be empty between windows.
-4. **UI polish**: type sizes, session list order, RTL on the live caption.
+1. **Write the phoneme stream into the session record.** One bounded array
+   alongside `frames`, holding the symbols the model actually emitted, in
+   order, with the poll they arrived on. `wu` says WHERE in a word the blame
+   landed and `wt` says WHEN; neither says WHAT was heard, and that is the
+   absence stopping this: a WRONG word's expected units are known, so one look
+   at the emitted span settles whether the escalation is a table defect, an
+   emission the rule does not cover, or a genuine mistake.
+   Gate: extend `device_blame_parity` — a record must carry the stream, and
+   the read-back must reconstruct the same span the verifier scores.
+2. **Read the four noise sessions once item 1 ships.** Re-recite, then run the
+   replay tool. Expected outcome: the residual 71% resolves into a named class.
+   Until then, do NOT touch the final-vowel rule again — it is written, it is
+   gated, and further guesses without the stream are exactly the failure mode
+   this project keeps finding.
+3. **Noise hardening.** `pollSec` rose from 0.299 to 0.556 under noise, so the
+   cadence that decides how fast audio reaches the model is a third slower in
+   the condition the app is actually used in. Measure whether that is the VAD
+   being honest or the RMS/VAD path costing polls, and whether the word-latency
+   floor rises with it.
+4. **Engine comparison**, per the decision rule in `engine/shootout/README.md`,
+   now that real noisy clips exist: same clips, same scorer, mistake-flag
+   precision and false-red rate. The harness does not care which model produced
+   the emissions, so a candidate plugs in as a different emission stream — no
+   rework of windows, lock policy or the verifier. Swap only if the current one
+   loses on those clips.
+5. **The 2.65 s word-latency floor.** Judged from the 615 s session, where every
+   word of an ayah flipped to its verdict in one batch ~2.7 s after the lock
+   arrived. Item 1 shows whether that is the emission lag, the three-ayah
+   window's leading tail, or the streaming decoder — and which of them is
+   worth changing.
+6. **Standing-word pointer**, which can still be empty between windows.
+7. **UI polish**: type sizes, session list order, RTL on the live caption.
+
+## Shipped — measured, not hoped
+
+- **Paint scope.** The map is seeded from the session's verdicts, so a word
+  keeps its colour when the lock moves on. `paint_scope_parity.py`.
+- **Word-final vowel rule**, including sukun: `م` and `مْ` now match, because
+  pausing at an ayah end is the commonest way to finish a word and the first
+  version of the rule charged it as a mistake. `final_vowel_parity.py`.
+- **Verdict latency in the record (`wt`).**
+- **Tap / long-press selection.** `selection_parity.py`.
+- **Hide-mode progress strip.**
+- **In-reader search** — the magnifier searches the mushaf and jumps to the ayah.
+- **Page-turn follow** — the lock follows an explicit page choice when the
+  reciter is silent, and credits nothing.
+- **From the other worker, verified on top:** whisper rescued by the VAD
+  (`mic_gate.py`), pause that actually pauses, the denominator that could
+  exceed its own count, the tone crest measured from audio being judged rather
+  than standing in on words-per-minute, keep-awake, the recitation theme.
 
 ## Next, in order (superseded)
 

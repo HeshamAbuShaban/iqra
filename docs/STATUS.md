@@ -646,6 +646,47 @@ folding the alef variants — it simply was not reachable. The magnifier now lis
 live matches and jumps to the ayah; "Go to page" moved into the same sheet so
 the feature survives.
 
+## Recited under noise, 15 October 2026 — and what it settled
+
+Four sessions, recited through the app in a room with background noise, on the
+build carrying every fix below.
+
+| session | length | lock | moves | evaluated | decided | WRONG | noWindow | pollSec |
+|---|---|---|---|---|---|---|---|---|
+| 1 → 2:20 | 300 s | 2:20 | 25 | 269 | 193 | 10 | **0** | 0.556 |
+| 1 → 1:7 | 55 s | 1:7 | 6 | 29 | 29 | 4 | **0** | 0.299 |
+| 109 complete | 102 s | 6 | 4 | 26 | 20 | **0** | **0** | 0.310 |
+| 112 complete | 52 s | 4 | 3 | 15 | 14 | **0** | **0** | 0.288 |
+
+**What held.** Three surahs reached their final ayah, and two of the three
+produced **zero** WRONG verdicts on noisy phone audio. `noWindowWords` is 0 in
+every session including the 300 s one — the window repair holds in the
+condition the app is actually used in.
+
+**What did not, and it is the important one.** 14 WRONG verdicts, and 10 of
+them (71%) are still blamed on the word's **last unit** — the same class the
+final-vowel rule was written for. Every last unit is a bare `م`, `ن`, `هُ` or
+`رَ`: letters inside `FINAL_VOWELLESS`, where `final_vowel_parity.py` proves the
+rule fires, and the APK on the phone was built four hours after that fix shipped.
+
+So the emission is **not** the bare/vowelled pair the rule covers. `wu` says
+where in the word the blame lands and `wt` says when it was decided; neither says
+*what was heard*, and nothing on the record could say either. Until it can, any
+further change to the rule is a guess — and this project has already paid for
+enough of those.
+
+**The noise itself shows up in the cadence.** `pollSec` rose from 0.299 to
+**0.556** under noise, so the rate at which audio reaches the model is a third
+slower in the one condition the app exists for. Whether that is the VAD being
+honest or the RMS/VAD path costing polls is not yet separated.
+
+**The one change made:** the record now carries the emitted phoneme stream, the
+absolute base its indices are against, and the per-ayah arrival that defines the
+judged window. `device_blame.py` reconstructs the window and prints, per WRONG
+word, the expected units beside what was actually emitted. That is the missing
+half of the diagnosis — it is written, it is gated, and it has not yet been
+exercised by a real session.
+
 ## What is open next
 
 **1. The unexplained 71% - and the first session that carries `wu`.**
