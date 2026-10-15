@@ -48,13 +48,33 @@ def bucket(fr):
 
 
 def judged_span(o, surah, ayah):
-    """The emission window ayahObs() built for this ayah, absolute indices."""
+    """The emission window ayahObs() built for this ayah, or None.
+
+    **There is no window to report unless both neighbour arrivals survived.**
+    The record's `arrivals` is pruned to lockedAyah +/- 3 while the session is
+    running, so a word judged long before the lock has no neighbour entry. The
+    first version of this tool filled those gaps - `ayah-1` defaulted to 0 and
+    `ayah+1` defaulted to the end of the log - which produced a window spanning
+    the entire session and looked completely plausible. 10 of 14 false
+    accusations were then "explained" by a window that was 1,200 symbols wide.
+    A fallback that manufactures data is worse than no answer, which is the
+    same lesson the emission replay taught: it defaulted to the total length and
+    validated a rule that was never applied.
+    """
     base = o.get("emissionBase", 0)
     arr = o.get("arrivals") or {}
-    lo = max(arr.get("%d:%d" % (surah, ayah - 1), 0), base)
-    hi = min(arr.get("%d:%d" % (surah, ayah + 1), base + len(o.get("emissions", []))),
-             base + len(o.get("emissions", [])))
-    return lo, hi
+    total = len(o.get("emissions", []))
+    here = arr.get("%d:%d" % (surah, ayah))
+    before = arr.get("%d:%d" % (surah, ayah - 1))
+    after = arr.get("%d:%d" % (surah, ayah + 1))
+    if here is None:
+        return None, None, "no arrival in the retained log"
+    if (before is None or after is None) and (after is None and before is None):
+        return None, None, ("neighbour arrival outside the retained log; the "
+                            "arrivals kept are %s" % sorted(arr))
+    lo = max(before if before is not None else here, base)
+    hi = min(after if after is not None else base + total, base + total)
+    return lo, hi, None
 
 
 def show_cause(o, path):
@@ -88,7 +108,13 @@ def show_cause(o, path):
         if not words or i_ > len(words):
             continue
         units = [u for wd in words for u in tok(wd)]
-        lo, hi = judged_span(o, s_, a_)
+        lo, hi, why = judged_span(o, s_, a_)
+        if why:
+            print("  %-9s wu=%-5s window: NOT RECONSTRUCTABLE (%s). The record's"
+                  " arrivals were pruned to the lock's vicinity, so the window this"
+                  " word was judged against cannot be rebuilt from this record."
+                  % (w["key"], w.get("wu"), why))
+            continue
         span = ems[lo - o.get("emissionBase", 0):hi - o.get("emissionBase", 0)]
         print("  %-9s wu=%-5s window[%d:%d] emitted: %s"
               % (w["key"], w.get("wu"), lo, hi, " ".join(span)))

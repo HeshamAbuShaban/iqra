@@ -796,9 +796,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         sb.append("]")
         // The absolute index at which the lock arrived on each ayah, so a
         // replay can rebuild the very window ayahObs() built.
+        //
+        // Only arrivals INSIDE the retained emission log are written. An arrival
+        // below the base points at symbols that no longer exist, and writing it
+        // made the replay fill the gap with a default - a window spanning the
+        // whole session, which then "explained" 10 of 14 false accusations with
+        // 1,200 symbols of the wrong ayah. A record that cannot rebuild its own
+        // windows must say so, not invent them.
         sb.append(",\"arrivals\":{")
         var firstArr = true
+        val logEnd = emissionBase + emissionLog.size
         for ((k, v) in ayahArrival) {
+            if (v < emissionBase || v > logEnd) continue
             if (!firstArr) sb.append(',')
             firstArr = false
             sb.append('"').append(k).append("\":").append(v)

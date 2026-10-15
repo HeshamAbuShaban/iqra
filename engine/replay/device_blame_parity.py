@@ -82,6 +82,15 @@ def main() -> int:
          'append(",\\"arrivals\\":{")' in raw),
         ("the stream is bounded by the live log's cap",
          "val cap = EMISSION_LOG_CAP" in raw),
+        # The arrivals must be filtered to the retained log. Without that filter
+        # the replay filled a missing neighbour with a default, produced a window
+        # spanning the entire session, and "explained" 10 of 14 false accusations
+        # with 1,200 symbols of the wrong ayah. A record that cannot rebuild its
+        # own window must refuse, not invent.
+        ("the arrivals are filtered to the retained log",
+         re.search(r"if \(v < emissionBase \|\| v > logEnd\) continue", raw) is not None),
+        ("the reader refuses a window it cannot rebuild",
+         re.search(r"no arrival in the retained log", TOOL.read_text(encoding="utf-8")) is not None),
         # the source of the value
         ("PhonemeMapper declares the field on Alignment",
          re.search(r"val wrongStartFrac: FloatArray", mp) is not None),
@@ -105,11 +114,11 @@ def main() -> int:
         ],
         "emissionBase": 10,
         "emissions": ["نَ", "م", "قِ"],
-        "arrivals": {"18:4": 10},
+        "arrivals": {"18:1": 10, "18:2": 10, "18:3": 11, "18:4": 11, "18:5": 13},
     }
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "s.json"
-        p.write_text(json.dumps(rec), encoding="utf-8")
+        p.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
         r = subprocess.run([sys.executable, str(TOOL), str(p)], capture_output=True, text=True)
         out = r.stdout
         if r.returncode != 0:
