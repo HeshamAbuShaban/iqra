@@ -728,6 +728,50 @@ comparison has not run, and the crowd handling is untouched. `docs/TODO.md`
 carries them in order, and the noise sessions put one question at the top that
 all of it depends on.
 
+## The four noise sessions of 16 October — and a trap in my own tool
+
+Four sessions, all carrying the new emission stream. The honest result is that
+**the record cannot yet answer the question it was written to answer**, and the
+reason is a defect in the record plus a defect in the tool that read it.
+
+| session | length | decided | WRONG | noWindow | pollSec |
+|---|---|---|---|---|---|
+| 1 → 2:1 | 109 s | 19 | 2 | 0 | 0.323 |
+| 2:1 → 2:12 | 240 s | 83 | 8 | 0 | 0.291 |
+| 105 → 2:17 | 95 s | 21 | 4 | 0 | 0.289 |
+| 2:1 → 2:25 | 233 s | 148 | 12 | 0 | 0.301 |
+
+`noWindowWords` is 0 in every one, on a phone in a noisy room, over 677 seconds
+of recitation. That part of the app is sound.
+
+**The trap.** `device_blame.py` reported windows like `[0:1213]` — the entire
+session — and used them to "explain" 10 of 26 false accusations. Those windows
+were fabricated. The record's `arrivals` array is pruned to the lock's vicinity
+while the session runs, so most ayat have no neighbour entry; the reader filled
+each gap with a default, `ayah-1` → 0 and `ayah+1` → the end of the log. The
+result looked exactly like data. It was 1,200 symbols of the wrong ayah.
+
+The emission replay already taught this lesson in `686380e`: its fallback
+defaulted to the total length, and it validated a rule that was never applied.
+
+Two fixes, both gated:
+1. the **record** now filters arrivals to the retained emission log, so an
+   arrival pointing at symbols that no longer exist is not written;
+2. the **tool** now returns "NOT RECONSTRUCTABLE" instead of inventing a span.
+
+Gate: `device_blame_parity`, six injections red — including one that reinstates
+the fabricated window.
+
+**So the last-unit class is still unnamed.** 20 of 26 (77%) remain. What changed
+is that the tool can no longer lie about it. To close it, the arrivals must
+survive for the whole retained log rather than `lockedAyah ± 3`; that is a
+one-line change to `pruneAyahWindows` and it is the top item in `docs/TODO.md`.
+
+**And one unrelated bug visible in these records:** session three starts in
+surah 105 and ends in **surah 2 at ayah 17**. Al-Fiil has five ayat. Whatever
+carried the lock from 105 to 2 covered the wrap from 114 → 1 and most of
+Al-Baqarah in four moves, which is not recitation.
+
 ## What is open next
 
 **1. The unexplained 71% - and the first session that carries `wu`.**
