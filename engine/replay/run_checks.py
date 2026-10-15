@@ -93,6 +93,8 @@ CHECKS = [
      "no import names a component that is not used - the residue of deleted features"),
     ("device_blame_parity", "none",
      "the record says WHERE a word was blamed, and the reader buckets it"),
+    ("arrival_retention_parity", "none",
+     "the arrival retention spans every ayah still in the emission log"),
     ("doc_check_count", "none",
      "the documents name the same number of checks the gate runs"),
     ("final_vowel_parity", "none",

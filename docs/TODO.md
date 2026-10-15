@@ -31,6 +31,16 @@ finding is a guess without it.
 
 ## Next, in order
 
+0. **Read the last-unit class back, now that the windows are rebuildable.**
+   Recite once on the build installed 02:58 16 Oct and run:
+   ```
+   adb -s 35d5637e shell run-as com.iqra.quran cat files/sessions/<file>.json > /tmp/x.json
+   python3 engine/replay/device_blame.py /tmp/x.json
+   ```
+   The arrival retention now spans the retained emission log (110 ayat vs a
+   4,000-symbol log, pinned by `arrival_retention_parity`), so windows are real
+   instead of defaulted. Expect the 77% last-unit class to resolve into a named
+   cause. Until it does, do not touch the final-vowel rule.
 1. **Write the phoneme stream into the session record.** One bounded array
    alongside `frames`, holding the symbols the model actually emitted, in
    order, with the poll they arrived on. `wu` says WHERE in a word the blame

@@ -1386,10 +1386,28 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         return PhonemeMapper.align(w, exp).coverage
     }
 
-    /** Drops windows the lock has left well behind, so the map cannot grow forever. */
+    /**
+     * Drops windows the lock has left well behind, so the map cannot grow forever.
+     *
+     * The retention window must agree with the emission log's, or the record
+     * cannot rebuild the windows it describes. It did not: this kept
+     * `around ± 3` while `emissionLog` kept 4,000 symbols, so a replay reading
+     * a WRONG word from early in a session found no neighbour arrival, filled
+     * the gap with a default, and got a window spanning the whole session -
+     * 1,200 symbols of the wrong ayah, presented as data.
+     *
+     * Measured over the user's four noisy sessions: 26 WRONG verdicts, and 10 of
+     * them were "explained" by a window the app never used. The fixing change
+     * was to make the retention match, not to make the fallback cleverer.
+     *
+     * Kept on the same footing as the trim below: an ayah is droppable once the
+     * audio its window starts from has left the log. `EMISSION_LOG_CAP` bounds
+     * the symbols, and a surah's ayat are close enough in symbol count that a
+     * generous multiple still only holds a handful of entries.
+     */
     private fun pruneAyahWindows(surah: Int, around: Int) {
-        val keepFrom = around - 3
-        val keepTo = around + 3
+        val keepFrom = maxOf(1, around - RETENTION_AYAH_SPAN)
+        val keepTo = around + RETENTION_AYAH_SPAN
         ayahArrival.keys.removeAll { k ->
             val parts = k.split(":")
             val s = parts.getOrNull(0)?.toIntOrNull()
@@ -3347,6 +3365,23 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
          * ever asks for. Bounded so a long session cannot grow without limit.
          */
         private const val EMISSION_LOG_CAP = 4000
+
+        /**
+         * How many ayat of arrival history to keep, so a replay can rebuild the
+         * window each ayah was judged against.
+         *
+         * `EMISSION_LOG_CAP` bounds the symbols and an ayah averages well under
+         * 40 of them, so 4,000 symbols is over a hundred ayat. Keeping 110
+         * covers the log with margin, costs 110 map entries, and guarantees
+         * that every ayah whose audio is still present still has its
+         * neighbours. The old value of 3 matched nothing, and a replay reading a
+         * WRONG word back filled the resulting gap with a default - a window
+         * spanning the whole session, presented as data.
+         *
+         * Guarded by arrival_retention_parity, which requires
+         * `span * 40 >= EMISSION_LOG_CAP`.
+         */
+        private const val RETENTION_AYAH_SPAN = 110
         /** Consecutive zero-token recoveries before we stop and report failure
          *  rather than looping a recovery that cannot succeed. */
         private const val MAX_STARVATION_RECOVERIES = 3
