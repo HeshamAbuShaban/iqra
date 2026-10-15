@@ -91,6 +91,74 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     val lastMatch: StateFlow<Pair<Int, Double>?> = _lastMatch
     private val _wpmFlow = MutableStateFlow(70.0)
     val wpmFlow: StateFlow<Double> = _wpmFlow
+
+    /**
+     * How much of the voice currently being judged sits in the HIGH band, 0..1.
+     *
+     * This answers "is this a low voice or a high one", which amplitude cannot:
+     * RMS is loudness, and two people saying the same ayah at the same volume
+     * can sit at opposite ends of the range while reporting identical levels.
+     * The crest was reading brightness off words-per-minute instead, which is a
+     * stand-in for a quantity the app does not actually have - it moved with
+     * reading speed, so a slow deliberate reciter and a low voice looked alike.
+     *
+     * Measured from the samples the poll loop is ALREADY feeding, not from a new
+     * source. `docs/ASK_mic_bands.md` asked the engine for a `micBands()`
+     * accessor because its sample buffers are private; that was the wrong
+     * question. The buffers do not need to be reachable - the audio arrives as
+     * `fresh` on the way to the recogniser, and a voice's spectral balance is a
+     * property of those samples, not of who holds them. No native change, no
+     * second read of the recorder, no extra copy of the capture ring.
+     *
+     * One-pole low-pass, so the split is a pair of accumulators rather than an
+     * FFT: roughly four flops per sample, a few microseconds over a 0.25 s poll
+     * against a 250 ms cadence. The alternative - windowing and transforming on
+     * the poll thread - would have put its own cost into the loop that decides
+     * how fast audio reaches a model.
+     */
+    private val _toneHigh = MutableStateFlow(0f)
+    val toneHigh: StateFlow<Float> = _toneHigh
+
+    // Smoothed across polls so the crest does not strobe at the gate rate.
+    private var toneLowEma = 0f
+    private var toneHighEma = 0f
+
+    /**
+     * Split one poll of audio into low and high band energy.
+     *
+     * The crossover is 700 Hz, inside the fundamental range of a recitation
+     * voice: a hamza, a kaf and a sibilant all live above it, so the high band
+     * rises when the articulation does and not merely when volume does.
+     *
+     * Reported as a RATIO rather than two levels. Absolute band energy tracks
+     * how far the phone is from the mouth, which is exactly the thing the crest
+     * should not be showing, while the ratio is a property of the voice alone.
+     */
+    private fun measureTone(x: FloatArray) {
+        if (x.size < 64) return
+        // One-pole coefficient for 700 Hz at 16 kHz, clamped so the filter stays
+        // stable if the sample rate ever changes under this.
+        val a = (TONE_CROSSOVER_HZ / RECORDER_SAMPLE_RATE).toFloat().coerceIn(0.001f, 0.9f)
+        var lp = 0f
+        var lowSq = 0.0
+        var highSq = 0.0
+        for (v in x) {
+            lp += a * (v - lp)
+            val low = lp
+            val high = v - lp
+            lowSq += (low * low).toDouble()
+            highSq += (high * high).toDouble()
+        }
+        val n = x.size
+        val low = kotlin.math.sqrt(lowSq / n).toFloat()
+        val high = kotlin.math.sqrt(highSq / n).toFloat()
+        toneLowEma += (low - toneLowEma) * 0.25f
+        toneHighEma += (high - toneHighEma) * 0.25f
+        val total = toneLowEma + toneHighEma
+        // No opinion when there is no voice to have an opinion about. 0 here
+        // means "silent", which the crest already has a reading for.
+        _toneHigh.value = if (total > 1e-5f) (toneHighEma / total).coerceIn(0f, 1f) else 0f
+    }
     private val _gateReason = MutableStateFlow("")
     val gateReason: StateFlow<String> = _gateReason
 
@@ -1575,6 +1643,9 @@ private fun computeWindow(): List<Int> {
         // belongs to an earlier session.
         noiseFloor = SILENCE_RMS
         sessionVad = false
+        toneLowEma = 0f
+        toneHighEma = 0f
+        _toneHigh.value = 0f
         // Restart the measured cadence at the declared one, so a session that
         // opens with a fast poll is not judged by the previous session's slow
         // one, and so the very first ayah behaves exactly as before.
@@ -2261,6 +2332,11 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 }
                 _gateReason.value = "decoding"
                 speechFramesSinceAdvance++
+                // Measured here, on the branch where audio is really going to the
+                // recogniser. Not while the gate is shut and not while paused: the
+                // crest shows the voice being judged, and audio the app has
+                // declined to judge has no say in how that voice is drawn.
+                measureTone(fresh)
                 try {
                     runZipformerFrame(fresh)
                 } catch (e: Exception) {
@@ -3205,6 +3281,10 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         private const val MAX_STARVATION_RECOVERIES = 3
         // Below this RMS the rolling window is effectively silence -> skip decoding.
         private const val SILENCE_RMS = 0.0025f
+        /** Recorder rate. One place, because measureTone derives a filter from it. */
+        private const val RECORDER_SAMPLE_RATE = 16000
+        /** Where the recitation voice is split into "body" and "articulation". */
+        private const val TONE_CROSSOVER_HZ = 700.0
         /** Neutral speed estimate a session starts from, and the value the
          *  wpm readout returns to between sessions. */
         private const val SEED_WPM = 70.0

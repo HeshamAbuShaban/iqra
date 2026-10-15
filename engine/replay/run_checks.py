@@ -78,6 +78,9 @@ CHECKS = [
      "nothing in the recognition surface is declared and never referenced"),
     ("honest_numbers", "none",
      "no data and zero percent stay distinct, and the live list paints one word index"),
+    ("tone_measurement", "none",
+     "the crest reads a measured tone, not words-per-minute: judged audio, as a "
+     "ratio, one-pole, brightness only"),
     ("latin_wrap_parity", "none",
      "every Latin string on a right-to-left screen is bidi-isolated, so a trailing "
      "full stop cannot migrate to the left"),

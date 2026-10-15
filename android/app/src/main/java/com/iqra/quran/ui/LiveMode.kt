@@ -131,11 +131,17 @@ private fun LiveModeContent(
     val lcG = LocalIqraColors.current
     val lc = LocalLiveColors.current
     val animOn = remember { ReaderPrefs.liveAnimation(ctx) }
-    // Tone needs band energy the engine does not publish - micLevel() is RMS and
-    // micSampleCount() is a count, so there is no spectrum to read. Until the
-    // view model exposes one, brightness follows pace and the crest's own onset,
-    // which is honest about being a stand-in rather than pretending to measure a
-    // pitch that is not available.
+    // Brightness reads the voice's own spectral balance now: the fraction of the
+    // judged audio sitting above 700 Hz. It used to follow words-per-minute,
+    // which is a stand-in for a quantity the app did not have - it moved with
+    // reading speed, so a slow deliberate reciter and a low voice looked alike.
+    //
+    // `docs/ASK_mic_bands.md` asked the engine for a `micBands()` accessor
+    // because its sample buffers are private. That was the wrong question to
+    // ask: the audio reaches the poll loop as `fresh` on its way to the
+    // recogniser, and a voice's tone is a property of those samples, not of who
+    // holds them. No native change was needed for something that was never out
+    // of reach.
     val recording by vm.recording.collectAsStateWithLifecycle()
     val statusMap by vm.statusMap.collectAsStateWithLifecycle()
     // The count of words actually judged this session, per ayah, from the durable
@@ -287,9 +293,14 @@ private fun LiveModeContent(
     val amp = remember { mutableFloatStateOf(0f) }
     val voice = remember { mutableFloatStateOf(0f) }
     var startedAt by remember { mutableLongStateOf(0L) }
-    // Public on the view model; the engine keeps the raw field private.
-    val wpm by vm.wpmFlow.collectAsState()
-    val brightness = remember(wpm) { ((wpm - 40.0) / 90.0).toFloat().coerceIn(0f, 1f) }
+    // High-band share of the voice being judged. Amplitude still carries the
+    // wave's HEIGHT; this carries its brightness. They are different properties
+    // and collapsing them into one reading is what made the crest look like a
+    // volume meter with decoration.
+    val toneHigh by vm.toneHigh.collectAsStateWithLifecycle()
+    val brightness = remember(toneHigh, paused) {
+        if (paused) 0f else toneHigh.coerceIn(0f, 1f)
+    }
     // The orb's memory. A plain FloatArray, written by the poll and read inside
     // the draw lambda - never touched during composition, so it costs one
     // canvas redraw rather than a recomposition.
