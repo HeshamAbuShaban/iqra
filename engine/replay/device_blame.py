@@ -23,6 +23,7 @@ Run:  adb shell run-as com.iqra.quran cat files/sessions/<file>.json > /tmp/x.js
 
 import json
 import sys
+from pathlib import Path
 from collections import Counter
 
 
@@ -45,6 +46,60 @@ def bucket(fr):
     return "near the end (80-100%)"
 
 
+
+def judged_span(o, surah, ayah):
+    """The emission window ayahObs() built for this ayah, absolute indices."""
+    base = o.get("emissionBase", 0)
+    arr = o.get("arrivals") or {}
+    lo = max(arr.get("%d:%d" % (surah, ayah - 1), 0), base)
+    hi = min(arr.get("%d:%d" % (surah, ayah + 1), base + len(o.get("emissions", []))),
+             base + len(o.get("emissions", [])))
+    return lo, hi
+
+
+def show_cause(o, path):
+    """For every WRONG word: the expected units, and what was actually emitted
+    in the window the app judged against.
+
+    This is the read-back that `wu` and `wt` could not give. `wu` says where in
+    the word the blame landed; this says what was heard there.
+    """
+    ems = o.get("emissions")
+    if not ems:
+        print("\nNo emission stream in this record: it predates the capture, so "
+              "the cause of each WRONG cannot be named. Re-recite on the build "
+              "that writes it.")
+        return
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import word_verdicts as wv
+    table = json.load(open(wv.W + "/ordered_quran_phonemes.json", encoding="utf-8"))
+    tok = wv.make_tokenizer(wv.load_units())
+    print("\nEmission stream: %d symbols, base %d." % (len(ems), o.get("emissionBase", 0)))
+    n = 0
+    for w in o.get("words", []):
+        if w.get("st") != "WRONG":
+            continue
+        n += 1
+        if n > 12:
+            break
+        s_, a_, i_ = (int(v) for v in w["key"].split(":"))
+        words = table.get("%d:%d" % (s_, a_), {}).get("aya_phonemes_list")
+        if not words or i_ > len(words):
+            continue
+        units = [u for wd in words for u in tok(wd)]
+        lo, hi = judged_span(o, s_, a_)
+        span = ems[lo - o.get("emissionBase", 0):hi - o.get("emissionBase", 0)]
+        print("  %-9s wu=%-5s window[%d:%d] emitted: %s"
+              % (w["key"], w.get("wu"), lo, hi, " ".join(span)))
+        print("            word's expected units: %s" % " ".join(
+            units[k] for k, ow in enumerate([j for wd in words for j, _ in enumerate(tok(wd))])
+            if ow == i_ - 1))
+    if n:
+        print("  ^ the emitted span is the window the app judged against; the "
+              "expected line is that word's own units.")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -54,12 +109,14 @@ def main():
     first_unit_words = []
     last_unit_words = []
     lats = []
+    LAST_O = {}
     for path in sys.argv[1:]:
         try:
             o = json.load(open(path, encoding="utf-8"))
         except Exception as e:
             print("skip %s: %s" % (path, e))
             continue
+        LAST_O[path] = o
         have_wu = any("wu" in w for w in o.get("words", []))
         have_wt = any("wt" in w for w in o.get("words", []))
         if not have_wu and not have_wt:
@@ -106,6 +163,7 @@ def main():
         print("ayah is done\". Compare it with the frames' per-poll cadence to tell")
         print("a slow engine from a late paint.")
 
+    show_cause(LAST_O.get(path), path)
     print()
     if first_unit_words:
         print("Blamed on the FIRST unit (%d):" % len(first_unit_words))

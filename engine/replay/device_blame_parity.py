@@ -47,6 +47,7 @@ def main() -> int:
     mp = code(MAP)
     bad = []
 
+    raw = VM.read_text(encoding="utf-8")
     checks = [
         ("the record writes a blame position for WRONG words",
          re.search(r'append\(",\\"wu\\"', vm) is not None),
@@ -67,6 +68,20 @@ def main() -> int:
          re.search(r"sessionTerminalAt\[key\] = System\.currentTimeMillis\(\) - sessionStartedAtMs", vm) is not None),
         ("a word that is re-judged does not get a new time",
          re.search(r"if \(prev != WordStatus\.CORRECT && prev != WordStatus\.WRONG\) \{[\s\S]{0,400}?sessionTerminalCount\+\+[\s\S]{0,400}?sessionTerminalAt\[key\]", vm) is not None),
+        # WHAT was heard. `wu` says where in a word the blame landed and `wt`
+        # says when; neither says what the model emitted, and that absence is
+        # what left 71% of a real noisy session's false accusations unnamed.
+        # Plain substring tests, not regex: the Kotlin source spells these keys
+        # with escaped quotes, and a regex over that is a thing that can silently
+        # match nothing while the check reports green.
+        ("the record carries the emitted phonemes",
+         'append(",\\"emissions\\":[")' in raw),
+        ("the emitted stream is indexed by an absolute base",
+         'append(",\\"emissionBase\\":")' in raw),
+        ("the per-ayah arrivals are written",
+         'append(",\\"arrivals\\":{")' in raw),
+        ("the stream is bounded by the live log's cap",
+         "val cap = EMISSION_LOG_CAP" in raw),
         # the source of the value
         ("PhonemeMapper declares the field on Alignment",
          re.search(r"val wrongStartFrac: FloatArray", mp) is not None),
@@ -86,7 +101,11 @@ def main() -> int:
             {"key": "18:3:2", "st": "WRONG", "wu": -1},
             {"key": "18:4:1", "st": "CORRECT", "wt": 8123},
             {"key": "18:4:2", "st": "CORRECT", "wt": 9600},
+            {"key": "18:4:3", "st": "WRONG", "wu": 1000},
         ],
+        "emissionBase": 10,
+        "emissions": ["نَ", "م", "قِ"],
+        "arrivals": {"18:4": 10},
     }
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "s.json"
@@ -96,7 +115,7 @@ def main() -> int:
         if r.returncode != 0:
             bad.append("device_blame.py failed on a synthetic record: " + r.stderr[-140:])
         else:
-            if "WRONG words with a recorded blame position: 4" not in out:
+            if "WRONG words with a recorded blame position: 5" not in out:
                 bad.append("the tool does not count the WRONG words it was given")
             # 4. the buckets must not collapse
             if "first unit" not in out or "middle" not in out or "last unit" not in out:
@@ -107,6 +126,11 @@ def main() -> int:
                 bad.append("the tool does not report the verdict latency")
             if "8123" not in out:
                 bad.append("the recorded verdict time is not shown")
+            if "Emission stream" not in out:
+                bad.append("the tool does not report the emitted phonemes")
+            if "نَ" not in out:
+                bad.append("the emitted symbols are not shown, so a WRONG word's "
+                           "cause cannot be named from a record")
 
     if bad:
         for b in bad:

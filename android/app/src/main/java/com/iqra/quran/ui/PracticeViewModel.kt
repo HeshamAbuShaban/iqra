@@ -764,6 +764,46 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // CORRECT, which made a perfectly clean session record as ZERO verdicts
         // and read like a wipe. An instrument that reports a filtered view as
         // though it were the whole is worse than one that reports nothing.
+        // The phonemes the model actually emitted, in order, with the absolute
+        // index the first of them occupies. `wu` already says WHERE in a word
+        // the blame landed, and `wt` says WHEN it was decided, but neither says
+        // WHAT was heard - and that absence is what stopped the residual blame
+        // class from being named.
+        //
+        // Measured, 15 October: 10 of 14 false accusations on real noisy
+        // recitation sat on a word's last unit, every one of them on a letter
+        // inside FINAL_VOWELLESS where final_vowel_parity proves the rule fires.
+        // The build contained the fix. So the emission is not the bare/vowelled
+        // pair the rule covers, and nothing on the record could say what it was.
+        //
+        // With this, a replay reconstructs exactly the window the app judged an
+        // ayah against - [arrival(N-1), arrival(N+1)) - re-runs the alignment,
+        // and sees which emitted symbol was charged against which expected unit.
+        // That distinguishes a table defect from an emission the rule does not
+        // cover from a genuine mistake, which is the whole point.
+        //
+        // Bounded by the same cap that already bounds the live log, so a long
+        // session cannot inflate the record. Arrivals are absolute indices into
+        // this array's base, which is what makes them survive the trim.
+        sb.append(",\"emissionBase\":").append(emissionBase)
+        sb.append(",\"emissions\":[")
+        var firstSym = true
+        for (s in emissionLog) {
+            if (!firstSym) sb.append(',')
+            firstSym = false
+            sb.append('"').append(s).append('"')
+        }
+        sb.append("]")
+        // The absolute index at which the lock arrived on each ayah, so a
+        // replay can rebuild the very window ayahObs() built.
+        sb.append(",\"arrivals\":{")
+        var firstArr = true
+        for ((k, v) in ayahArrival) {
+            if (!firstArr) sb.append(',')
+            firstArr = false
+            sb.append('"').append(k).append("\":").append(v)
+        }
+        sb.append("}")
         sb.append(",\"words\":[")
         var first = true
         for ((k, v) in sessionArchive) {
