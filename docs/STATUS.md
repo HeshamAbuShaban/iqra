@@ -857,6 +857,36 @@ passes while the thing it guards loses a third of its output is not a check. The
 replacement asserts the two bounds that make the trim safe, and it fails if
 either goes.
 
+## The standing word, confirmed null from the record and fixed
+
+The user reported *"standingWord always null"*: the highlight disappears exactly
+when an ayah is finished.
+
+Confirmed from their own sessions before changing anything. Session
+`s-1792114078210-102` ended with `103:3` fully decided - **9 words, 9 of them
+CORRECT or WRONG**. The pointer's derivation walks past a verdict to the
+following word, so an ayah with nothing left to walk to returns null:
+
+| session | final ayah | words decided | pointer |
+|---|---|---|---|
+| 2:19 | 2:19 | 18 / 19 | held |
+| 100:11 | 100:11 | 4 / 5 | held |
+| **103:3** | 103:3 | **9 / 9** | **was null** |
+| 2:2 | 2:2 | 3 / 7 | held |
+| 1:7 | 1:7 | 4 / 9 | held |
+
+The fix adds an explicit null-guard after the verdict walk: fall back to the
+locked ayah's own **last** word - a real word of what is being recited, present
+whenever `lockedAyah` is, and semantically the end of the ayah just completed.
+Never the first word, which would jump the pointer backwards onto material
+already judged.
+
+Gate: `standing_word.py`, five injections red - fallback removed, first-word
+instead of last, wrong-ayah scope, fallback hoisted above the walk (so the
+pointer would always sit at the ayah end), and the verdict walk itself removed.
+The ordering assertion exists because that last mutation would otherwise be
+invisible: the fallback would still exist and still work, just in the wrong place.
+
 ## The last-unit class is a WINDOW problem, and it is proved
 
 Your four sessions of 16 October, on the build with the retention fixed. The
