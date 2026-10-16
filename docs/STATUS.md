@@ -803,6 +803,46 @@ these three records predate it. That is the top item in `docs/TODO.md`.
 phone. Two sessions ended with the lock in surah 2 and one in surah 1 — no more
 of the 105 → 2 wrap seen earlier, though that is three sessions and not a trend.
 
+## The last-unit class is a WINDOW problem, and it is proved
+
+Your four sessions of 16 October, on the build with the retention fixed. The
+retention fix held: 19 arrivals against 28 moves, 11 against 17, 3 against 3.
+
+| session | decided | WRONG | correct | noWindow |
+|---|---|---|---|---|
+| 1 → 2:19 | 219 | 9 | 96% | **0** |
+| 99 → 100 | 71 | 2 | 97% | **0** |
+| 102 → 103 | 42 | 1 | 98% | **0** |
+| 98 | 0 | 0 | — | 0 |
+
+**And 11 of the 12 false accusations sit on an ayah BOUNDARY** — six on an
+ayah's first word, five on its last. The two windows the record could rebuild
+showed the cause outright:
+
+- `100:8:1` expects `وَلِلَّهِ`; its window opens on a different ayah's text.
+- `2:2:2` expects `بِالْكَافِرِينَ`; its window holds Al-Fatiha's.
+
+The window starts at `arrival(N-1)` because the lock arrives mid-ayah and N's own
+opening is still in the previous slice. That part is necessary — the 5.3% versus
+93.4% measurement is real. The artefact is that the previous ayah's TAIL then sits
+at the leading edge and is blamed for the next ayah's first word.
+
+**Fixed by trimming that edge, not by moving it.** `ayahSpanEnd` records where
+each ayah's speech actually ended, from the alignment's own `emitWord`, and
+`ayahObs` starts the next ayah just past it. The trim is gated three ways: only a
+recorded end, only forward, only strictly inside the window — so it can remove
+blamed prefix and cannot invent blame.
+
+Gate: `window_anchor_parity`, five injections red. Two of them exposed bugs in
+the check itself — a non-greedy regex truncated `ayahObs`'s body and the check
+passed on a fix it had never seen, and testing only one of the two functions
+that read the map left a default position undetected. Both fixed.
+
+**Not yet verified on device:** whether the trim actually reduces the boundary
+blame. Three things are uncertain — the first frames after a reset may have no
+recorded end and fall back to the old behaviour, which is safe but unchanged; and
+a surah handoff crosses into a fresh `ayahSpanEnd`. One more session will say.
+
 ## What is open next
 
 **1. The unexplained 71% - and the first session that carries `wu`.**
