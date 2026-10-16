@@ -69,9 +69,21 @@ def judged_span(o, surah, ayah):
     after = arr.get("%d:%d" % (surah, ayah + 1))
     if here is None:
         return None, None, "no arrival in the retained log"
-    if (before is None or after is None) and (after is None and before is None):
-        return None, None, ("neighbour arrival outside the retained log; the "
-                            "arrivals kept are %s" % sorted(arr))
+    if before is None or after is None:
+        # A missing neighbour is a judgment the record cannot reproduce. The
+        # app itself CLAMPS the window from the log's far end - see below - so
+        # importing the log start or the log end stands in for audio the window
+        # never held.
+        pass
+    # The app's own bound: a long ayah cannot let the per-frame cost blow up.
+    # The replay must apply the same clamp, or every width it prints is the
+    # full session when the arrivals are sparse - which is how 10 of 26 false
+    # accusations were once "explained" by 1,200 symbols of the wrong ayah.
+    lo = max(before if before is not None else here, base)
+    hi = min(after if after is not None else base + total, base + total)
+    # Same bound as ayahObs: hi - min(lo, hi - 480) can never exceed 480.
+    bounded = max(lo, hi - 480)
+    return bounded, hi, None
     lo = max(before if before is not None else here, base)
     hi = min(after if after is not None else base + total, base + total)
     return lo, hi, None
@@ -94,7 +106,9 @@ def show_cause(o, path):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import word_verdicts as wv
     table = json.load(open(wv.W + "/ordered_quran_phonemes.json", encoding="utf-8"))
-    tok = wv.make_tokenizer(wv.load_units())
+    units = wv.load_units()
+    unit_set = set(units)
+    tok = wv.make_tokenizer(units)
     print("\nEmission stream: %d symbols, base %d." % (len(ems), o.get("emissionBase", 0)))
     n = 0
     for w in o.get("words", []):
@@ -118,9 +132,26 @@ def show_cause(o, path):
         span = ems[lo - o.get("emissionBase", 0):hi - o.get("emissionBase", 0)]
         print("  %-9s wu=%-5s window[%d:%d] emitted: %s"
               % (w["key"], w.get("wu"), lo, hi, " ".join(span)))
-        print("            word's expected units: %s" % " ".join(
-            units[k] for k, ow in enumerate([j for wd in words for j, _ in enumerate(tok(wd))])
-            if ow == i_ - 1))
+        exp_units = [units[k] for k, ow in enumerate([j for wd in words for j, _ in enumerate(tok(wd))])
+                     if ow == i_ - 1]
+        print("            word's expected units: %s" % " ".join(exp_units))
+        # Re-run the app's own alignment on this window and name what the
+        # blamed unit was charged against. Only for words the phone marked
+        # WRONG: this is the read-back that answers what was heard there.
+        try:
+            got = [e for e in span if e in unit_set]
+            flat = [u for wd in words for u in tok(wd)]
+            uw2 = [j for j, wd in enumerate(words) for _ in tok(wd)]
+            matched, wrong, _r2q, _e, _h, _nw = wv.align(got, flat, uw2)
+            for k in range(len(flat)):
+                if uw2[k] != i_ - 1:
+                    continue
+                q = _r2q[k]
+                heard = got[q] if q is not None and q >= 0 else "(no symbol)"
+                flag = " <-- CHARGED" if wrong[k] else ("matched" if matched[k] else "")
+                print("              exp %-6s heard %-6s %s" % (flat[k], heard, flag))
+        except Exception as e:
+            print("              (re-align skipped: %s)" % e)
     if n:
         print("  ^ the emitted span is the window the app judged against; the "
               "expected line is that word's own units.")
