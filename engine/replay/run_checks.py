@@ -99,6 +99,8 @@ CHECKS = [
      "the window's leading edge is trimmed by the alignment and never by a default"),
     ("standing_word", "none",
      "the standing word is never null, and the verdict walk still leads"),
+    ("page_turn_boundary", "none",
+     "a page opens a new surah only when it starts one, not when it holds one"),
     ("doc_check_count", "none",
      "the documents name the same number of checks the gate runs"),
     ("final_vowel_parity", "none",
