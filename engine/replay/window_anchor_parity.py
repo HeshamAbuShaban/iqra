@@ -53,32 +53,57 @@ def main() -> int:
     vm = VM.read_text(encoding="utf-8")
     bad = []
 
-    body = fn("ayahObs", vm)
-    if not body:
+    def fn(name):
+        m = re.search(r"private fun %s\(" % name, vm)
+        if not m:
+            return ""
+        depth = 0
+        for i in range(m.start(), len(vm)):
+            if vm[i] == "{":
+                depth += 1
+            elif vm[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    return vm[m.start():i + 1]
+        return ""
+
+    body_ = fn("ayahObs")
+    if not body_:
         bad.append("ayahObs is gone")
     else:
-        # 1. no window is trimmed to a stored span end
-        if re.search(r"ayahSpanEnd\[[^\]]+\].*\n\s*from = prevEnd", body) \
-                or re.search(r"if \(prevEnd != null[^)]*\).*\n\s*from = prevEnd", body, re.S):
-            bad.append("ayahObs trims its window to ayahSpanEnd; that is the "
+        if "applySpanEndTrim" not in body_:
+            bad.append("ayahObs does not go through the guarded trim; the "
+                       "boundary artefact is back or the trim is unbounded")
+        if re.search(r"ayahSpanEnd\[[^\]]+\][\s\S]{0,200}?from = prevEnd", body_):
+            bad.append("ayahObs assigns from a raw span end again - that is the "
                        "ratchet that took 332 decided words to 27")
-        # 2. the origin helper must be raw, so any future stored end denotes a
-        #    real audio position
-        start = fn("ayahWindowStartOf", vm)
-        if not start:
-            bad.append("ayahWindowStartOf is gone; a stored end has no origin")
-        elif "ayahSpanEnd" in start:
-            # The whole function, not the text before the first `return`: the
-            # body contains an early `return -1`, so splitting on "return" hid
-            # everything after it - a trim re-added at the end was invisible.
-            bad.append("ayahWindowStartOf applies the trim, so any end stored "
-                       "against it is short of the real audio boundary")
-        # 3. stored ends only ever come from a raw window start
-        sweep = re.search(r"val end = spanBase \+ lastHit \+ 1", vm)
-        if sweep and "ayahWindowStartOf" not in vm[sweep.start() - 400:sweep.start()]:
-            bad.append("a span end is not measured from the raw window start")
 
-    clear = fn("clearEmissionLog", vm)
+    trim = fn("applySpanEndTrim")
+    if not trim:
+        bad.append("applySpanEndTrim is gone; the guards have no owner")
+    else:
+        if "MIN_WINDOW_SYMBOLS" not in trim:
+            bad.append("the trim has no minimum-window floor; the first version "
+                       "starved windows to 15-36 symbols and lost a third of "
+                       "every decided verdict")
+        if "hi - MIN_WINDOW_SYMBOLS" not in trim:
+            bad.append("the floor is not applied to the right edge, so it "
+                       "cannot actually bound the window's length")
+        if not re.search(r"prevEnd <= from", trim):
+            bad.append("the trim can move the left edge BACKWARD, which would "
+                       "reintroduce the prefix it is meant to remove")
+        if "private const val MIN_WINDOW_SYMBOLS" not in vm:
+            bad.append("MIN_WINDOW_SYMBOLS is not declared")
+
+    start = fn("ayahWindowStartOf")
+    if not start:
+        bad.append("ayahWindowStartOf is gone; a stored end has no origin")
+    elif "ayahSpanEnd" in start:
+        bad.append("ayahWindowStartOf applies the trim, so any end stored "
+                   "against it is short of the real audio boundary and the "
+                   "trim ratchets forward")
+
+    clear = fn("clearEmissionLog")
     if not clear or "ayahSpanEnd.clear()" not in clear:
         bad.append("the span ends are not cleared with the log they index; a "
                    "new session could start a window after a position from a "
@@ -88,7 +113,8 @@ def main() -> int:
         for x in bad:
             print("FAIL:", x)
         return 1
-    print("ok: the ratchet stays removed; span-end recording is diagnostic only")
+    print("ok: the window trim is floored, forward-only, and measured from a raw "
+          "start")
     return 0
 
 

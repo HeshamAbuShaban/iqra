@@ -1434,22 +1434,49 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // This can only ever MOVE THE LEFT EDGE RIGHT and only past a boundary
         // the alignment has already placed, so it can remove blamed prefix and
         // cannot invent new blame. Guarded by window_anchor_parity.
-        // Span-end trimming REMOVED, deliberately.
+        // Span-end trimming, with the two guards the first attempt lacked.
         //
-        // It was added to stop the previous ayah's tail being blamed for this
-        // ayah's first word - a real defect, proved by two rebuilt windows
-        // (`100:8:1` expected `وَلِلَّهِ` over another ayah's text,
-        // `2:2:2` expected `بِالْكَافِرِينَ` over Al-Fatiha's). It made the app worse:
-        // 332 decided words and 95.9% correct fell to 27 decided and 84.2%
-        // correct, because the trim was measured from a window that already
-        // had the previous trim applied, so every ayah lost a little more
-        // leading audio and the shortfall only ever moved forward.
+        // The boundary defect is real - 11 of 12 WRONG verdicts in the user's
+        // sessions of 16 October sat on an ayah's first or last word, and two
+        // rebuilt windows proved why: `100:8:1` expected `وَلِلَّهِ` over
+        // another ayah's text, `2:2:2` expected `بِالْكَافِرِينَ` over Al-Fatiha's.
         //
-        // The boundary defect is not gone; it is unfixed. What remains here is
-        // the recording, which is diagnostic-only until a fix is measured: the
-        // next ayah's window still starts at arrival(N-1), and `ayahSpanEnd`
-        // still reports where each ayah's speech ended. Nothing consumes it.
-        return emissionLog.subList(from - emissionBase, hi - emissionBase)
+        // The first fix of it cost a third of every decided verdict, 332 to 27
+        // and 95.9% correct to 84.2%, because its end was measured from an
+        // already-trimmed window and so ratcheted. This one is bounded from
+        // both sides: the trim may never leave a window shorter than
+        // MIN_WINDOW_SYMBOLS (an ayah spans ~30-40 symbols; a healthy session
+        // shows arrivals 36-82 apart and a starved one 15-36), and the recorded
+        // end comes from a RAW window start so it names a real position.
+        //
+        // Guarded by window_anchor_parity, which fails if either guard goes.
+        val trimmed = applySpanEndTrim(from, hi, surah, ayah)
+        return emissionLog.subList(trimmed - emissionBase, hi - emissionBase)    }
+
+    /**
+     * The window's left edge after span-end trimming, or [from] unchanged.
+     *
+     * Two guards, both learned from a failure. The first version of this trim
+     * took 332 decided words to 27 and 95.9% correct to 84.2%, so both bounds
+     * exist to make that impossible:
+     *
+     *  1. the trim may never leave a window shorter than [MIN_WINDOW_SYMBOLS].
+     *     An ayah spans ~30-40 symbols of audio; a healthy session shows
+     *     consecutive arrivals 36-82 symbols apart, a starved one 15-36. A
+     *     window below the floor is starved by definition, and a starved window
+     *     returns UNKNOWN for every word - the exact shape of the regression.
+     *  2. the recorded end is trimmed to, never a position past it, and only
+     *     within the window.
+     *
+     * Also, `hi - candidate` must stay positive: the caller's `from` is already
+     * clamped to `hi`, so a candidate at or beyond `hi` is refused rather than
+     * truncating the window to nothing.
+     */
+    private fun applySpanEndTrim(from: Int, hi: Int, surah: Int, ayah: Int): Int {
+        val prevEnd = ayahSpanEnd["$surah:${ayah - 1}"] ?: return from
+        if (prevEnd <= from) return from                 // never moves the edge left
+        val candidate = minOf(prevEnd, hi - MIN_WINDOW_SYMBOLS)
+        return from.coerceAtLeast(candidate)
     }
 
     /**
@@ -3478,6 +3505,18 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
          * `span * 40 >= EMISSION_LOG_CAP`.
          */
         private const val RETENTION_AYAH_SPAN = 110
+
+        /**
+         * The shortest window span-end trimming may produce, in symbols.
+         *
+         * Measured from the user's sessions: a healthy recitation puts
+         * consecutive arrivals 36-82 symbols apart, and the first version of the
+         * trim - which had no floor - produced 15-36 and took 332 decided words
+         * to 27 and 95.9% correct to 84.2%. An ayah's own audio is roughly 30-40
+         * symbols, so 32 still leaves the DP the beginning of the ayah to find.
+         * Guarded by window_anchor_parity.
+         */
+        private const val MIN_WINDOW_SYMBOLS = 32
         /** Consecutive zero-token recoveries before we stop and report failure
          *  rather than looping a recovery that cannot succeed. */
         private const val MAX_STARVATION_RECOVERIES = 3
