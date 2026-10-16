@@ -1012,6 +1012,26 @@ tuned against.
 comes from the log rolling past audio in very long sessions, and the new cap
 holds a full Al-Baqarah (286 ayat, ~8,600 symbols) with margin, at ~1 MB.
 
+## The first-word guard: a trim that unseats the opening must not stand
+
+The bounded trim fixed the ratchet but kept one failure: when the recorded span
+end overshoots into the next ayah's opening, the trim removes audio the first
+word needs, and that word is blamed for audio taken away from it. Measured on
+the user's 16 October sessions as words blamed on the first unit while their
+windows held another ayah's text.
+
+The fix re-judges such a word against the untrimmed window — the validated wide
+window the 93.4% measurement covers — and only when two things are both true:
+word 0 has zero matched units, and the untrimmed window actually holds more
+audio (so it never burns a DP per poll for ayat whose first word genuinely has
+no audio yet). It can only restore audio, never remove it. The handoff keeps
+the trimmed window; the lock policy does not move.
+
+Gate: six new assertions in `window_anchor_parity.py`, six injections red —
+including one that caught the check counting a comment mention as a guard, and
+one `evidence_window_parity` update (val→var) that was itself fault-injected
+before trusting.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
