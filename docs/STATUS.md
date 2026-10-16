@@ -803,6 +803,60 @@ these three records predate it. That is the top item in `docs/TODO.md`.
 phone. Two sessions ended with the lock in surah 2 and one in surah 1 — no more
 of the 105 → 2 wrap seen earlier, though that is three sessions and not a trend.
 
+## A regression I caused, measured, and fixed properly
+
+The user's report was blunt and correct: *"the core function is now weaker then
+before!"*
+
+The measurement, from their own sessions, over two builds:
+
+| build | decided words | WRONG | UNKNOWN | correct-of-decided |
+|---|---|---|---|---|
+| before the window trim | 219 / 71 / 42 | 9 / 2 / 1 | 39 / 4 / 0 | 95.9% / 97.2% / 97.6% |
+| with the window trim | 19 / 8 | 3 / 0 | 24 / 21 | 84.2% / 100% |
+
+**A third of every decided verdict, gone.** The trim that was supposed to fix
+ayat-boundary blame was starved windows instead.
+
+The cause was arithmetic, not tajweed:
+
+```
+ayahSpanEnd[N] = ayahWindowStartOf(N) + lastHit + 1
+ayahWindowStartOf(N) returned the ALREADY-TRIMMED start
+```
+
+So each stored end was measured from a window that had already lost the previous
+ayah's tail, the next ayah was trimmed to it, and because a stored end only ever
+moved forward the shortfall never recovered. Over 28 ayat the windows shrank
+accumulatively.
+
+The record proved it independently of the word counts: consecutive arrivals in a
+healthy session land 36-82 symbols apart, and in the starved ones 15-36.
+
+**Fixed with two bounds, both measured rather than chosen:**
+
+1. `MIN_WINDOW_SYMBOLS = 32` - the trim may never leave a window shorter than an
+   ayah's own audio. An ayah spans ~30-40 symbols, so 32 still leaves the DP a
+   beginning to find.
+2. `ayahWindowStartOf` returns the RAW window start, so a stored end denotes a
+   real position in the audio and cannot ratchet.
+
+Gate: `window_anchor_parity`, six injections red — floor removed, floor not
+applied to the right edge, edge moving backward, origin re-trimming, `ayahObs`
+bypassing the helper, constant undeclared.
+
+**Not yet verified on device:** whether the bounded trim actually reduces the
+boundary blame without cost. The floor at 32 of a ~36-82 symbol spacing means the
+trim can now only take a few symbols, so the boundary fix is correspondingly
+modest - which is the honest expectation, and a larger fix needs the measured
+waqf mappings this project does not yet have.
+
+**The lesson worth keeping:** the first version of this check asserted the trim
+was correct, and it stayed green through the whole regression. A check that
+passes while the thing it guards loses a third of its output is not a check. The
+replacement asserts the two bounds that make the trim safe, and it fails if
+either goes.
+
 ## The last-unit class is a WINDOW problem, and it is proved
 
 Your four sessions of 16 October, on the build with the retention fixed. The
