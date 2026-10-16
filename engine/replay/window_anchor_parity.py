@@ -1,31 +1,27 @@
 #!/usr/bin/env python3
 """
-The window's leading edge must be trimmed by the alignment, never by a guess.
+Span-end trimming must stay DISABLED, and why: a regression log, not a guard.
 
-Measured on the user's own sessions of 16 October, with the retention fixed so
-windows are rebuildable at last: of 12 WRONG verdicts, 11 sat on an ayah's FIRST
-or LAST word. Two windows were rebuilt and showed the cause outright - `100:8:1`
-expected `وَلِلَّهِ` while its window opened on another ayah's text, and `2:2:2`
-expected `بِالْكَافِرِينَ` while its window held Al-Fatiha's.
+The previous version of this check asserted the opposite - that `ayahObs` must
+trim its window's leading edge to `ayahSpanEnd[N-1]`. That check passed while the
+app lost a third of its decided verdicts.
 
-The window starts at the previous ayah's arrival because the lock arrives
-mid-ayah and N's own opening is still in the previous slice. That is necessary.
-The artefact is that the previous ayah's TAIL then sits at the leading edge and
-is blamed for the next ayah's first word.
+What happened, measured on the phone. Before the trim, three sessions gave 332
+decided words at 95.9% / 97.2% / 97.6% correct. With the trim, two sessions gave
+27 decided words at 84.2% / 100%. No Window-fault class was large enough to
+justify that, and the cause was arithmetic rather than tajweed.
 
-`ayahSpanEnd` records, from the alignment's own `emitWord`, where each ayah's
-speech actually ended, and `ayahObs` trims the left edge to just past it.
+`ayahSpanEnd[N]` was computed as `ayahWindowStartOf(N) + lastHit + 1`, and
+`ayahWindowStartOf` itself returned the already-trimmed start. So every stored end
+denoted a position slightly short of the real audio boundary, the next ayah was
+trimmed to it, and because a stored end only ever moved forward the shortfall
+could never recover. The trim was ratcheting.
 
-What must hold:
-
-  1. the trim can only move the left edge RIGHT, and only to a position the
-     alignment produced - a fallback that invents a position would be the same
-     fabrication the replay produced;
-  2. the trim can never move the left edge past the right edge, or the window
-     collapses;
-  3. `ayahWindowStartOf` and `ayahObs` must agree, or the end is stored in a
-     different coordinate system from the window it trims;
-  4. the span ends are cleared with the log they index.
+The boundary defect is still real and still unfixed - two rebuilt windows proved
+it (`100:8:1` expecting `\u0648\u064e\u0644\u0650\u0644\u0651\u064e\u0647\u0650` over another ayah's
+text, `2:2:2` expecting `\u0628\u0650\u0627\u0644\u0652\u0643\u064e\u0627\u0641\u0650\u0631\u0650\u064a\u0646\u064e` over Al-Fatiha's). This
+check exists to keep the naive fix from being re-applied by someone who has not
+read that log.
 
 Run: python3 engine/replay/window_anchor_parity.py
 """
@@ -35,28 +31,21 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-VM = HERE.parent.parent / "android/app/src/main/java/com/iqra/quren/ui/PracticeViewModel.kt"
 VM = HERE.parent.parent / "android" / "app" / "src" / "main" / "java" / "com" / "iqra" / "quran" / "ui" / "PracticeViewModel.kt"
 
 
-def fn(name, vm):
-    """Whole body of one private function, brace-matched.
-
-    A non-greedy `\n    }` stops at the first four-space closing brace, which for
-    `ayahObs` is inside a nested block - so the original check passed on a fix it
-    had never actually seen, and an "ungated trim" mutation survived.
-    """
-    m = re.search(r"private fun %s\(" % name, vm)
+def fn(name, src):
+    m = re.search(r"private fun %s\(" % name, src)
     if not m:
         return ""
     depth = 0
-    for i in range(m.start(), len(vm)):
-        if vm[i] == "{":
+    for i in range(m.start(), len(src)):
+        if src[i] == "{":
             depth += 1
-        elif vm[i] == "}":
+        elif src[i] == "}":
             depth -= 1
             if depth == 0:
-                return vm[m.start():i + 1]
+                return src[m.start():i + 1]
     return ""
 
 
@@ -64,59 +53,42 @@ def main() -> int:
     vm = VM.read_text(encoding="utf-8")
     bad = []
 
-    trim = fn("ayahObs", vm)
-    if not trim:
+    body = fn("ayahObs", vm)
+    if not body:
         bad.append("ayahObs is gone")
     else:
-        # 1. only from a recorded alignment end, and only forward
-        if "ayahSpanEnd" not in trim:
-            bad.append("ayahObs does not consult the recorded span end; the "
-                       "boundary artefact has no fix")
-        if not re.search(r"prevEnd != null && prevEnd > from && prevEnd < hi", trim):
-            bad.append("the trim is not gated on being strictly inside the "
-                       "window, so it could consume it")
-        # The trim must READ the map and branch, never default a position. A
-        # `?: 0` here is the exact fabrication the replay was caught making: a
-        # missing neighbour defaulted to 0, produced a window spanning the whole
-        # session, and explained 10 of 26 false accusations with 1,200 symbols
-        # of the wrong ayah. Both functions read the same map, so both must be
-        # checked - testing one and not the other passed a default the check
-        # could not see.
-        for site in (trim, fn("ayahWindowStartOf", vm)):
-            if re.search(r"ayahSpanEnd\[[^\]]+\]\s*\?:\s*0", site):
-                bad.append("a window function defaults a missing span end to a "
-                           "position; a missing boundary must mean no trim, not "
-                           "position 0")
+        # 1. no window is trimmed to a stored span end
+        if re.search(r"ayahSpanEnd\[[^\]]+\].*\n\s*from = prevEnd", body) \
+                or re.search(r"if \(prevEnd != null[^)]*\).*\n\s*from = prevEnd", body, re.S):
+            bad.append("ayahObs trims its window to ayahSpanEnd; that is the "
+                       "ratchet that took 332 decided words to 27")
+        # 2. the origin helper must be raw, so any future stored end denotes a
+        #    real audio position
+        start = fn("ayahWindowStartOf", vm)
+        if not start:
+            bad.append("ayahWindowStartOf is gone; a stored end has no origin")
+        elif "ayahSpanEnd" in start:
+            # The whole function, not the text before the first `return`: the
+            # body contains an early `return -1`, so splitting on "return" hid
+            # everything after it - a trim re-added at the end was invisible.
+            bad.append("ayahWindowStartOf applies the trim, so any end stored "
+                       "against it is short of the real audio boundary")
+        # 3. stored ends only ever come from a raw window start
+        sweep = re.search(r"val end = spanBase \+ lastHit \+ 1", vm)
+        if sweep and "ayahWindowStartOf" not in vm[sweep.start() - 400:sweep.start()]:
+            bad.append("a span end is not measured from the raw window start")
 
-        if "emissionBase + emissionLog.size" not in trim:
-            bad.append("the trim lost the clamp that keeps the right edge the "
-                       "limit on the left edge")
-
-    helper = fn("ayahWindowStartOf", vm)
-    if not helper:
-        bad.append("ayahWindowStartOf is gone; the coordinate systems have one "
-                   "definition between two consumers")
-    else:
-        # 3. the two must compute the same left edge
-        for frag in ("maxOf(ayahArrival", "emissionBase + emissionLog.size",
-                     "maxOf(start, end - ayahWindowLimit())",
-                     "prevEnd > from && prevEnd < end"):
-            if frag not in helper:
-                bad.append("ayahWindowStartOf no longer mirrors ayahObs: %r" % frag)
-
-    # 4. cleared with the log
     clear = fn("clearEmissionLog", vm)
     if not clear or "ayahSpanEnd.clear()" not in clear:
-        bad.append("the span ends are not cleared with the log they index, so "
-                   "a new session's first window could start after a position "
-                   "from a recitation that no longer exists")
+        bad.append("the span ends are not cleared with the log they index; a "
+                   "new session could start a window after a position from a "
+                   "recitation that no longer exists")
 
     if bad:
         for x in bad:
             print("FAIL:", x)
         return 1
-    print("ok: the window's leading edge is trimmed to where the previous ayah's "
-          "speech ended, from the alignment alone")
+    print("ok: the ratchet stays removed; span-end recording is diagnostic only")
     return 0
 
 

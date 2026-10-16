@@ -1339,14 +1339,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private fun ayahWindowLimit() = 480
 
     /**
-     * The log index `ayahObs` would START [ayah]'s window at.
+     * The log index `ayahObs` would START [ayah]'s window at, WITHOUT the
+     * span-end trim.
      *
-     * Kept beside `ayahObs` and written to match it on purpose: the two must
-     * agree, or the sweep below would store an end in a different coordinate
-     * system from the window it is meant to trim. Duplicated rather than
-     * refactored out because `ayahObs` returns the symbols and a helper
-     * returning the index would let the two definitions drift - and this
-     * project has already been bitten twice by two definitions of one index.
+     * This is the only origin a stored span end may be measured from, and that
+     * is the whole point: it returns the RAW window start, so an end recorded
+     * against it denotes a real position in the audio.
+     *
+     * The trim is deliberately absent here. Recording `ayahSpanEnd[N]` from a
+     * start that already had N-1's trim applied is what made the trim ratchet:
+     * each ayah's end was then measured slightly short of its true audio, the
+     * next ayah was trimmed to it, and because a stored end only ever moves
+     * forward the shortfall never recovered. Over a 28-ayah session the windows
+     * starved until 219 decided words became 19 and 95.9% correct fell to 84.2%.
      */
     private fun ayahWindowStartOf(surah: Int, ayah: Int): Int {
         val start = maxOf(ayahArrival["$surah:${ayah - 1}"] ?: 0, emissionBase)
@@ -1355,10 +1360,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             emissionBase + emissionLog.size,
         )
         if (end <= start) return -1
-        val from = maxOf(start, end - ayahWindowLimit())
-        val prevEnd = ayahSpanEnd["$surah:${ayah - 1}"]
-        if (prevEnd != null && prevEnd > from && prevEnd < end) return prevEnd
-        return from
+        return maxOf(start, end - ayahWindowLimit())
     }
 
     /**
@@ -1432,10 +1434,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // This can only ever MOVE THE LEFT EDGE RIGHT and only past a boundary
         // the alignment has already placed, so it can remove blamed prefix and
         // cannot invent new blame. Guarded by window_anchor_parity.
-        val prevEnd = ayahSpanEnd["$surah:${ayah - 1}"]
-        if (prevEnd != null && prevEnd > from && prevEnd < hi) {
-            from = prevEnd
-        }
+        // Span-end trimming REMOVED, deliberately.
+        //
+        // It was added to stop the previous ayah's tail being blamed for this
+        // ayah's first word - a real defect, proved by two rebuilt windows
+        // (`100:8:1` expected `وَلِلَّهِ` over another ayah's text,
+        // `2:2:2` expected `بِالْكَافِرِينَ` over Al-Fatiha's). It made the app worse:
+        // 332 decided words and 95.9% correct fell to 27 decided and 84.2%
+        // correct, because the trim was measured from a window that already
+        // had the previous trim applied, so every ayah lost a little more
+        // leading audio and the shortfall only ever moved forward.
+        //
+        // The boundary defect is not gone; it is unfixed. What remains here is
+        // the recording, which is diagnostic-only until a fix is measured: the
+        // next ayah's window still starts at arrival(N-1), and `ayahSpanEnd`
+        // still reports where each ayah's speech ended. Nothing consumes it.
         return emissionLog.subList(from - emissionBase, hi - emissionBase)
     }
 
