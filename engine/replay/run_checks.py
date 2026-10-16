@@ -97,6 +97,8 @@ CHECKS = [
      "the arrival retention spans every ayah still in the emission log"),
     ("window_anchor_parity", "none",
      "the window's leading edge is trimmed by the alignment and never by a default"),
+    ("standing_word", "none",
+     "the standing word is never null, and the verdict walk still leads"),
     ("doc_check_count", "none",
      "the documents name the same number of checks the gate runs"),
     ("final_vowel_parity", "none",

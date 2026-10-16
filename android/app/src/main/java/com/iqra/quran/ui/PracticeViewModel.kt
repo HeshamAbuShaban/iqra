@@ -3289,6 +3289,25 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     }
                 }
             }
+            if (currentKey == null) {
+                // The standing word must never be null while a session is live.
+                //
+                // The loop above walks past a verdict to the following word, so
+                // a fully-spoken ayah - every word CORRECT or WRONG - finds no
+                // word after its last verdict and returned null, taking the
+                // pointer with it. The user reported it as "standingWord
+                // always null": the highlight disappears exactly when the ayah
+                // is finished, which is when they need it most, and the blue
+                // standing word is the only thing that says where they are.
+                //
+                // The fallback is the ayah's own last word: it is a real word in
+                // the ayah being recited, it exists whenever `lockedAyah` does,
+                // and being the end of the ayah it matches the state of a
+                // recitation that has just finished it. Never the first word -
+                // that would jump the pointer backwards onto already-judged
+                // material.
+                currentKey = verseWords[lockedAyah]?.lastOrNull()?.let { keyOf(it) }
+            }
 
             // The page normally follows the lock. The one exception is the last
             // ayah of a surah, where following the lock is a deadlock: handoff
