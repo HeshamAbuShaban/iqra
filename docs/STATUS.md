@@ -772,6 +772,37 @@ surah 105 and ends in **surah 2 at ayah 17**. Al-Fiil has five ayat. Whatever
 carried the lock from 105 to 2 covered the wrap from 114 → 1 and most of
 Al-Baqarah in four moves, which is not recitation.
 
+## Why the record could not rebuild its own windows — fixed
+
+The user's three sessions of 16 Oct still carried only 4 arrivals each. The
+cause was a mismatch, not the pruner being aggressive on its own:
+`emissionLog` retained 4,000 symbols while `ayahArrival` retained
+`lockedAyah ± 3` — three ayat against over a hundred. Every ayah the user
+recited early in a session therefore had no arrival when the record was written,
+and the replay that read a WRONG word back filled each gap with a default and got
+a window spanning the whole session.
+
+**Fixed by making the two retentions agree**, not by making the fallback cleverer:
+`RETENTION_AYAH_SPAN = 110`, which covers the 4,000-symbol log with margin.
+`arrival_retention_parity.py` pins `span * 40 >= EMISSION_LOG_CAP`, requires the
+pruner to derive *both* edges from the constant, and requires the reader to refuse
+a window it cannot rebuild. Six injections red.
+
+One of those injections exposed a bug in the check itself: it grepped for the
+constant appearing anywhere in the file, so a pruner that had reverted to ±3
+while the constant still existed passed. It now requires the constant twice
+inside `pruneAyahWindows`.
+
+**Verified on the phone:** build installed 02:58, gate 34/34, JVM tests pass.
+**Not yet verified:** that a fresh session produces rebuildable windows, because
+these three records predate it. That is the top item in `docs/TODO.md`.
+
+## What the three sessions did confirm
+
+665 seconds, 24 WRONG verdicts, `noWindowWords = 0` in every one, on a noisy
+phone. Two sessions ended with the lock in surah 2 and one in surah 1 — no more
+of the 105 → 2 wrap seen earlier, though that is three sessions and not a trend.
+
 ## What is open next
 
 **1. The unexplained 71% - and the first session that carries `wu`.**
