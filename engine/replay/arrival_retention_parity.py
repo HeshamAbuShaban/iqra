@@ -30,6 +30,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 VM = HERE.parent.parent / "android" / "app" / "src" / "main" / "java" / "com" / "iqra" / "quran" / "ui" / "PracticeViewModel.kt"
 TOOL = HERE / "device_blame.py"
+MUSHAF = HERE.parent.parent / "android" / "app" / "src" / "main" / "assets" / "mushaf.json"
 
 # An ayah averages well under 40 symbols across the whole Quran; the longest
 # surah's average is the number that matters, not its longest ayah.
@@ -54,6 +55,24 @@ def main() -> int:
                        "less than the %d-symbol log, so ayat whose audio is "
                        "still retained will have no arrival"
                        % (keep, keep * SYMBOLS_PER_AYAH, cap))
+        # The cap itself must cover the longest surah, or a full recitation of
+        # it rolls the log past audio the session still needs - which is what
+        # produced `noWindowWords=3889` in the user's 57-minute session.
+        import json as _json
+        per_surah = {}
+        for pg in _json.load(open(MUSHAF, encoding="utf-8")):
+            for line in pg["lines"]:
+                for w in (line.get("words") or []):
+                    s, a, _ = w["location"].split(":")
+                    per_surah.setdefault(int(s), set()).add(int(a))
+        longest_surah, longest_ayat = max(per_surah.items(),
+                                          key=lambda kv: len(kv[1]))
+        need = len(longest_ayat) * SYMBOLS_PER_AYAH
+        if cap < need:
+            bad.append("the emission log holds %d symbols, less than the %d "
+                       "surah %d needs (%d ayat) - a long session will roll "
+                       "past audio it still needs"
+                       % (cap, need, longest_surah, len(longest_ayat)))
 
     # The span must be USED by the pruner, not merely declared. A file-level
     # substring test passes when the constant exists and the pruner still says

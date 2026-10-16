@@ -3523,24 +3523,28 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
          * of history, which is far more than the lock+/-3 window the paint loop
          * ever asks for. Bounded so a long session cannot grow without limit.
          */
-        private const val EMISSION_LOG_CAP = 4000
+        private const val EMISSION_LOG_CAP = 12000
 
         /**
          * How many ayat of arrival history to keep, so a replay can rebuild the
          * window each ayah was judged against.
          *
          * `EMISSION_LOG_CAP` bounds the symbols and an ayah averages well under
-         * 40 of them, so 4,000 symbols is over a hundred ayat. Keeping 110
-         * covers the log with margin, costs 110 map entries, and guarantees
-         * that every ayah whose audio is still present still has its
-         * neighbours. The old value of 3 matched nothing, and a replay reading a
-         * WRONG word back filled the resulting gap with a default - a window
-         * spanning the whole session, presented as data.
+         * 40 of them, so 12,000 symbols is 300 ayat: the longest surah
+         * (Al-Baqarah, 286 ayat, ~8,600 symbols) fits with margin, and every
+         * ayah whose audio is still present still has its neighbours. The old
+         * value of 3 matched nothing, and a replay reading a WRONG word back
+         * filled the resulting gap with a default - a window spanning the whole
+         * session, presented as data.
+         *
+         * Raised from 110 alongside the cap (4,000 -> 12,000) after the user's
+         * 57-minute session showed `noWindowWords=3889`: the log was rolling
+         * past audio the session still needed. Costs 300 map entries.
          *
          * Guarded by arrival_retention_parity, which requires
          * `span * 40 >= EMISSION_LOG_CAP`.
          */
-        private const val RETENTION_AYAH_SPAN = 110
+        private const val RETENTION_AYAH_SPAN = 300
 
         /**
          * The shortest window span-end trimming may produce, in symbols.
