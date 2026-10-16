@@ -30,10 +30,11 @@ audio: 96-98% of decided words correct, `noWindowWords=0` in every session.
    two-surah page (finish surah 4 onto page 106), a surah that finishes
    completely (`standingWord` must stay lit), and a LiveTest after a completed
    session. All three now have code fixes; none has device evidence.
-2. **The remaining 11-of-12 boundary blame.** The bounded trim now takes at most
-   a few symbols of a ~36-82 symbol spacing, so the boundary fix is deliberately
-   modest. A larger fix needs the measured waqf mappings this project does not
-   have. Read it back with `device_blame.py` before changing it again.
+2. **The remaining boundary blame.** The bounded trim takes at most a few
+   symbols, and now carries a first-word guard: when word 0 has zero matched
+   units, the ayah is re-judged against the untrimmed window. Expect the
+   first-unit blame share to fall on the next session; read it back with
+   `device_blame.py` rather than assuming it.
 3. **Repeat and backtrack scenarios.** The retreat budget exists and has never
    been exercised by a real recitation.
 4. **The 2.65s word-latency floor.** Unchanged. Measure before touching.
