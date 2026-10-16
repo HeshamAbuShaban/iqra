@@ -449,7 +449,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 34 checks. Every check must be shown able to fail. Break the thing that
+It runs 35 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -470,6 +470,7 @@ nothing.
 | `word_alignment_parity` | Ayat that get no word verdict, so the count cannot get worse |
 | `device_blame_parity` | A WRONG word with no recorded blame position, or buckets that collapse |
 | `arrival_retention_parity` | Arrivals pruned tighter than the emission log they index, or a reader that invents a window |
+| `window_anchor_parity` | A window's leading edge trimmed by a default rather than by the alignment |
 | `doc_check_count` | This document claiming a number of checks that the gate does not run |
 | `final_vowel_parity` | A word-final consonant deciding a verdict, or the rule leaking inside a word |
 | `selection_parity` | A long-press range that cannot open, or a reversed one |

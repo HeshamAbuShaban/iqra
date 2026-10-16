@@ -1280,6 +1280,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         emissionBase = 0
         streamConsumed = 0
         ayahArrival.clear()
+        // And the span ends, which index into that log. Leaving them would make
+        // the next session's first window start after a position from a
+        // recitation that no longer exists.
+        ayahSpanEnd.clear()
     }
 
     // ---- per-ayah evidence windows -------------------------------------
@@ -1315,11 +1319,47 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Wall clock when the reciter armed the next surah by turning the page. */
     private var intentArmedAt = 0L
 
+    /**
+     * "surah:ayah" -> the log index just past that ayah's last MATCHED emission.
+     *
+     * Written from the alignment's own `refToQuery`: the end of the ayah's
+     * speech, as the DP placed it. Read by `ayahObs` to trim the leading edge of
+     * the NEXT ayah's window, so the previous ayah's tail no longer sits at the
+     * boundary where it is blamed for the next ayah's first word.
+     *
+     * Bounded and cleared with the rest of the session state - see
+     * `clearEmissionLog` and `pruneAyahWindows`.
+     */
+    private val ayahSpanEnd = HashMap<String, Int>()
+
     /** Last diag's intent flag, so the gate logs only when the reason changes. */
     private var intentWasHonoured = false
 
     /** Bound on one window, so a long ayah cannot make the DP per-frame cost blow up. */
     private fun ayahWindowLimit() = 480
+
+    /**
+     * The log index `ayahObs` would START [ayah]'s window at.
+     *
+     * Kept beside `ayahObs` and written to match it on purpose: the two must
+     * agree, or the sweep below would store an end in a different coordinate
+     * system from the window it is meant to trim. Duplicated rather than
+     * refactored out because `ayahObs` returns the symbols and a helper
+     * returning the index would let the two definitions drift - and this
+     * project has already been bitten twice by two definitions of one index.
+     */
+    private fun ayahWindowStartOf(surah: Int, ayah: Int): Int {
+        val start = maxOf(ayahArrival["$surah:${ayah - 1}"] ?: 0, emissionBase)
+        val end = minOf(
+            ayahArrival["$surah:${ayah + 1}"] ?: (emissionBase + emissionLog.size),
+            emissionBase + emissionLog.size,
+        )
+        if (end <= start) return -1
+        val from = maxOf(start, end - ayahWindowLimit())
+        val prevEnd = ayahSpanEnd["$surah:${ayah - 1}"]
+        if (prevEnd != null && prevEnd > from && prevEnd < end) return prevEnd
+        return from
+    }
 
     /**
      * The audio to judge [ayah] of [surah] against.
@@ -1370,7 +1410,32 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // disjuncts of the guard that was here were unreachable, and an
         // unreachable guard implies the caller believes the impossible is
         // possible.
-        val from = maxOf(lo, hi - ayahWindowLimit())
+        var from = maxOf(lo, hi - ayahWindowLimit())
+        // The window starts at arrival(N-1) because the lock arrives mid-ayah:
+        // the previous ayah's tail is real audio that ayah N needs. But it is
+        // ALSO the boundary artefact that remains the largest source of false
+        // accusation.
+        //
+        // Read off the user's own sessions of 16 October: of 12 WRONG verdicts,
+        // 11 sat on an ayah's FIRST or LAST word, and the two windows the record
+        // could rebuild proved the cause - `100:8:1` expected `وَلِلَّهِ` while
+        // its window opened on a different ayah's text, and `2:2:2` expected
+        // `بِالْكَافِرِينَ` while its window held Al-Fatiha's.
+        //
+        // So the leading edge is trimmed past where ayah N-1's speech actually
+        // ended, when that is known. `ayahSpanEnd` records, for each ayah, the
+        // log index just past the last emission its own alignment matched - the
+        // end of that ayah's audio, from the DP's own mouth. Starting N after
+        // that removes the artefact while keeping every symbol of N's own
+        // speech, which the 5.3%-vs-93.4% measurement is about.
+        //
+        // This can only ever MOVE THE LEFT EDGE RIGHT and only past a boundary
+        // the alignment has already placed, so it can remove blamed prefix and
+        // cannot invent new blame. Guarded by window_anchor_parity.
+        val prevEnd = ayahSpanEnd["$surah:${ayah - 1}"]
+        if (prevEnd != null && prevEnd > from && prevEnd < hi) {
+            from = prevEnd
+        }
         return emissionLog.subList(from - emissionBase, hi - emissionBase)
     }
 
@@ -2995,6 +3060,24 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // so they are kept apart deliberately.
                 val al = if (aObs == null || aObs.isEmpty()) null
                     else PhonemeMapper.align(aObs, pw, null)
+                // Remember where THIS ayah's speech ended, so the next ayah's
+                // window can start after it instead of holding its tail at the
+                // boundary. `emitWord` labels every emission the alignment
+                // consumed with the word it was charged to; the last one so
+                // labelled is the end of this ayah's speech. Only ever advances
+                // the NEXT ayah's left edge, so it can remove blamed prefix and
+                // cannot add blame. See ayahObs.
+                if (al != null && aObs != null) {
+                    val spanBase = ayahWindowStartOf(activeSurah, a)
+                    val lastHit = al.emitWord.indices.lastOrNull { al.emitWord[it] >= 0 }
+                    if (spanBase >= 0 && lastHit != null) {
+                        val end = spanBase + lastHit + 1
+                        val prev = ayahSpanEnd["$activeSurah:$a"]
+                        if (prev == null || end > prev) {
+                            ayahSpanEnd["$activeSurah:$a"] = end
+                        }
+                    }
+                }
                 if (al == null && aObs != null) {
                     // Visited, yet no usable audio. That is not "the reciter was
                     // quiet" - it is an index that no longer points at anything.
