@@ -3,6 +3,50 @@
 Canonical backlog for the recognition work. Update at commit boundaries;
 check items only when the shipped code proves them.
 
+## Where this sits — 16 October
+
+**Fixed and installed today:**
+
+- **The window-trim regression.** A trim meant to fix ayah-boundary blame cost a
+  third of every decided verdict (332 to 27, 95.9% correct to 84.2%) because its
+  end was measured from an already-trimmed window and ratcheted. Now bounded by
+  `MIN_WINDOW_SYMBOLS` and a raw origin. `window_anchor_parity.py`.
+- **The standing word was null.** Confirmed in the record: session
+  `1792114078210-102` ended `103:3` with 9/9 words decided, the exact state that
+  nulled it. Falls back to the ayah's last word. `standing_word.py`.
+- **The page-turn "corruption" was one line.** `any { it > activeSurah }` counted
+  any later surah on the page as a change, and 51 pages hold two surahs, so
+  finishing surah 4 onto page 106 jumped to 5:1. Now "no word of the current
+  surah on the page". `page_turn_boundary.py`.
+- The **LiveTest ending before it began**, by inheriting the previous session's
+  scope. `live_scope_inherit_parity.py`.
+
+**Where the recognition actually stands**, from the user's own noisy phone
+audio: 96-98% of decided words correct, `noWindowWords=0` in every session.
+
+**Still open, in order:**
+
+1. **Verify these four fixes on the phone.** A recitation that walks into a
+   two-surah page (finish surah 4 onto page 106), a surah that finishes
+   completely (`standingWord` must stay lit), and a LiveTest after a completed
+   session. All three now have code fixes; none has device evidence.
+2. **The remaining 11-of-12 boundary blame.** The bounded trim now takes at most
+   a few symbols of a ~36-82 symbol spacing, so the boundary fix is deliberately
+   modest. A larger fix needs the measured waqf mappings this project does not
+   have. Read it back with `device_blame.py` before changing it again.
+3. **Repeat and backtrack scenarios.** The retreat budget exists and has never
+   been exercised by a real recitation.
+4. **The 2.65s word-latency floor.** Unchanged. Measure before touching.
+5. **Engine comparison** per `engine/shootout/README.md`. The harness does not
+   care which model produced the emissions, so a candidate plugs in as a
+   different emission stream.
+6. **UI polish**: type sizes, session list order, RTL on the live caption,
+   search deep-link, reference-app pop-menu.
+
+**Notes on the wiring.** Subagents available for research, verification and
+fault injection. Everything that changes the verdict path is main-context and
+gated. Every new check must be proven able to fail before its result is used.
+
 ## Where this sits right now — measured, 15 October 2026
 
 Four sessions recited **with background noise**, through the app, on the build
