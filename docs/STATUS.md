@@ -975,29 +975,59 @@ blame. Three things are uncertain — the first frames after a reset may have no
 recorded end and fall back to the old behaviour, which is safe but unchanged; and
 a surah handoff crosses into a fresh `ayahSpanEnd`. One more session will say.
 
+## Two long sessions, 16 October — repeats, backtracks, and what they settled
+
+The user's two longest sessions on record, recited with background noise and
+with repeats and backtracking deliberately included ("not ideal actual human
+testing" — kept as the regression corpus for exactly that reason):
+
+| session | length | moves | rev | evaluated | decided | correct | UNKNOWN | noWindow |
+|---|---|---|---|---|---|---|---|---|
+| surah 18, 110 moves | 3,419 s | 110 | 2 | 1,579 | 1,049 | **92.6%** | 490 (31%) | 3,889 |
+| surah 35, 41 moves | 692 s | 41 | 0 | 775 | 499 | **94.8%** | 238 (31%) | 0 |
+
+**On "weaker than before":** correct-of-decided is 1–3 points below the clean
+5-minute baselines (95.9–97.6%), on sessions that are 10× longer, noisy, and
+full of repeats and 20–50 s pauses per ayah. The 31% UNKNOWN is not a verdict
+failure: all 490 lack a verdict timestamp, and the gate was closed 2,761 polls
+(~25% silence — the user thinking/recalling, which is what memorization looks
+like). Words the engine actually heard were judged at ~93%.
+
+**The trim verdict is in.** First-word-of-ayah WRONG share: 22% pre-trim → 5%
+and 0% with the floored trim. The boundary class it was built for collapsed;
+the residual is mid-word (71–91%) with the charged emission named per word.
+
+**Retreat, first real data.** 18:57 → 18:56 → 18:57 → 18:58: a single backtrack
+and resume, tracked correctly (15 CORRECT / 3 UNKNOWN behind it), no
+oscillation loop. The skip 18:21 → 18:23 fired at `jumpTo=23`, 0.93 coverage
+with current and next both low — the user skipped 18:22 verbally and the lock
+followed the audio; its 33 words correctly stayed UNKNOWN. The pinned escape
+fired once after 21 s motionless. `MIN_RETREAT_GAP_MS=1500` and
+`MAX_CONSECUTIVE_RETREATS=2` were never stressed (one retreat at a time), so
+the constants stand unchanged and this observation is recorded instead of
+tuned against.
+
+**Retention widened to match.** `EMISSION_LOG_CAP` 4,000 → 12,000,
+`RETENTION_AYAH_SPAN` 110 → 300: the 57-minute session's `noWindowWords=3889`
+comes from the log rolling past audio in very long sessions, and the new cap
+holds a full Al-Baqarah (286 ayat, ~8,600 symbols) with margin, at ~1 MB.
+
 ## What is open next
 
-**1. The unexplained 71% - and the first session that carries `wu`.**
-Blame position per unit class is the only measurement that can separate a table
-fault from a pipeline artefact, and it was not being recorded. Next session with
-the new build answers it.
-
-**2. `noWindowWords` returns on long sessions.** 2,501 words / 212 windows over
-1,428 s and 106 lock moves, where six shorter sessions read 0 and 0. The empty
-windows arrive on the first one or two polls after every lock advance, so the
-count is a per-advance artifact as much as a bug. Decide whether it should be
-measured at all: a word the lock has not reached yet is not a failure, and the
-counter does not separate the two.
-
-**3. The gated long jump skips an ayah.** Two measured events, `nextCov=0.50`
-both times. The jump treats partial next-ayah coverage as proof of a skip.
-
-**4. Ask the user which WRONG words were genuinely wrong.** Listed in the 8 July
-section above; 7 of 16 are ambiguous. This outranks everything above it for cost,
-because a yes-or-no answer converts the 71% into a measured class.
-
-**5. Device validation of the record fixes** (record integrity, per-surah fold),
-then page turns, then the standing-word pointer, then UI polish.
+**1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
+words end bare; the mushaf text carries the vowel; the builder already walks
+word by word. The runtime `final_vowel_id` rule then becomes a backstop. Check
+the blame fall on the next session before touching anything else.
+**2. Replay screen, desktop first.** Data layer complete (`device_blame.py`
+reconstructs windows and names charges); the time-scrubbed mushaf rendering
+remains.
+**3. Engine comparison** on the noisy human corpus; swap only on loss, per the
+shootout's own decision rule.
+**4. The 2.65s word-latency floor.** Untouched; the trim did not move it and
+`wt` confirms.
+**5. Standing-word pointer** — fixed and gated; needs one device confirmation.
+**6. UI polish**: type sizes, session list order, RTL on the live caption,
+search deep-link, reference-app pop-menu.
 
 ## Ownership
 

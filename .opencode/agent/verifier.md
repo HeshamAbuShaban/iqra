@@ -81,6 +81,11 @@ When asked to verify a fix, the highest-yield targets here are:
 - The evidence window and emission log — do indices survive a stream reset?
 - `run_checks.py` — does each check's failure path actually run?
 - Thresholds: is any gate mathematically unreachable at its own value?
+- **The replay's refusal paths.** `device_blame.py` must say NOT
+  RECONSTRUCTABLE when arrivals are missing, never invent a window. Inject a
+  record with pruned arrivals and confirm it refuses.
+- **The documented check count.** `doc_check_count.py` must match
+  `run_checks.py`; a new check without a doc update must fail the gate.
 
 ## Reporting back
 

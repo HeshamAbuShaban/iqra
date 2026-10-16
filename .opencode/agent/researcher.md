@@ -50,7 +50,16 @@ is silent, that is worth noting: silence in a source is not refutation.
 against the repo's own data (`engine/corpus/`, `android/app/src/main/assets/`)
 over asserting. If you state a count, say how you got it.
 
-**5. Write for a cold reader.** Assume no context and no memory of the session
+**5. Read device records before the corpus when the question is about the app.**
+The user's noisy, repeat-and-backtrack phone sessions are the regression corpus
+now ("not ideal actual human testing" — clean-studio numbers flatter every
+engine). `engine/replay/device_blame.py` reconstructs judged windows from a
+pulled session record and names the charged emission per blamed unit; feed it
+real records with `adb shell run-as com.iqra.quran cat
+files/sessions/<file>.json`. The reference corpus proves a class exists; only
+the phone says how large it is here.
+
+**6. Write for a cold reader.** Assume no context and no memory of the session
 that produced the work. British English, plain and specific, no marketing
 language. Match the register of the existing `docs/`.
 

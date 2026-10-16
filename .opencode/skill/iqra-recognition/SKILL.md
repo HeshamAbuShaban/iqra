@@ -17,9 +17,13 @@ it wrongly. Every change to this pipeline is, in the end, about not accusing
 somebody falsely. That is the harm the project exists to avoid, and it outranks
 every other consideration here, including how the screen looks.
 
-**Recognition has never been verified against the user's own voice.** Most
-ground truth is the pinned Husary reference clips and an Al-Dosari corpus. When a
-result depends on how a human actually recites, say so.
+**Recognition has been verified against the user's own voice since October.**
+Ground truth is no longer only the pinned Husary clips and the Al-Dosari corpus:
+noisy, repeat-and-backtrack phone sessions now live as the regression corpus
+(the "not ideal actual human testing" — clean-studio numbers flatter every
+engine). When a result depends on how a human actually recites, use those
+records; the reference corpus is evidence a class exists, never a count of what
+a user saw.
 
 ## Start here, in this order
 
@@ -30,7 +34,12 @@ result depends on how a human actually recites, say so.
 | `docs/LESSONS.md` | Before changing any threshold, metric or gate. 13 lessons, each earned. |
 | `engine/replay/optional_final.py` | The whole-corpus false-accusation sweep. 768 WRONG verdicts over 6,112 ayat of reference audio. |
 | `engine/replay/window_lead.py` | The first-word sweep, and the three hypotheses it rejected. |
-| `engine/replay/device_blame.py` | Reads `wu` from a session record: where in a word the mismatch began. The only tool that can argue with a WRONG verdict after the fact. |
+| `engine/replay/device_blame.py` | Reads `wu` (where in a word blame landed), `wt` (when it was decided), and the emitted phoneme stream from a session record. Reconstructs the judged window and names the charged emission per blamed unit. The only tool that can argue with a WRONG verdict after the fact. Pull a record first: `adb shell run-as com.iqra.quran cat files/sessions/<file>.json`. |
+| `engine/replay/arrival_retention_parity.py` | The arrival log and the emission log must agree (`span × 40 >= cap`, covering a full Al-Baqarah). When they disagreed, the replay invented whole-session windows. |
+| `engine/replay/window_anchor_parity.py` | The window trim must be floored and measured from a raw origin. An unbounded trim ratcheted and cost a third of all decided verdicts. |
+| `engine/replay/standing_word.py` | The standing pointer must never be null; falls back to the locked ayah's last word. |
+| `engine/replay/page_turn_boundary.py` | A page opens a new surah only when it holds no word of the current one (51 two-surah pages). |
+| `engine/replay/live_scope_inherit_parity.py` | A LiveTest must not end by inheriting the previous session's finished scope. |
 | `docs/TAJWEED_AND_MEMORISATION.md` | Before anything touching expected phonemes. What the engine cannot judge, and why. |
 | `docs/HARNESS_FIDELITY_AUDIT.md` | Before trusting any offline test result. 22 harness-vs-device divergences. |
 | `engine/replay/emission_log_replay.py` | When verdicts are missing on the device. Replays a real session's polls through the log rule. |
@@ -126,6 +135,25 @@ From `docs/LESSONS.md`, condensed. Each cost weeks.
    verdict path. `pref_consumption.py` now fails any gate where a Settings
    switch is not consumed by the engine.
 
+## The replay workflow
+
+A WRONG verdict on the phone is the start of an investigation, not a conclusion.
+The record carries everything needed to re-argue it — `frames`, `words` with
+`wu`/`wt`, `diagTail`, `advisories`, the emitted phoneme stream with its
+absolute base, and the per-ayah arrivals — and `device_blame.py` does the
+re-arguing: it rebuilds the judged window, re-runs the alignment, and names the
+charged emission per blamed unit.
+
+Two rules govern the replay itself, both paid for:
+
+- **Refuse rather than invent.** When arrivals are missing the window cannot be
+  rebuilt; the reader must say so. A fallback that defaults `ayah-1` to 0 and
+  `ayah+1` to the log end once "explained" 10 false accusations with 1,200
+  symbols of the wrong ayah.
+- **Clamp to the app's own bound.** The app judges at most 480 symbols
+  (`ayahWindowLimit`); the replay must apply the same clamp or every width it
+  prints overstates the evidence.
+
 ## Advisories are notes, not verdicts
 
 The engine reports a second channel, `AdvisoryKind` (`Advisory.kt`), for the
@@ -182,6 +210,18 @@ for a 406 s recitation whose diagTail plainly showed the lock moving. The
 verdicts were intact and the numbers were zero: the worst order, because the
 record still looks real. `session_record_integrity.py` guards both halves —
 the start path clears everything, and nothing else clears anything.
+
+## Subagent division of labour
+
+Research, survey and audit delegate well; judgement does not.
+
+| Task | Who | Why |
+|---|---|---|
+| Model survey (licences, ONNX availability, streaming vs offline, phoneme vs text output) | `explore` / `researcher` | Bounded research; needs no judgement about the app |
+| Record-schema audit, corpus measurements, blame classification over many sessions | `explore` / `researcher` | Read-only; cheap; returns facts |
+| Fault-inject a new check before trusting it | `verifier`, or inline | A check that hasn't been broken is decoration |
+| Anything that changes the verdict path, the lock, or a threshold | Main context | Needs the gate run and the numbers read together |
+| Keep-or-swap engine, what the replay shows, what a number means | Main context (+ user for the engine) | Wrong here has a cost |
 
 ## Where things live
 

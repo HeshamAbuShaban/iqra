@@ -75,48 +75,29 @@ finding is a guess without it.
 
 ## Next, in order
 
-0. **Read the last-unit class back, now that the windows are rebuildable.**
-   Recite once on the build installed 02:58 16 Oct and run:
+0. **Read the residual back on the widened retention.** The two long sessions
+   ran on the 110-ayah / 4,000-symbol retention; the build now keeps 300 ayat /
+   12,000 symbols. Re-run `device_blame.py` on the next session and confirm the
+   last-unit class resolves into named causes instead of refusals.
    ```
    adb -s 35d5637e shell run-as com.iqra.quran cat files/sessions/<file>.json > /tmp/x.json
    python3 engine/replay/device_blame.py /tmp/x.json
    ```
-   The arrival retention now spans the retained emission log (110 ayat vs a
-   4,000-symbol log, pinned by `arrival_retention_parity`), so windows are real
-   instead of defaulted. Expect the 77% last-unit class to resolve into a named
-   cause. Until it does, do not touch the final-vowel rule.
-1. **Write the phoneme stream into the session record.** One bounded array
-   alongside `frames`, holding the symbols the model actually emitted, in
-   order, with the poll they arrived on. `wu` says WHERE in a word the blame
-   landed and `wt` says WHEN; neither says WHAT was heard, and that is the
-   absence stopping this: a WRONG word's expected units are known, so one look
-   at the emitted span settles whether the escalation is a table defect, an
-   emission the rule does not cover, or a genuine mistake.
-   Gate: extend `device_blame_parity` — a record must carry the stream, and
-   the read-back must reconstruct the same span the verifier scores.
-2. **Read the four noise sessions once item 1 ships.** Re-recite, then run the
-   replay tool. Expected outcome: the residual 71% resolves into a named class.
-   Until then, do NOT touch the final-vowel rule again — it is written, it is
-   gated, and further guesses without the stream are exactly the failure mode
-   this project keeps finding.
-3. **Noise hardening.** `pollSec` rose from 0.299 to 0.556 under noise, so the
-   cadence that decides how fast audio reaches the model is a third slower in
-   the condition the app is actually used in. Measure whether that is the VAD
-   being honest or the RMS/VAD path costing polls, and whether the word-latency
-   floor rises with it.
-4. **Engine comparison**, per the decision rule in `engine/shootout/README.md`,
-   now that real noisy clips exist: same clips, same scorer, mistake-flag
-   precision and false-red rate. The harness does not care which model produced
-   the emissions, so a candidate plugs in as a different emission stream — no
-   rework of windows, lock policy or the verifier. Swap only if the current one
-   loses on those clips.
-5. **The 2.65 s word-latency floor.** Judged from the 615 s session, where every
-   word of an ayah flipped to its verdict in one batch ~2.7 s after the lock
-   arrived. Item 1 shows whether that is the emission lag, the three-ayah
-   window's leading tail, or the streaming decoder — and which of them is
-   worth changing.
-6. **Standing-word pointer**, which can still be empty between windows.
-7. **UI polish**: type sizes, session list order, RTL on the live caption.
+1. **Rebuild the word table with case vowels on finals.** 26,733 of 77,481
+   words end bare; the mushaf text carries the vowel; `build_word_table.py`
+   already walks word by word. The runtime `final_vowel_id` rule then becomes a
+   backstop. The builder's STOP condition (flat units byte-identical) must be
+   re-baselined deliberately with a corpus rescore, not weakened.
+2. **Replay screen, desktop first.** Data layer complete (reconstructed windows,
+   named charges); the time-scrubbed mushaf rendering remains.
+3. **Engine comparison** on the noisy human corpus; swap only on loss, per the
+   shootout's own decision rule.
+4. **Noise hardening.** `pollSec` 0.299 → 0.556 under noise. Measure whether the
+   VAD is being honest or the RMS/VAD path costs polls, and whether the
+   word-latency floor rises with it.
+5. **The 2.65s word-latency floor.** Untouched; the trim did not move it and
+   `wt` confirms.
+6. **UI polish**: type sizes, session list order, RTL on the live caption.
 
 ## Shipped — measured, not hoped
 
@@ -131,6 +112,13 @@ finding is a guess without it.
 - **In-reader search** — the magnifier searches the mushaf and jumps to the ayah.
 - **Page-turn follow** — the lock follows an explicit page choice when the
   reciter is silent, and credits nothing.
+- **Standing-word pointer** — falls back to the locked ayah's last word;
+  confirmed null in the record before the fix. `standing_word.py`.
+- **LiveTest scope inheritance** — a finished scope can no longer end the next
+  test before it begins. `live_scope_inherit_parity.py`.
+- **Arrival/emission retention widened** — 12,000 symbols / 300 ayat, covering a
+  full Al-Baqarah, after the 57-minute session showed `noWindowWords=3889`
+  from the log rolling past needed audio. `arrival_retention_parity.py`.
 - **From the other worker, verified on top:** whisper rescued by the VAD
   (`mic_gate.py`), pause that actually pauses, the denominator that could
   exceed its own count, the tone crest measured from audio being judged rather

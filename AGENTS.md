@@ -47,14 +47,24 @@ tajweed limits of the engine. Do not work in this repo without it.
    which window it was measured in.
 
 9. **Never edit a comment to make a check pass.** When a gate check greps for
-   code you just deleted, the check named a symbol, not a behaviour. Fix the
-   check to test the behaviour, then fault-inject the fixed check. Do not restore
-   the symbol to satisfy a name.
+code you just deleted, the check named a symbol, not a behaviour. Fix the
+check to test the behaviour, then fault-inject the fixed check. Do not restore
+the symbol to satisfy a name.
 
-6. **Prefer `edit` on existing files** to creating new ones. Match surrounding
-   style, and do not add comments unless asked — this codebase earns its
-   comments, so if you are adding one it must explain something a reader could
-   not infer.
+10. **Refuse rather than invent.** When data needed to answer is absent, say so.
+A fallback that defaults a missing neighbour to 0 / the log end once
+"explained" 10 false accusations with 1,200 symbols of the wrong ayah. This
+applies to replay tools and to verdicts alike.
+
+11. **A mention is not a guard.** Counting an identifier's appearance — in a key
+list, a comment, a neighbouring branch — is not verifying the behaviour. The
+guard must be a conditional on the assignment's own path. Two checks have
+failed this way; both passed with the defect fully restored.
+
+12. **Prefer `edit` on existing files** to creating new ones. Match surrounding
+style, and do not add comments unless asked — this codebase earns its
+comments, so if you are adding one it must explain something a reader could
+not infer.
 
 ## The user's standing priorities
 
