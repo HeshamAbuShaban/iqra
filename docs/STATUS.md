@@ -857,6 +857,54 @@ passes while the thing it guards loses a third of its output is not a check. The
 replacement asserts the two bounds that make the trim safe, and it fails if
 either goes.
 
+## The page-turn "corruption" was one line of the boundary test
+
+The user described it as *"you'd see jumping unwanted... glitching in page
+swiping... missbehaving lock on supposedly ayah."*
+
+Cause, in `onUserPageTurn`:
+
+```kotlin
+val opensNewSurah = surahsOnPage.any { it > activeSurah }
+```
+
+A page counts as a surah change when it contains **any** later surah. But **51 of
+the 604 pages hold two surahs**, and in reading order:
+
+| page | holds |
+|---|---|
+| 106 | `4:176` **and** `5:1` |
+| 221 | `10:107` and `11:1` |
+| 235 | `11:118` and `12:1` |
+| 293 | `17:105` and `18:1` |
+
+So a reciter finishing surah 4 swipes forward onto page 106 — a page that
+*continues* surah 4 — and the app arms the handoff and moves the lock to `5:1`,
+skipping the rest of surah 4. **58 such false arms exist across the mushaf.**
+
+Measured over a full forward and backward walk of Al-Baqarah: **zero** false
+arms, because no mid-surah page ever holds a later surah. That is why the defect
+looked like corruption rather than a rule — ordinary navigation was clean, and
+the failure appeared only at surah boundaries, where it skipped ayat.
+
+The fix: a page opens a new surah only when it holds **no** word of the surah
+being recited.
+
+```kotlin
+val opensNewSurah = surahsOnPage.isNotEmpty() && currentSurah !in surahsOnPage
+```
+
+Gate: `page_turn_boundary.py`. It evaluates **both** rules over the real layout
+and fails if the loose rule ever measures safe (which would mean it had nothing
+left to guard) or if the narrow rule is inverted or treats an empty page as a
+handoff. Three injections red.
+
+**Still open, unchanged:** the three scenarios the user named — mid-surah
+navigation, surah-end handoff, and swipe-onto-a-new-surah intent — have never
+been walked on device end to end. The intent path itself now has the retention
+fix and the LiveMode inheritance fix, and these two were real defects, but the
+scenario test above is what proves them together.
+
 ## The standing word, confirmed null from the record and fixed
 
 The user reported *"standingWord always null"*: the highlight disappears exactly
