@@ -1373,7 +1373,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * failure looked like the reciter was silent rather than like the index was
      * stale.
      */
-    private fun ayahObs(surah: Int, ayah: Int): List<String>? {
+    private fun ayahObs(surah: Int, ayah: Int, allowTrim: Boolean = true): List<String>? {
         val key = "$surah:$ayah"
         ayahArrival[key] ?: return null            // never visited
         // START AT THE PREVIOUS AYAH'S ARRIVAL, not at our own.
@@ -1450,7 +1450,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // end comes from a RAW window start so it names a real position.
         //
         // Guarded by window_anchor_parity, which fails if either guard goes.
-        val trimmed = applySpanEndTrim(from, hi, surah, ayah)
+        // `allowTrim = false` serves the first-word guard in the verdict loop:
+        // the same window without the trim, so a word the trim unseated can be
+        // judged against the validated wide window instead.
+        val trimmed = if (allowTrim) applySpanEndTrim(from, hi, surah, ayah) else from
         return emissionLog.subList(trimmed - emissionBase, hi - emissionBase)    }
 
     /**
@@ -3082,7 +3085,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // behind-the-lock ayah against `obs` is what re-aligned its
                 // words against the next ayah's speech and produced SKIPPED
                 // for a word the reciter had said perfectly.
-                val aObs = ayahObs(activeSurah, a)
+                var aObs = ayahObs(activeSurah, a)
                 if (pw.wordCount != ws.size) {
                     // The recognition phoneme table segments an ayah into words
                     // on phoneme-pHRASE boundaries and the Mushaf on
@@ -3115,8 +3118,39 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // null means never visited; empty means visited with no audio
                 // yet. Both are "no verdict", but only the second can be a bug,
                 // so they are kept apart deliberately.
-                val al = if (aObs == null || aObs.isEmpty()) null
+                var al = if (aObs == null || aObs.isEmpty()) null
                     else PhonemeMapper.align(aObs, pw, null)
+                // THE FIRST-WORD GUARD: a trim that unseats the ayah's opening
+                // word must not stand.
+                //
+                // The span-end trim removes the previous ayah's tail from this
+                // window's leading edge. When it removes too much - the recorded
+                // end overshot into this ayah's opening - the DP has nothing of
+                // word 0 to match, and the word is blamed for audio that was
+                // taken away from it. Measured on the user's 16 October
+                // sessions: words blamed on the first unit while their windows
+                // held another ayah's text.
+                //
+                // So when word 0 has zero matched units, judge it again against
+                // the untrimmed window - the validated wide window the 93.4%
+                // measurement covers - and use whichever alignment seats it. The
+                // size gate matters: when no trim applied, the two windows are
+                // identical and re-aligning would only burn a DP per poll for
+                // the ayahs whose first word genuinely has no audio yet. With
+                // it, the fallback fires only where trimmed-out audio exists to
+                // recover.
+                //
+                // This can only ever RESTORE audio, never remove it, so it can
+                // un-blame a word the trim starved and cannot invent a new
+                // accusation. The handoff (`lastAyahObsCoverage`) keeps the
+                // trimmed window: the lock policy does not move on this change.
+                if (al != null && al.wordCoverage.getOrElse(0) { 0f } <= 0f) {
+                    val wideObs = ayahObs(activeSurah, a, allowTrim = false)
+                    if (wideObs != null && wideObs.size > (aObs?.size ?: 0)) {
+                        aObs = wideObs
+                        al = PhonemeMapper.align(wideObs, pw, null)
+                    }
+                }
                 // Remember where THIS ayah's speech ended, so the next ayah's
                 // window can start after it instead of holding its tail at the
                 // boundary. `emitWord` labels every emission the alignment

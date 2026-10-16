@@ -109,6 +109,51 @@ def main() -> int:
                    "new session could start a window after a position from a "
                    "recitation that no longer exists")
 
+    # THE FIRST-WORD GUARD: a trim that unseats the ayah's opening word must
+    # not stand. Measured on the user's 16 October sessions: words blamed on
+    # the first unit while their windows held another ayah's text. The guard
+    # re-judges such a word against the untrimmed window - the validated wide
+    # window the 93.4% measurement covers - and the trim path is untouched
+    # otherwise.
+    if not re.search(r"private fun ayahObs\(surah: Int, ayah: Int, allowTrim: Boolean = true\)", vm):
+        bad.append("ayahObs lost its allowTrim switch; the fallback has no "
+                   "untrimmed window to judge against")
+    # The fallback lives in the verdict loop: word 0 unmatched, and only when
+    # the untrimmed window actually holds more audio (otherwise re-aligning
+    # would only burn a DP per poll for ayat whose first word genuinely has no
+    # audio yet).
+    loop = vm[vm.find("var al = if (aObs == null"):]
+    loop = loop[:loop.find("if (al == null && aObs != null)")]
+    if "allowTrim = false" not in loop:
+        bad.append("the verdict loop never falls back to the untrimmed window; "
+                   "a word the trim starved stays blamed")
+    if "wordCoverage.getOrElse(0)" not in loop:
+        bad.append("the fallback is not gated on the FIRST word's coverage; "
+                   "without that it cannot tell a starved opening from any "
+                   "other miss")
+    if "wideObs.size > (aObs?.size ?: 0)" not in loop:
+        bad.append("the fallback lacks its size gate, so it re-aligns even when "
+                   "no trim applied - burning a DP per poll for ayat whose "
+                   "first word genuinely has no audio yet")
+    # The handoff must keep the trimmed window: the lock policy does not move
+    # on this change. allowTrim = false belongs only to the verdict-loop fallback.
+    # (Matched on the call shape, not the bare string: the comments above
+    # mention it too, and a substring test cannot tell prose from code. The
+    # shape allows any argument names so a second call site elsewhere - the
+    # handoff, a coverage probe - is still caught.)
+    uses = [m.start() for m in re.finditer(
+        r"ayahObs\([^)]*allowTrim = false", vm)]
+    if len(uses) != 1:
+        bad.append("the untrimmed fallback call appears %d times; it belongs "
+                   "only to the verdict loop - the handoff must keep judging "
+                   "the trimmed window" % len(uses))
+    # Swapping the window without re-aligning would judge the new audio with
+    # the old verdict: the loop must re-run the DP on the wide window.
+    fb = re.search(r"aObs = wideObs\s*\n\s*al = PhonemeMapper\.align\(wideObs, pw, null\)", vm)
+    if not fb:
+        bad.append("the fallback swaps the window but does not re-align it; "
+                   "the verdict would come from audio no longer under judgement")
+
     if bad:
         for x in bad:
             print("FAIL:", x)

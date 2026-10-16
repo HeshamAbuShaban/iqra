@@ -183,7 +183,9 @@ def check_sources():
     # 1. the window must exist and be used for painting
     if "private fun ayahObs(" not in vm:
         failures.append("PracticeViewModel.kt: no ayahObs(). The per-ayah evidence window is gone.")
-    if "val aObs = ayahObs(" not in vm:
+    # var since the first-word guard reassigns it to the untrimmed window;
+    # the guarded property is that the paint loop reads ayahObs, not res.symbols.
+    if "val aObs = ayahObs(" not in vm and "var aObs = ayahObs(" not in vm:
         failures.append(
             "PracticeViewModel.kt: the paint loop does not use ayahObs(). Without it "
             "words are judged against the lock's slice, which is rebased on every "
@@ -333,7 +335,8 @@ def check_sources():
             "emissionBase + emissionLog.size - the end of the session log at that "
             "instant. emissionBase + sliceStart is per-stream and restarts near "
             "zero on every lock move.")
-    if "val aObs = ayahObs(activeSurah, a)" not in vm:
+    if ("val aObs = ayahObs(activeSurah, a)" not in vm
+            and "var aObs = ayahObs(activeSurah, a)" not in vm):
         failures.append(
             "PracticeViewModel.kt: the paint loop does not call the window helper "
             "by surah/ayah. It must read the session log, not res.symbols.")
