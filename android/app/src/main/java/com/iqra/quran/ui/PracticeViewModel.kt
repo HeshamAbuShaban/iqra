@@ -756,6 +756,7 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // declared interval is FEED_POLL_SEC = 250 ms; measured over the
             // Al-Kahf session the loop delivered a median of 563 ms.
             .append(",\"pollSec\":").append(f3(pollSec))
+            .append(",\"workPollSec\":").append(f3(workPollSec))
             .append(",\"declaredPollSec\":").append(f3(SherpaVad.FEED_POLL_SEC))
             .append(",\"noWindowWords\":").append(sessionNoWindowWords)
             .append(",\"emptyWindows\":").append(sessionEmptyWindows)
@@ -1826,6 +1827,23 @@ private fun computeWindow(): List<Int> {
      */
     private var pollMsEma = SherpaVad.FEED_POLL_SEC * 1000f
 
+    /**
+     * Seconds of WORK per feeding poll - delay excluded.
+     *
+     * [pollSec] includes the 250 ms `delay` the caller itself imposed, so it
+     * measures the iteration the timing constants think in, and cannot answer
+     * "what did noise actually cost?" - under loud ambient audio its measured
+     * polls ran 0.52 s against 0.29 s in a quiet room and the two numbers were
+     * indistinguishable from "the cadence is wrong". This EMA is fed only by
+     * the polls that reach the recogniser, subtracting the delay the whole
+     * loop pays whether it decodes or not.
+     */
+    private var workPollMsEma = 0f
+
+    /** Seconds of recogniser work per poll, for anything that must think in real time. */
+    private val workPollSec: Float
+        get() = (workPollMsEma / 1000f).coerceIn(0f, 2f)
+
     /** Seconds per poll, for anything that must think in real time. */
     private val pollSec: Float
         get() = (pollMsEma / 1000f).coerceIn(0.05f, 2f)
@@ -1834,6 +1852,12 @@ private fun computeWindow(): List<Int> {
     private fun notePollDuration(ms: Long) {
         if (ms <= 0L || ms > 10_000L) return
         pollMsEma = 0.8f * pollMsEma + 0.2f * ms
+    }
+
+    /** Called for the poll's work only, once the delay has been paid. */
+    private fun notePollWork(ms: Long) {
+        if (ms <= 0L || ms > 10_000L) return
+        workPollMsEma = 0.8f * workPollMsEma + 0.2f * ms
     }
 
     /**
@@ -2592,6 +2616,10 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // captured buffer; with a delta-based read that would compare
                 // ~4000 samples per poll against 4800 and skip every frame.
                 if (recorder.totalCount() < 4800) continue
+                // Everything from here to notePollDuration is work: the delay
+                // above is already paid, so the work EMA measures only what the
+                // engine itself spends.
+                var workStart = SystemClock.elapsedRealtime()
                 // Read only what has not been fed yet, by absolute index.
                 //
                 // The delta used to be computed against a 3s SLIDING window
@@ -2680,6 +2708,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // asked for. Excludes the delay, because that is the part the
                 // caller controls: the work time is what stretches the cadence.
                 notePollDuration(SystemClock.elapsedRealtime() - loopStart)
+                notePollWork(SystemClock.elapsedRealtime() - workStart)
             }
         }
     }
