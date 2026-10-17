@@ -401,8 +401,8 @@ def corpus_sweep(surahs):
     print("=" * 74)
     print("CORPUS: %d/%d ayat judged over %d surahs, %d skipped below the 0.90 gate"
           % (ayat_judged, ayat_total, len(surahs), ayat_skipped))
-    all_sites = sites[("ALL", "")]
-    all_charged = charged[("ALL", "")]
+    all_sites = sites[("ALL", "", "")]
+    all_charged = charged[("ALL", "", "")]
     if all_sites == 0:
         print("(not measurable: no ayat passed the 0.90 coverage gate)")
         return
@@ -438,7 +438,7 @@ def corpus_sweep(surahs):
 
     for sub_t in ("marked", "bare-final", "ghost"):
         row("QALQALAH " + sub_t, "QALQALAH", None, sub_t)
-    row("QALQALAH (q)", "QALQALAH", None, None)
+    row("QALQALAH (q)", "QALQALAH", None, GENUINE)
     for cls in ("NASAL", "MADD", "GEMINATE", "OTHER"):
         row(cls, cls, None)
     row("ALL (baseline)", "ALL", "")

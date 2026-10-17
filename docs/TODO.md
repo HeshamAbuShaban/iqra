@@ -129,6 +129,16 @@ version of it. The honest boundary: the unit alphabet must first grow a
 checked mapping letter → tajweed class, measured from the reference corpus,
 not guessed.
 
+**B measured — 17 October evening:** the class census exists
+(`engine/replay/tajweed_sites.py`); first rates in
+`TAJWEED_AND_MEMORISATION.md` §8.1. Qalqalah marked sites charge at 2.60× the
+corpus baseline (1.80% vs 0.69%) — the ONLY elevated tajweed class; nasal,
+madd and geminate are all BELOW baseline (0.40×/0.90×/0.55×). An earlier
+letter-binned pass read qalqalah at 4.15×; the honest unit-level split scales
+it back, which is exactly why the census bins by what the class occupies.
+Next: attribute the 68 charged qalqalah sites to their words, then design the
+advisory family (demote, never accuse) like the waqf junctions.
+
 (That is "if we aren't already on some bases with this": A is ~80% data-complete,
 0% UI; B is ~30% — the alignment and the channel exist, the class table does
 not. Both documented here so they are not lost.)

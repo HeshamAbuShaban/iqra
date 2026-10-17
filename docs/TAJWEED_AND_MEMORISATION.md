@@ -1044,3 +1044,40 @@ real:
 - **Delivery.** As advisories in the session report, grouped per letter
   class — a letter-level complement to the word verdicts, not a
   replacement.
+
+### 8.1 The first measurement exists now (17 October evening)
+
+`engine/replay/tajweed_sites.py` bins every phoneme unit site of the corpus
+(6,236 ayat, 311,886 sites, 220 distinct units) into tajweed classes by code
+structure, then charges every refused site on 26 h of Al-Dosari audio and
+divides by the sites the SAME universe charged overall (baseline 0.69%):
+
+| class | sites | charged | rate | vs baseline |
+|---|---:|---:|---:|---:|
+| QALQALAH marked (the ٛ variant) | 3,781 | 68 | 1.80% | **2.60×** |
+| QALQALAH bare-final | 0 (none judged) | 0 | — | refused, no sites |
+| QALQALAH ghost (bare vowelled letters) | 22,296 | 160 | 0.72% | 1.04× |
+| NASAL (ghunnah bearers) | 13,397 | 37 | 0.28% | 0.40× |
+| MADD | 54,159 | 335 | 0.62% | 0.90× |
+| GEMINATE | 13,613 | 52 | 0.38% | 0.55× |
+| OTHER | 198,855 | 1,463 | 0.74% | 1.06× |
+
+What this says, precisely:
+
+- **Qalqalah readings are the engine's only clearly elevated letter class** —
+  spoken qalqalah (only the marked variant sites; bare vowelled letters were
+  proven innocent in their own ghost row) is charged at 2.60× the corpus rate.
+- An earlier coarse pass that binned by the LETTER alone read 2.87% / 4.15×
+  at verse-final; the honest split scales that back. The lesson is recorded,
+  not forgotten: bin by units the class actually occupies, or the dilution
+  invents a number.
+- Nasal, madd and geminate units are all BELOW baseline — the recogniser
+  handles them hardest **least**. A letter-detection advisory family should
+  start at qalqalah, not everywhere.
+- The bare-final slice had no judged sites in this universe (the words that
+  end in a bare qalqalah letter sit in ayat that failed the 0.90 coverage
+  gate) — refusing to extrapolate for it.
+
+Next, in order: attribute the 68 charged qalqalah sites to words (which gates
+they need), then the advisory-family design like the waqf junctions — a
+demote/not-accuse guard, never a verdict.
