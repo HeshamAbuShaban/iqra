@@ -16,8 +16,9 @@ check items only when the shipped code proves them.
   experiment: surah 107 was recited first while the lock sat on `106:1`,
   whose window then held 107's audio and blamed `106:1:1` — the only wrong of
   a 15/16-correct session. An ayah with no previous ayah's arrival has no
-  anchor; a WRONG at the word's start from such a window now demotes to
-  UNKNOWN with a `UNANCHORED_AUDIO` note, behind the `unanchoredNeverAccuses`
+  anchor; any WRONG from such a window demotes to UNKNOWN with an
+  `UNANCHORED_AUDIO` note (the page-602 walk on the guard build itself
+  charged 106:1:1 at wu=1000, so no mismatch position is required), behind the `unanchoredNeverAccuses`
   toggle (default on, same ground as waqf and plain madd: the engine cannot
   prove the audio is the reciter's). Blame removed, never added.
   `advisory_parity.py` + `pref_consumption.py`.

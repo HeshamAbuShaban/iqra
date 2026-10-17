@@ -1049,8 +1049,10 @@ the second pass, with its arrival recorded at frame 249 — which also confirms
 arrivals are lock events, not audio anchors.
 
 **What shipped from it.** The un-anchored head demotion: an ayah with no
-previous ayah's arrival has no anchor, so a WRONG at the word's start from
-such a window demotes to UNKNOWN with an `UNANCHORED_AUDIO` note, behind the
+previous ayah's arrival has no anchor, so any WRONG from such
+a window demotes to UNKNOWN with an `UNANCHORED_AUDIO` note (the walk's
+own charge landed at wu=1000, so the first version's word-start
+requirement was widened the same day), behind the
 `unanchoredNeverAccuses` toggle (default on — the engine cannot prove the
 audio is the reciter's). Blame removed, never added; gated in
 `advisory_parity.py` and `pref_consumption.py`, fault-injected (guard removal

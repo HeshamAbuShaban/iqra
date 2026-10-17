@@ -1254,6 +1254,7 @@ fun ReaderScreen(
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val activeWindow by vm.activeWindow.collectAsStateWithLifecycle()
+    val scopeSurah by vm.scopeSurah.collectAsStateWithLifecycle()
     val scopeProgress by vm.scopeProgress.collectAsStateWithLifecycle()
     val selectedAyah by vm.selectedAyah.collectAsStateWithLifecycle()
     val selectedRange by vm.selectedRange.collectAsStateWithLifecycle()
@@ -1530,6 +1531,7 @@ fun ReaderScreen(
                     onToggleSelectAyah = { s, a -> vm.toggleSelectAyah(s, a) },
                     selectionOpen = selectedAyah != null,
                     selectedAyah = selectedAyah, activeWindow = activeWindow,
+                    scopeSurah = scopeSurah,
                     advisories = advisoryMap,
                     earned = earned.words, earnedVersion = earned.version, judgedAyahs = judgedByAyah,
                     night = night, pageInk = pageInk, mat = mat,
@@ -2411,6 +2413,7 @@ fun MushafPageView(
     selectionOpen: Boolean = false,
     selectedAyah: String? = null,
     activeWindow: List<Int> = emptyList(),
+    scopeSurah: Int = 1,
     advisories: Map<String, Advisory> = emptyMap(),
     // Verdicts the reader has seen this session (see [EarnedVerdicts], passed as
     // its map) and the archive-backed per-ayah verdict counts. Both are consulted
@@ -2461,7 +2464,7 @@ fun MushafPageView(
                 when (line.type) {
                     "surah-header" -> SurahHeader(line.text ?: "")
                     "basmala" -> Basmala()
-                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead, selectedAyah, activeWindow, advisories, earned, judgedAyahs)
+                    "text" -> LineText(line.words ?: emptyList(), statusMap, hide, currentKey, active, activeVerse, playOrder, playHead, selectedAyah, activeWindow, scopeSurah, advisories, earned, judgedAyahs)
                 }
             }
         }
@@ -2491,7 +2494,7 @@ fun MushafPageView(
         pagePaper(bmp, cs.background, night, ctx)
     }
     val draws = remember(
-        page.page, statusMap, advisories, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, slotsByAyah,
+        page.page, statusMap, advisories, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, scopeSurah, slotsByAyah,
         // earnedVersion rather than earned: the map is the same object for the
         // whole session and would compare equal to itself, so the draw list
         // would never rebuild when a new verdict arrives.
@@ -2539,16 +2542,23 @@ val st = statusMap[key] ?: earned[key]
                     val gi = playOrder[key]
                     val isPlayed = gi != null && gi <= playHead
                     val isPlayHead = gi != null && gi == playHead
+                    // The wash compares the standing scope's surah too:
+                    // ayah numbers repeat in every surah, and on a page
+                    // holding three surahs the unqualified compare lit the
+                    // neighbouring surahs' ayat in sync with the lock.
+                    // key is "$surah:$verse:$word"; a scope-qualified
+                    // compare on it is exact and needs no member read.
+                    val inScope = key.startsWith("$scopeSurah:")
                     val inActive = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
                     val layer = resolveWordLayer(
-                        st, isCur, isPlayed, isPlayHead, inActive, "${w.surah}:${w.verse}" == selectedAyah,
-                        hide, judgedAyahs[w.verse].judged(),
+                        st, isCur, isPlayed, isPlayHead, inActive && inScope, key == selectedAyah,
+                        hide, inScope && judgedAyahs[w.verse].judged(),
                     )
                     val style = resolveWordStyle(
                         layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background,
                         advisory = advisories[key],
                         advisoryCue = !hide && ReaderPrefs.advisoryDisplay(ctx) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
-                        judgedAyah = st == null && !hide && judgedAyahs[w.verse].judged(),
+                        judgedAyah = st == null && !hide && inScope && judgedAyahs[w.verse].judged(),
                     )
                     add(WordDraw(rect, style))
                 }
@@ -2798,6 +2808,7 @@ fun LineText(
     playHead: Int = -1,
     selectedAyah: String? = null,
     activeWindow: List<Int> = emptyList(),
+    scopeSurah: Int = 1,
     advisories: Map<String, Advisory> = emptyMap(),
     // Same two sources the page draw uses. This renderer has to agree with it:
     // it exists only when a page bitmap will not load, and a reader who gets
@@ -2824,20 +2835,21 @@ fun LineText(
         val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
         val st = statusMap[key] ?: earned[key]
         val isCur = key == currentKey
-        val inActiveAyah = if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
+        val inScope = key.startsWith("$scopeSurah:")
+        val inActiveAyah = inScope && if (activeWindow.isEmpty()) activeVerse != null && w.verse == activeVerse else activeWindow.contains(w.verse)
         val gi = playOrder[key]
         val isPlayed = gi != null && gi <= playHead
         val isPlayHead = gi != null && gi == playHead
         val cs = MaterialTheme.colorScheme
         val layer = resolveWordLayer(
             st, isCur, isPlayed, isPlayHead, inActiveAyah, "${w.surah}:${w.verse}" == selectedAyah,
-            hide, judgedAyahs[w.verse].judged(),
+            hide, inScope && judgedAyahs[w.verse].judged(),
         )
         val style = resolveWordStyle(
             layer, st ?: WordStatus.SKIPPED, hide, cs.onSurface, cs.background,
             advisory = advisories[key],
             advisoryCue = !hide && ReaderPrefs.advisoryDisplay(LocalContext.current) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
-            judgedAyah = st == null && !hide && judgedAyahs[w.verse].judged(),
+            judgedAyah = st == null && !hide && inScope && judgedAyahs[w.verse].judged(),
         )
         builder.pushStyle(
             SpanStyle(

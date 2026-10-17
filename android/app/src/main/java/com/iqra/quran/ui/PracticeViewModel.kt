@@ -77,6 +77,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _activeVerse = MutableStateFlow<Int?>(null)
     val activeVerse: StateFlow<Int?> = _activeVerse
 
+    /** The surah the engine's scope is built on. Published for the reader's
+     *  paint path: the standing-window wash and the judged wash must qualify
+     *  their ayah-number comparisons with it, because ayah numbers repeat in
+     *  every surah - on a page holding three surahs (602: 106, 107, 108),
+     *  standing on 106:2 lit 107:2 and 108:2 in sync, which read as colouring
+     *  in surahs the reciter never recited. */
+    private val _scopeSurah = MutableStateFlow(1)
+    val scopeSurah: StateFlow<Int> = _scopeSurah
+
 
     /** Ayah search index, built once off the main thread. */
     @Volatile private var searchIndex: com.iqra.quran.data.AyahSearch? = null
@@ -1946,6 +1955,7 @@ private fun computeWindow(): List<Int> {
         val pages = _mushaf.value ?: return
         sessionStatuses.clear()
         activeSurah = surah
+        _scopeSurah.value = surah
         val all = Mushaf.wordsForSurah(pages, surah)
         val byAyah = all.groupBy { it.verse }
         verseWords = byAyah.mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
@@ -3250,17 +3260,20 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     // anchor: its window's left edge is the log's start,
                     // where any earlier audio can sit - another surah's
                     // recitation, the tail of talk before the session.
-                    // Measured on the circling experiment, 17 October:
-                    // surah 107 was recited first while the lock sat on
-                    // 106:1, whose window held 107's audio and accused
-                    // 106:1:1 - the only wrong of a 15/16-correct session.
-                    // The wrong must sit at the word's start: that is where
-                    // unattributable leading audio lands. Same shape as the
-                    // waqf guard: blame removed, never added.
+                    // Measured twice: the circling experiment (17 October)
+                    // charged 106:1:1 against 107's audio, and the page-602
+                    // walk on the guard build itself charged 106:1:1 at
+                    // wu=1000 - the DP misplaced the word's LAST unit after
+                    // matching four units at the window's tail, so a guard
+                    // requiring wrongAtWordStart would not have fired. The
+                    // window is unattributable at its leading edge, and a DP
+                    // over a contaminated window can place a mismatch
+                    // anywhere: any wrong from it is removed, not just the
+                    // opening unit. Same shape as the waqf guard: blame
+                    // removed, never added.
                     if (s == WordStatus.WRONG &&
                         ReaderPrefs.unanchoredNeverAccuses(getApplication()) &&
-                        ayahArrival["$activeSurah:${a - 1}"] == null &&
-                        al.wrongAtWordStart.getOrElse(i) { false }
+                        ayahArrival["$activeSurah:${a - 1}"] == null
                     ) {
                         s = WordStatus.UNKNOWN
                         addAdvisory(key, AdvisoryKind.UNANCHORED_AUDIO)
