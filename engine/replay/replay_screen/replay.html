@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  The replay screen, desktop first.
+
+  One session record, scrubbed over time: the mushaf page as the phone draws
+  it (page bitmap + the same glyph boxes the app pairs), each word taking its
+  recorded verdict at the moment the record says it was decided (`wt`), the
+  lock tracking the recorded frames, and every reconstruction the record is
+  honest enough to reproduce.
+
+  It does not invent what the record does not hold: a word whose window the
+  record cannot reproduce shows "NOT RECONSTRUCTABLE"; a page image that is
+  not supplied renders as text; a verdict the record stores is the record's,
+  not a re-simulation. Regenerate with:
+
+    python3 engine/replay/replay_export.py /tmp/rec.json --glyphdb <ayahinfo_1024.db> --pages-dir <pages dir>
+
+  then open engine/replay/out/replay/<name>/replay.html in a browser.
+-->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iqra replay</title>
+<style>
+  :root {
+    --paper: #f4ead3; --ink: #505050; --accent: #2bb6a0;
+    --wrong: #e0625a; --gold: #d9b36b; --amber: #e09112; --blue: #4a9eff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: #1d1c19; color: #e8e2d4; }
+  header { display: flex; gap: 18px; align-items: baseline; padding: 10px 16px 6px; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .meta { color: #a89f8c; font-size: 12px; }
+  #bar { display: flex; gap: 10px; align-items: center; padding: 4px 16px 10px; flex-wrap: wrap; }
+  button { background: #2b2a26; color: #e8e2d4; border: 1px solid #413f38; border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; }
+  button:hover { background: #38362f; }
+  #t { color: #a89f8c; font-variant-numeric: tabular-nums; min-width: 92px; }
+  #speed { min-width: 56px; }
+  #slider { flex: 1; min-width: 240px; accent-color: var(--accent); }
+  #stage { display: flex; gap: 14px; padding: 0 16px 16px; align-items: flex-start; flex-wrap: wrap; }
+  #pageWrap { position: relative; flex: 0 1 auto; }
+  #lock { padding: 6px 12px; border-radius: 8px; background: #2b2a26; border: 1px solid #413f38;
+          font-variant-numeric: tabular-nums; font-size: 13px; margin-bottom: 8px; }
+  canvas { display: block; background: #fff; border-radius: 10px; max-height: 86vh; width: auto; box-shadow: 0 6px 24px #0008; }
+  .panelcard { flex: 1 1 340px; max-width: 470px; display: flex; flex-direction: column; gap: 10px; min-width: 300px; }
+  .card { background: #2b2a26; border: 1px solid #413f38; border-radius: 10px; padding: 10px 12px; }
+  .card h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #a89f8c; font-weight: 600; }
+  #feed { height: 260px; overflow-y: auto; font-variant-numeric: tabular-nums; font-size: 13px; }
+  #feed .row { display: flex; gap: 8px; padding: 1px 0; align-items: baseline; }
+  #feed .t { color: #847c6b; min-width: 64px; }
+  #feed .key { min-width: 74px; }
+  #feed .st-CORRECT { color: var(--accent); } #feed .st-WRONG { color: var(--wrong); font-weight: 600; }
+  #feed .st-UNKNOWN { color: var(--amber); } #feed .st-SKIPPED { color: #847c6b; }
+  #feed .wu { color: #a89f8c; font-size: 11px; }
+  #cause { font-size: 13px; }
+  #cause table { border-collapse: collapse; margin-top: 6px; }
+  #cause td { padding: 1px 8px 1px 0; font-family: "Amiri", "Scheherazade New", serif; font-size: 17px; }
+  #cause .charge { color: var(--wrong); font-weight: 700; }
+  #cause .match { color: #9fb9a8; }
+  #cause .window { color: #a89f8c; font-size: 11px; }
+  #cause .nr { color: var(--wrong); }
+  #diag { max-height: 150px; overflow-y: auto; color: #a89f8c; font-size: 11.5px; white-space: pre-wrap; word-break: break-word; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: #a89f8c; padding: 0 16px 8px; }
+  .legend b { font-weight: 600; color: #d8d0bf; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  footer { color: #847c6b; font-size: 11px; padding: 2px 16px 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Iqra replay</h1>
+  <span class="meta" id="recname"></span>
+  <span class="meta" id="recmeta"></span>
+</header>
+<div id="bar">
+  <button id="playBtn">Play</button>
+  <button id="speedBtn" title="frames per second of playback">1×</button>
+  <button id="prevBtn" title="previous verdict">(w)</button>
+  <button id="nextBtn" title="next verdict (w)">(w)</button>
+  <input id="slider" type="range" min="0" max="1000" value="0">
+  <span id="t">0.0 s</span>
+</div>
+<div class="legend">
+  <span><b>Painted as the record states:</b></span>
+  <span><span class="sw" style="background:var(--wrong)"></span>WRONG</span>
+  <span><span class="sw" style="background:var(--accent)"></span>CORRECT</span>
+  <span><span class="sw" style="background:var(--amber)"></span>UNKNOWN</span>
+  <span><span class="sw" style="background:#847c6b"></span>SKIPPED</span>
+  <span><span class="sw" style="background:var(--gold)"></span>lock</span>
+  <span>Click a word for its cause. Space plays. &larr;/&rarr; jump 5 s. w steps one verdict.</span>
+</div>
+<div id="stage">
+  <div id="pageWrap">
+    <div id="lock"></div>
+    <canvas id="page" width="1024" height="1656"></canvas>
+  </div>
+  <div class="panelcard">
+    <div class="card"><h2>Verdict feed</h2><div id="feed"></div></div>
+    <div class="card"><h2>Cause</h2><div id="cause">Click a red word.</div></div>
+    <div class="card"><h2>Log</h2><div id="diag"></div></div>
+  </div>
+</div>
+<footer id="honest" style="max-width:1000px"></footer>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
