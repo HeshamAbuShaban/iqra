@@ -56,8 +56,12 @@ check items only when the shipped code proves them.
    charge was made in an earlier poll, when `أَمْوَالَهُمْ` and `أَمْوَالَكُمْ`
    (both in the 4:2–4:3 stream) were both visible and the window picked the
    wrong twin. Named 17 October with spans; a second case found the same day:
-   `76:11:1` blamed وَ while 5/6 units matched (`وَلَقَدْ` repeats in surah 76).
-   Fix design not started.
+   `76:11:1` blamed وَ while 5/6 units matched — its sibling pair in 76:11
+   (`فَوَقَاهُمُ` / `وَلَقَاهُمْ`) shares only a 4-unit suffix (قَ اا هُ م).
+   Measured the same evening (`dup_twin.py`): exact and hamming-1 twins are
+   ABSENT on reference audio (surah 76: 5 wrong, 0 twins) — a live-session
+   window-composition race, not a corpus pattern. The census stays unshipped
+   until it can model window truth; device records are the only real evidence.
 6. **DONE — whole-corpus measurement of the optional-final class.** Sweep run
    17 October: the reference reciter judged WRONG on **699 words** (6,135 of
    6,236 ayat above the 0.9 coverage gate; 3h33m). The guard covers **12**
