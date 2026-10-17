@@ -24,12 +24,24 @@ check items only when the shipped code proves them.
   `advisory_parity.py` + `pref_consumption.py`.
 - **Spans confirmed on device.** All three records carry the span-end capture
   (14, 4 and 5 entries), with the same retention filter as arrivals.
+- **The surah-qualified reader washes** (installed 09:57): wash layers compared
+  ayah numbers without surah, so ayah 2 lit across page-mates (your own
+  observation). Scope carries the surah now; `paint_scope_parity`.
+- **The sibling escape** (installed today): on a multi-surah page the scope
+  itself was unmovable — a sibling recited first left the lock standing, then
+  drifting on stale windows (the walk's last 20 s: lock walked 106:1→4 while
+  the fresh slice held only 107:1). Ported the measured rule
+  (`page_scope_escape.py`): sibling opening ≥0.85 of the last 120 symbols,
+  leading `here` by ≥0.35, 3 frames → the lock's surah moves. Zero false
+  escapes on the ten other records; CORE_LOGIC.md updated.
 
 **Still open, in order — the full list, so nothing is lost:**
 
 1. **Verify today's fixes on the phone.** The next session that starts mid-
    page is the un-anchored guard's first test; re-recite the first ayah and
-   the record must show UNKNOWN + note, not red.
+   the record must show UNKNOWN + note, not red. The sibling escape's first
+   test is the same walk: start with a middle surah of a multi-surah page and
+   the lock must follow into it (frame tag 3 in the record).
 2. **Two-surah page walk** (finish surah 4 onto page 106). The user walked it
    in bits on 17 October — surah 4 pieces, then Quraysh, then the circling
    experiment — and the piecewise sessions behaved, but a continuous walk
@@ -43,12 +55,21 @@ check items only when the shipped code proves them.
    while all 7 of its units match inside the final span-trimmed window — the
    charge was made in an earlier poll, when `أَمْوَالَهُمْ` and `أَمْوَالَكُمْ`
    (both in the 4:2–4:3 stream) were both visible and the window picked the
-   wrong twin. Named 17 October with spans; fix design not started.
-6. **Whole-corpus measurement of the optional-final class.**
-   `engine/replay/optional_final.py` sweeps all 114 reference-reciter dumps.
-   Run it before trusting `UNMODELLED_FINAL` as more than a partial fix.
-7. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings** — mutamakkin-meem table gap or
-   real limit, unknown until the sweep answers.
+   wrong twin. Named 17 October with spans; a second case found the same day:
+   `76:11:1` blamed وَ while 5/6 units matched (`وَلَقَدْ` repeats in surah 76).
+   Fix design not started.
+6. **DONE — whole-corpus measurement of the optional-final class.** Sweep run
+   17 October: the reference reciter judged WRONG on **699 words** (6,135 of
+   6,236 ayat above the 0.9 coverage gate; 3h33m). The guard covers **12**
+   (1.7%): ۢ ×3, ۚ ×3, ۟ ×2, ۭ ×2, ۘ ×1, mixed ۢ+ۚ ×1 — 5 of the 12 also carry
+   a free-standing pause sign. NOT covered: mark-not-final 143, no-mark 544
+   (56 last-unit, 488 mid-word). Full list in `/tmp/opencode/optional_final_full.txt`
+   (regenerable: `python3 engine/replay/optional_final.py` — surahs as bare
+   ints). Implication: UNMODELLED_FINAL stays a partial fix; the no-mark class
+   is the bigger fish and untouched.
+7. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings** — now answerable by the sweep: the
+   12 covered rows carry marks; the 56 no-mark last-unit rows are the class
+   that needs the mutamakkin-meem table reviewed.
 8. **Rebuild the word table with case vowels on finals** (26,733 bare-end
    words; the builder's STOP condition needs a deliberate corpus rescore,
    not a weakening).
@@ -56,10 +77,12 @@ check items only when the shipped code proves them.
    1.4–2.7s apart at pollSec 0.333. Untouched by every guard so far.
 10. **Engine comparison** per `engine/shootout/README.md`; swap only on loss,
     plugged into the current setup (user's decision).
-11. **Replay screen, desktop first** — data layer complete; the time-scrubbed
-    mushaf rendering remains. Note the record holds only the LATEST span end
-    per ayah, so per-poll replay of past charges stays impossible even with
-    spans; future charges are replayable.
+11. **DONE — Replay screen, desktop first.** `engine/replay/replay_export.py`
+    <records...> --glyphdb <ayahinfo_1024.db> --pages-dir <pngs> writes a
+    self-contained `out/replay/<record>/` (html+js+data, pages embedded);
+    `data.js` carries frames, emissions, arrivals, spans, word verdicts and
+    per-WRONG causes where the record can reproduce them (NOT RECONSTRUCTABLE
+    otherwise). No headless browser here — open the html.
 12. **Noise hardening** — `pollSec` 0.299 → 0.556 under noise; measure the
     VAD/RMS cost.
 13. **UI polish** (deferred but requested): session-list hierarchy, list

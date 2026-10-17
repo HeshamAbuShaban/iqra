@@ -975,8 +975,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .append(" BACK_COVERAGE=").append(f3(BACK_COVERAGE))
             .append(" HANDOFF_COVERAGE=").append(f3(HANDOFF_COVERAGE))
             .append(" STUCK_COVERAGE=").append(f3(STUCK_COVERAGE))
-            .append(" tags=0:decided,1:empty_slice,2:handoff")
+            .append(" tags=0:decided,1:empty_slice,2:handoff,3:escape")
             .append(" tag2_nextCov_is=handoff_coverage")
+            .append(" tag3_nextCov_is=escape_coverage")
             .append(" rows=").append(frameRing.rowCount())
             .append('/').append(FRAME_RING)
             .append(" oldest_first tRel_ms=since_session_start")
@@ -1179,6 +1180,13 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Consecutive frames the next surah's opening has looked like the target. */
     private var handoffFrames = 0
+
+    /**
+     * The sibling-surah escape streak (see the escape block in the poll loop):
+     * which sibling has qualified and for how many consecutive frames.
+     */
+    private var escapeSurah = 0
+    private var escapeFrames = 0
 
     /** CORRECT + WRONG words recorded this session. What "judged" has to mean. */
     private var sessionTerminalCount = 0
@@ -1904,6 +1912,7 @@ private fun computeWindow(): List<Int> {
         // is how a surah could change without the surah being finished.
         handoffFrames = 0
         intentHandoffAyah = 0
+        escapeSurah = 0; escapeFrames = 0
     }
 
     /**
@@ -2020,6 +2029,27 @@ private fun computeWindow(): List<Int> {
             if (hit) return i + 1
         }
         return null
+    }
+
+    /**
+     * The other surahs visibly present on the page the lock currently stands
+     * on. This is what makes the sibling escape page-scoped: an escape is only
+     * ever considered to a surah the reader can actually see. Text lines carry
+     * words of exactly one surah (a page's leading line can continue the
+     * previous surah), so the word tags are authoritative.
+     */
+    private fun siblingScopeSurahs(): List<Int> {
+        val pages = _mushaf.value ?: return emptyList()
+        val pageNum = versePage[lockedAyah] ?: return emptyList()
+        if (pageNum < 1 || pageNum > pages.size) return emptyList()
+        val other = HashSet<Int>()
+        for (l in pages[pageNum - 1].lines) {
+            if (l.type != "text") continue
+            for (w in l.words ?: emptyList()) {
+                if (w.surah != activeSurah) other.add(w.surah)
+            }
+        }
+        return other.sorted()
     }
 
     /** Jump to an arbitrary Mushaf page and resync the tracker to its anchor. */
@@ -2293,6 +2323,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         intentHandoffAyah = 0
         intentArmedAt = 0L
         handoffFrames = 0
+        escapeSurah = 0; escapeFrames = 0
         pendingAnchor = null
         resetAudioPipeline()
         refreshWindow()
@@ -2884,6 +2915,75 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             // below do: recording lockedAyah afterwards would file a frame's
             // coverages under an ayah the policy never saw.
             val lockAtDecision = lockedAyah
+
+            // ---- sibling escape -------------------------------------
+            // The gates above and below can only move the lock WITHIN the
+            // surah; the handoff only fires at a surah's END. The page-602
+            // walk (17 October) exposed the state neither can leave: the
+            // reciter stood on a multi-surah page (106/107/108), began with a
+            // sibling (107:1->108:2), and the lock - keyed to the standing
+            // surah - sat on 106:1 for 35 s, then walked 1->2->3->4 on stale
+            // windows while the fresh slice held only 107:1's opening
+            // re-recited. The mask did not follow their flow because the
+            // scope was the surah, not the page, and no gate moved the scope.
+            //
+            // Ported verbatim from engine/replay/page_scope_escape.py, which
+            // measured the rule on that walk's record and found ZERO false
+            // escapes on the ten other records pulled that day (sibling peaks
+            // <= 0.35 on sequential sessions). The sibling whose OPENING ayah
+            // scores >= ESCAPE_COVERAGE over the last ESCAPE_TAIL symbols -
+            // precisely "the audio just heard", not a log that keeps an old
+            // recited surah saturated forever - and leads the standing ayah's
+            // own coverage by >= ESCAPE_LEAD, held for ESCAPE_FRAMES
+            // consecutive polls, becomes the scope. Verdicts are not touched;
+            // only the surah the lock stands in moves.
+            val escapeTail = if (obs.size > ESCAPE_TAIL) obs.takeLast(ESCAPE_TAIL) else obs
+            var pickSurah = 0
+            var pickCoverage = 0f
+            for (sib in siblingScopeSurahs()) {
+                val sibExp = PhonemeMapper.expected(sib, 1) ?: continue
+                val sibCov = PhonemeMapper.align(escapeTail, sibExp).coverage
+                if (sibCov > pickCoverage) { pickCoverage = sibCov; pickSurah = sib }
+            }
+            if (pickSurah != 0 && pickCoverage >= ESCAPE_COVERAGE &&
+                pickCoverage - hereCov >= ESCAPE_LEAD
+            ) {
+                // The streak must name the SAME sibling as the frame before it:
+                // three frames each for a DIFFERENT surah are not 3 frames of
+                // anything.
+                if (escapeSurah == pickSurah) escapeFrames++ else {
+                    escapeSurah = pickSurah; escapeFrames = 1
+                }
+                if (escapeFrames >= ESCAPE_FRAMES) {
+                    val from = activeSurah
+                    loadSurah(pickSurah)
+                    lockedAyah = 1
+                    pendingArrivalKey = "$activeSurah:1"
+                    lastLockMoveMs = System.currentTimeMillis()
+                    rebaseSlice = true
+                    lastAdvanceAt = System.currentTimeMillis()
+                    pendingNextAyah = null; pendingNextFrames = 0
+                    pendingBackAyah = null; pendingBackFrames = 0
+                    ayahArrival.clear()
+                    intentHandoffAyah = 0
+                    handoffFrames = 0
+                    pendingAnchor = null
+                    escapeSurah = 0; escapeFrames = 0
+                    resetAudioPipeline()
+                    refreshWindow()
+                    diag("escape → s=${activeSurah}:1 coverage=${"%.2f".format(pickCoverage)} " +
+                        "from=$from here=${pct(hereCov)}")
+                    frameRing.add(
+                        SystemClock.elapsedRealtime() - sessionStartMono,
+                        activeSurah, lockedAyah,
+                        pickCoverage, hereCov, -1f, 0, -1f,
+                        res.symbols.size, obs.size, sessionGen, TAG_ESCAPE,
+                    )
+                    return
+                }
+            } else {
+                escapeSurah = 0; escapeFrames = 0
+            }
 
             // Forward: the next ayah is sufficiently covered.
             if (nextCov >= ADVANCE_COVERAGE) {
@@ -3728,6 +3828,18 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         /** Frames the whole handoff case must hold, so one lucky frame cannot move it. */
         private const val HANDOFF_FRAMES = 3
 
+        // Sibling escape thresholds, ported from engine/replay/page_scope_escape.py:
+        // 0.85 is the strong-advance standard; the lead 0.35 keeps a sibling
+        // from winning while the reciter's own text still scores; ESCAPE_FRAMES
+        // mirrors the handoff's streak discipline. ESCAPE_TAIL is the "audio
+        // just heard" window in symbols (~7 s of recitation); a longer window
+        // keeps an earlier recited sibling saturated and re-fires on the walk
+        // back, which the analyzer measured on the page-602 record.
+        private const val ESCAPE_COVERAGE = 0.85f
+        private const val ESCAPE_LEAD = 0.35f
+        private const val ESCAPE_FRAMES = 3
+        private const val ESCAPE_TAIL = 120
+
         /**
          * Frames an INTENT handoff needs, versus HANDOFF_FRAMES for the
          * evidence gate. Lower because the user already stated the intent by
@@ -3774,11 +3886,13 @@ private fun f1(v: Double): String = String.format(Locale.US, "%.1f", v)
 private fun f3(v: Float): String = String.format(Locale.US, "%.3f", v)
 
 // FrameRing row tags. Only tag 0 is a frame the lock policy actually judged;
-// the other two mark the frames that bypass it, which are exactly the frames
-// whose absence from a dump would be read as "the policy did nothing".
+// the others mark the frames that bypass it, which are exactly the frames
+// whose absence from a dump would be read as "the policy did nothing". The
+// sibling escape (tag 3) also changes the surah.
 private const val TAG_DECIDED = 0
 private const val TAG_EMPTY_SLICE = 1
 private const val TAG_HANDOFF = 2
+private const val TAG_ESCAPE = 3
 
 /**
  * Fixed-capacity circular store of the per-frame lock decision.

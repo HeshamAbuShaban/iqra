@@ -32,7 +32,7 @@ a user saw.
 | `docs/STATUS.md` | Always, first. What is fixed, what is open, ranked by what hurts. |
 | `docs/CORE_LOGIC.md` | Before touching recognition code. The six pipeline steps in plain English, plus the achieved / not-achieved table. |
 | `docs/LESSONS.md` | Before changing any threshold, metric or gate. 13 lessons, each earned. |
-| `engine/replay/optional_final.py` | The whole-corpus false-accusation sweep. 768 WRONG verdicts over 6,112 ayat of reference audio. |
+| `engine/replay/optional_final.py` | The whole-corpus false-accusation sweep. 699 WRONG verdicts over 6,135 ayat judged of 6,236 (whole corpus, 2026-10-17). |
 | `engine/replay/window_lead.py` | The first-word sweep, and the three hypotheses it rejected. |
 | `engine/replay/device_blame.py` | Reads `wu` (where in a word blame landed), `wt` (when it was decided), and the emitted phoneme stream from a session record. Reconstructs the judged window and names the charged emission per blamed unit. The only tool that can argue with a WRONG verdict after the fact. Pull a record first: `adb shell run-as com.iqra.quran cat files/sessions/<file>.json`. |
 | `engine/replay/arrival_retention_parity.py` | The arrival log and the emission log must agree (`span × 40 >= cap`, covering a full Al-Baqarah). When they disagreed, the replay invented whole-session windows. |

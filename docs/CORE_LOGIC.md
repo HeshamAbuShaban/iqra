@@ -239,6 +239,16 @@ left surah 18 at ayah 27 and went to 19:1 while you were still inside surah 18.
 It came back to 18:28 twenty seconds later. An earlier session did the same at
 2:164. Both sessions skipped ayat.
 
+The lock can also stand on the wrong surah on a multi-surah page. Measured on
+the page-602 walk (surahs 106/107/108 on one page): a sibling surah recited
+first left the lock on 106:1 for 35 seconds, then it drifted into 106:2–4 on
+stale windows. The **sibling escape** now moves the scope: a surah visible on
+the standing page whose *opening ayah* covers at least 0.85 of the audio just
+heard (the last 120 phoneme symbols), leading the standing ayah's own coverage
+by at least 0.35, held for three consecutive frames, becomes the lock's surah.
+Ported from `page_scope_escape.py`, which found zero false escapes on ten other
+records. Verdicts never change — only the surah does.
+
 ### What can fail here
 
 The long jump can skip one ayah. Measured twice in one session: 18:65 to 18:67,

@@ -40,6 +40,9 @@ and none of them was reachable by a token corpus.
 | Harness never drained the tail backlog | `simulate()` drain | 11 surahs repaired |
 | Deadlock state had no exit | `pinned_escape.py` | 55:63 frozen → 55:78 complete |
 | Session records lost on process death | timer flush, atomic rename | a killed session now leaves a file |
+| Un-anchored head accused on foreign audio | demote to UNKNOWN + note, toggled | the circling experiment + the walk; `advisory_parity` |
+| Reader washes synced across page-mates | scope carries the surah | the user's own observation; `paint_scope_parity` |
+| Multi-surah page: lock rooted to standing scope | sibling escape (ported from `page_scope_escape.py`) | page-602 walk fires; 0 false escapes on 10 records |
 | Two faults in my own recorder | `sessionEvaluations`, post-teardown flush | found by reading a real record back |
 
 ## Open, ranked by what is actually hurting you
