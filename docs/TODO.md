@@ -31,7 +31,9 @@ audio: 96-98% of decided words correct, `noWindowWords=0` in every session.
    deliberate 2:2→2:1 backtrack (`reversals: 2`, no false accusation), and the
    first-word guard (0/11, 0/11, 0/17 first-word failures; see STATUS). Still
    unverified on device: **two-surah page walk** (finish surah 4 onto page
-   106) and the **`standingWord`-stays-lit** visual at a completed surah.
+   106), the **`standingWord`-stays-lit** visual at a completed surah, and
+   **one new session confirming `spans` lands in the record** (the span-end
+   capture shipped 17 October 06:35; the next recording is its first test).
 2. **The remaining boundary blame.** The first-unit blame share fell from
    13.4% pooled pre-guard to 0% in tonight's three runs and 2/31 in the 22:10
    surah-2 session — where `device_blame.py` now names each: a real خ/ق
