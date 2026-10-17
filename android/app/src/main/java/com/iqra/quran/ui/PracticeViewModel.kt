@@ -1692,6 +1692,52 @@ private fun computeWindow(): List<Int> {
         return consecutiveRetreats < MAX_CONSECUTIVE_RETREATS
     }
 
+    /**
+     * Verdicts only run for the locked ayah, so a jump past an ayah leaves it
+     * unjudged forever. Measured on the walk record (17 October): the lock
+     * went 107:1 -> 3 in one poll - the short ayah never was the locked one -
+     * and 107:2's four words retired UNKNOWN in a session the reciter
+     * completed. This re-judges each passed-over ayah against the SAME slice
+     * the jump's coverage read, and keeps a word only when EVERY unit of it
+     * matched: a catch-up can turn an UNKNOWN green and can never invent a
+     * red, because a word with no standing is never accused here. Words the
+     * skip genuinely could not hear stay UNKNOWN, which is the truth.
+     */
+    private fun rejudgeJumpedAyat(from: Int, to: Int) {
+        if (to <= from + 1) return
+        val logEnd = emissionBase + emissionLog.size
+        for (a in from + 1 until to) {
+            // The jump moved the lock past a, so ayahObs() would refuse it as
+            // never-visited. Stamp the arrival the re-judge needs to exist:
+            // the slice's end is the one position the engine actually knows
+            // the lock passed here, and a mid-slice guess would be invented
+            // window data. For a single-skipped ayah its window is
+            // [arrival(a-1), the jump target's future stamp) - containing all
+            // its audio; for a multi-ayah jump only the FIRST skipped ayah
+            // gets a non-empty window (its neighbours share the one known
+            // stamp), and the rest stay UNKNOWN, which is the truth the
+            // engine holds.
+            val key = "$activeSurah:$a"
+            if (ayahArrival[key] == null) ayahArrival[key] = logEnd
+            val ws = verseWords[a] ?: continue
+            if (ws.isEmpty()) continue
+            val pw = PhonemeMapper.expected(activeSurah, a) ?: continue
+            if (pw.wordCount != ws.size) continue
+            val aObs = ayahObs(activeSurah, a) ?: continue
+            if (aObs.isEmpty()) continue
+            val al = PhonemeMapper.align(aObs, pw, null)
+            var judged = 0
+            for (i in ws.indices) {
+                if (al?.wordCoverage?.getOrElse(i) { 0f } != 1f) continue
+                val key = keyOf(ws[i])
+                sessionStatuses[key] = WordStatus.CORRECT
+                archiveVerdict(key, WordStatus.CORRECT)
+                judged++
+            }
+            if (judged > 0) diag("jump rejudge: $activeSurah:$a judged $judged/${ws.size}")
+        }
+    }
+
     private fun advanceLockTo(next: Int, measureSpeed: Boolean = true, kind: String = "advance") {
         val prev = lockedAyah
         val now = System.currentTimeMillis()
@@ -3067,6 +3113,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     jumpCov = ahead.second
                     val p = versePage[ahead.first]
                     if (p == null || p in (pageNumber - 1..pageNumber + 1)) {
+                        rejudgeJumpedAyat(lockedAyah, ahead.first)
                         advanceLockTo(ahead.first, measureSpeed = false, kind = "jump")
                     }
                 }
@@ -3572,6 +3619,16 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 }
             }
             withContext(Dispatchers.Main) {
+                // Publishes are frame-rate; a diag would drown the tail. Name
+                // only the CHANGES: the walk-back session of 17 October could
+                // not explain from its record why the reader sat on the page
+                // ahead while the lock stood on 106:1, because no page hop was
+                // ever recorded. A diag here names every scope-driven hop the
+                // engine itself makes, so the next record can be argued with.
+                if (pageNumber != page) {
+                    diag("page publish %d → %d (scope=%s:%d)".format(
+                        pageNumber, page, activeSurah, lockedAyah))
+                }
                 pageNumber = page
                 _statusMap.value = newMap
                 _currentKey.value = currentKey

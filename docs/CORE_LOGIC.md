@@ -460,7 +460,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 37 checks. Every check must be shown able to fail. Break the thing that
+It runs 38 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -470,6 +470,7 @@ nothing.
 | `archive_parity` | A handoff pruning the record |
 | `emission_log_replay` | The log freezing at a stream reset |
 | `evidence_window_parity` | A judged ayah against the wrong audio |
+| `jump_rejudge_parity` | A jump leaving a recited ayah unjudged for good |
 | `word_verdicts` (314 cases) | A substitute word read as `SKIPPED` |
 | `lock_trace`, `back_policy_sweep`, `hesitation_policy`, `pinned_escape`, `handoff_boundary` | Lock defects |
 | `search_parity`, `ui_state_parity`, `ring_buffer`, `session_stream` | Navigation, search, and buffering |

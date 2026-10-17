@@ -70,6 +70,8 @@ CHECKS = [
      "surah handoff is reachable, and the page can show what it waits for"),
     ("advisory_parity", "none",
      "advisories inform, they never accuse: not red, not streaked, not in hide"),
+    ("jump_rejudge_parity", "none",
+     "a jump past an ayah re-judges it against its own window, CORRECT-only"),
     ("pref_consumption", "none",
      "every Settings toggle is consumed somewhere but the settings UI"),
     ("session_record_integrity", "none",
