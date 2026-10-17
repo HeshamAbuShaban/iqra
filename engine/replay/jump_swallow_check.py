@@ -37,46 +37,65 @@ def main(path):
     table = json.load(open(TABLE, encoding="utf-8"))
     ems = rec.get("emissions") or []
     arr = rec.get("arrivals") or {}
-    surah = rec.get("surahNow")
-    rev = {}
+    spans = rec.get("spans") or {}
+    # The swallow is cross-surah by construction: a jump on a multi-surah page
+    # lands in a surah whose sibling's ayat were never arrived at. Every surah
+    # the record's own arrival and span logs mention gets checked, not just the
+    # one the record says it stands on.
+    keys = set(arr) | set(spans)
+    surahs = sorted({int(k.split(":")[0]) for k in keys})
 
     wv_md = wv.load_units()
     unit_set = set(wv_md)
 
-    judged = {w.get("key") if isinstance(w, dict) else w[0]
-              for w in (rec.get("words") or [])}
+    rows_by_key = {}
+    for w in (rec.get("words") or []):
+        if isinstance(w, dict):
+            rows_by_key[w["key"]] = w.get("st", "")
 
-    rows = []
-    for a in range(1, 8):   # the surah's real ayah bound comes from the table
-        key = "%d:%d" % (surah, a)
-        if key not in table:
-            continue
-        wlist = table[key]
-        need = [u for wd in wlist for u in wd]
-        lo = arr.get("%s:%d" % (surah, a - 1), 0)
-        hi = next((arr["%s:%d" % (surah, b)] for b in range(a + 1, a + 9)
-                   if "%s:%d" % (surah, b) in arr), len(ems))
-        window = ems[lo:hi]
-        if len({c for c in window if c in unit_set}) < len(need):
-            kind = "no-audio"
-        else:
-            uw = [w for w, ws in enumerate(wlist) for u in ws]
-            m, wr, _r2q, _e, _h, _n = wv.align(window, need, uw)
-            sts = wv.statuses_from(m, wr, uw, len(wlist))
-            un_judged = [wi for wi in sorted(sts)
-                         if "%d:%d:%d" % (surah, a, wi + 1) not in judged]
-            if not un_judged:
-                kind = "already-judged"
+    for surah in surahs:
+        rows = []
+        n_ayat = sum(1 for a in range(1, 300) if ("%d:%d" % (surah, a)) in table)
+        for a in range(1, n_ayat + 1):
+            key = "%d:%d" % (surah, a)
+            wlist = table[key]
+            need = [u for wd in wlist for u in wd]
+            lo = arr.get("%s:%d" % (surah, a - 1), 0)
+            hi = next((arr["%s:%d" % (surah, b)] for b in range(a + 1, a + 9)
+                       if "%s:%d" % (surah, b) in arr), len(ems))
+            window = ems[lo:hi]
+            if len({c for c in window if c in unit_set}) < len(need):
+                kind = "no-audio"
             else:
-                st_set = {sts[wi] for wi in un_judged}
-                kind = "+".join(sorted(st_set))
-        rows.append((key, len(need), lo, hi, kind))
+                uw = [w for w, ws in enumerate(wlist) for u in ws]
+                m, wr, _r2q, _e, _h, _n = wv.align(window, need, uw)
+                sts = wv.statuses_from(m, wr, uw, len(wlist))
+                decided = set()
+                for wi in sorted(sts):
+                    st = (rows_by_key.get("%d:%d:%d" % (surah, a, wi + 1)) or "").strip()
+                    if st in ("CORRECT", "WRONG"):
+                        decided.add(wi)
+                un_decided = [wi for wi in sorted(sts) if wi not in decided]
+                if not un_decided:
+                    kind = "already-decided"
+                else:
+                    st_set = sorted({sts[wi] for wi in un_decided})
+                    st_col = sorted(rows_by_key.get("%d:%d:%d" % (surah, a, wi + 1), "")
+                                    for wi in un_decided if wi not in decided
+                                    and rows_by_key.get("%d:%d:%d" % (surah, a, wi + 1)))
+                    kind = "+".join(st_set)
+                    if st_col and st_col != ["-"]:
+                        kind += " (written:%s)" % ",".join(st_col)
+            rows.append((key, len(need), lo, hi, kind))
 
-    print("== %s surah %d" % (os.path.basename(path), surah))
-    for key, nUnits, lo, hi, kind in rows:
-        print("  %-7s units=%d window=[%d:%d) -> %s" % (key, len(need), lo, hi, kind))
+        print("== %s surah %d" % (os.path.basename(path), surah))
+        for key, nUnits, lo, hi, kind in rows:
+            print("  %-7s units=%d window=[%d:%d) -> %s" % (key, len(need), lo, hi, kind))
     return 0
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("usage: jump_swallow_check.py <record.json>")
+        sys.exit(2)
     sys.exit(main(sys.argv[1]))
