@@ -179,9 +179,22 @@ object PracticeLog {
         val hardWords: Map<String, LongArray>,
         /** Engine advisories from this session - things the engine noticed but would not decide. */
         val advisories: List<AdvisoryNote> = emptyList(),
+        /** Every word row in written order, including SKIPPED/UNKNOWN (the population, not the score). */
+        val wordRows: List<WordRow> = emptyList(),
     ) {
 
     data class AdvisoryNote(val key: String, val kind: String, val count: Int)
+
+    /**
+     * One word row as the record wrote it: the verdict, and - for WRONG and
+     * any session with the capture - where the blame sat (`wu`, 0..1000 into
+     * the word's own units) and when the verdict was decided (`wt`, ms since
+     * the session started). This is the ordered walk-through the report needs:
+     * without it the record could say HOW MANY words were decided, never
+     * WHICH word was decided when, and idea A ("a list of the recited words
+     * against the actual words") could not exist on device.
+     */
+    data class WordRow(val key: String, val st: String, val wu: Int? = null, val wt: Int? = null)
         /**
          * Every word the engine recorded a status for, including SKIPPED and
          * UNKNOWN - which are the ABSENCE of a verdict, not one. This is the
@@ -674,6 +687,7 @@ object PracticeLog {
         // right, each drawn with red error pips downstream. The set is now derived
         // from the status, and CORRECT/SKIPPED are excluded because neither is a
         // mistake: one is success, the other is the model declining to judge.
+        val rows = ArrayList<Record.WordRow>()
         val ws = o.optJSONArray("words")
         if (ws != null) {
             val startedAt = o.optLong("startedAt", 0L)
@@ -685,10 +699,24 @@ object PracticeLog {
                 val weight = when (st) {
                     "WRONG" -> 2L
                     "UNKNOWN" -> 1L
-                    else -> continue
+                    else -> 0L
                 }
-                val cur = hard.getOrPut(k) { LongArray(2) }
-                cur[0] += weight; cur[1] = startedAt
+                if (weight > 0L) {
+                    val cur = hard.getOrPut(k) { LongArray(2) }
+                    cur[0] += weight; cur[1] = startedAt
+                }
+                // Every row is kept, whatever its status - the population the
+                // report's log walks through. wu/wt are optional by design:
+                // records written before the capture carry neither, and a
+                // word that never went through the WRONG path carries no wu.
+                rows.add(
+                    Record.WordRow(
+                        key = k,
+                        st = st.ifEmpty { "UNKNOWN" },
+                        wu = if (w.has("wu")) w.optInt("wu") else null,
+                        wt = if (w.has("wt")) w.optInt("wt") else null,
+                    )
+                )
             }
         }
         return Record(
@@ -711,6 +739,7 @@ object PracticeLog {
             correct = correct, wrong = wrong, skipped = skipped, unknown = unknown,
             judgedWords = c.optInt("judgedWords", 0),
             perSurah = per, perAyah = perAyah, hardWords = hard,
+            wordRows = rows,
             advisories = run {
                 val arr = o.optJSONArray("advisories") ?: org.json.JSONArray()
                 List(arr.length()) { i ->

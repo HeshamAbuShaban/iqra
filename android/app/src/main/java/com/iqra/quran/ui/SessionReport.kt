@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -145,6 +147,7 @@ fun SessionReportScreen(
                 if (r.perAyah.isNotEmpty()) item { AyahCard(r, c) }
                 item { BreakdownCard(r, c) }
                 item { MissesCard(r, data, c) }
+                if (r.wordRows.isNotEmpty()) item { RecitationLogCard(r, data, c) }
                 item {
                     Panel(c) {
                         TextButton(onClick = {
@@ -553,6 +556,122 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
         )
     }
 }
+
+
+/**
+ * The recitation log — the words as the engine saw them, in the order it
+ * decided them.
+ *
+ * This is idea A (a list capturing the recited words against the actual words
+ * of the ayah), on the data a session record honestly holds: the record does
+ * not keep a transcript of what was said - it keeps, per expected word, the
+ * verdict with the moment it was decided (`wt`) and, for wrong words, where
+ * in the word the blame began (`wu`). That is the walk-through the reader can
+ * follow: the ayah's own word beside the verdict and the time.
+ *
+ * Row order is decision order (wt), not mushaf order - a repeat or a
+ * backtrack then reads as a repeat. Rows without a decision time (words that
+ * received a no-verdict state without a round of the wrong path) follow in
+ * record order, under their own heading, so times are never invented.
+ *
+ * Where the record is silent it says so: suburbs beyond the log (what was
+ * actually heard, sound by sound) are the desktop replay's cause panel.
+ */
+@Composable
+private fun RecitationLogCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
+    var expanded by remember { mutableStateOf(false) }
+    val timed = r.wordRows.filter { it.wt != null }.sortedBy { it.wt }
+    val untimed = r.wordRows.filter { it.wt == null }
+    val rows = if (expanded) timed + untimed else (timed.take(24) + untimed.take(6))
+
+    Panel(c) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Recitation log", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+                Text(
+                    "${r.wordRows.size} words, decided in order. The ayah's word is what was expected.",
+                    fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
+                )
+            }
+            if (r.wordRows.size > rows.size || (timed.size + untimed.size) > 30) {
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "show first" else "show all", fontSize = 11.sp, color = c.accent)
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+            itemsIndexed(rows) { _, row ->
+                val parts = row.key.split(":")
+                val surah = parts.getOrNull(0)?.toIntOrNull() ?: 0
+                val ayah = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                val idx = parts.getOrNull(2)?.toIntOrNull() ?: 0
+                val expected = data.getVerse(surah, ayah)?.textClean
+                    ?.split(Regex("\\s+"))?.filter { it.isNotEmpty() }?.getOrNull(idx - 1)
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            when (row.st) {
+                                "CORRECT" -> "✓"
+                                "WRONG" -> "✕"
+                                "UNKNOWN" -> "?"
+                                else -> "—"
+                            },
+                            fontSize = 13.sp,
+                            color = when (row.st) {
+                                "CORRECT" -> c.wordGood
+                                "WRONG" -> c.wordBad
+                                "UNKNOWN" -> c.inkMuted
+                                else -> c.inkFaint
+                            },
+                            modifier = Modifier.padding(end = 8.dp, top = 2.dp),
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                expected ?: "(the record names no text for " + surah + ":" + ayah + ")",
+                                fontSize = 16.sp, fontFamily = quranFont,
+                                color = when (row.st) {
+                                    "WRONG" -> c.wordBad; "CORRECT" -> c.ink
+                                    else -> c.inkMuted
+                                },
+                            )
+                            // For a wrong word, where the mismatch began - the
+                            // same bands device_blame uses, so the phone and the
+                            // read-back name the same place.
+                            if (row.st == "WRONG" && row.wu != null) {
+                                Text(
+                                    when {
+                                        row.wu == 0 -> "blamed at the word's first letter"
+                                        row.wu >= 1000 -> "blamed at the word's last letter"
+                                        row.wu <= 500 -> "blamed in the word's first half"
+                                        else -> "blamed in the word's second half"
+                                    },
+                                    fontSize = 10.sp, color = c.inkFaint,
+                                )
+                            }
+                            if (row.wt == null) {
+                                Text("no decision time in this record", fontSize = 10.sp, color = c.inkFaint)
+                            }
+                        }
+                    }
+                    Text(
+                        (row.wt?.let { "%.1f s".format(it / 1000f) } ?: "—") +
+                            " · " + surah + ":" + ayah,
+                        fontSize = 10.sp, color = c.inkFaint,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "What was actually heard for each wrong word, sound by sound, is the " +
+                "desktop replay of this record (engine/replay/replay_export.py).",
+            fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
+        )
+    }
+}
+
 
 @Composable
 private fun Stat(colour: Color, value: String, label: String) {
