@@ -62,23 +62,35 @@ check items only when the shipped code proves them.
    ABSENT on reference audio (surah 76: 5 wrong, 0 twins) — a live-session
    window-composition race, not a corpus pattern. The census stays unshipped
    until it can model window truth; device records are the only real evidence.
-6. **DONE — whole-corpus measurement of the optional-final class.** Sweep run
-   17 October: the reference reciter judged WRONG on **699 words** (6,135 of
-   6,236 ayat above the 0.9 coverage gate; 3h33m). The guard covers **12**
-   (1.7%): ۢ ×3, ۚ ×3, ۟ ×2, ۭ ×2, ۘ ×1, mixed ۢ+ۚ ×1 — 5 of the 12 also carry
-   a free-standing pause sign. NOT covered: mark-not-final 143, no-mark 544
-   (56 last-unit, 488 mid-word). Full list in `/tmp/opencode/optional_final_full.txt`
-   (regenerable: `python3 engine/replay/optional_final.py` — surahs as bare
-   ints). Implication: UNMODELLED_FINAL stays a partial fix; the no-mark class
-   is the bigger fish and untouched.
-7. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings** — now answerable by the sweep: the
-   12 covered rows carry marks; the 56 no-mark last-unit rows are the class
-   that needs the mutamakkin-meem table reviewed.
+6. **DONE — whole-corpus measurement, on the table the phone runs.** The
+   first sweep (17 October, **699/12**) measured the stale phrase-cut table
+   `ordered_quran_phonemes.json` — an old-engine number. Ported the same
+   day: `optional_final.py` now loads `word_aligned_phonemes.json` (the
+   shipped table) and refuses to run without it. Shipped-table census
+   (`python3 engine/replay/optional_final.py $(seq 1 114)`, 114 Al-Dosari
+   dumps, 6,135 of 6,236 ayat above the 0.9 gate): the reference reciter is
+   accused on **566 words**; the guard removes **28 (5%)** — every marked
+   word charged at its final unit. Of 69 final-unit charges, 41 carry no
+   licensed mark (the register requires those letters sounded — the guard
+   stays out correctly); their letters scatter across 18 types (7×ب, 6×ه,
+   no و/ي cluster) — a thin, broad recogniser miss on reference audio.
+   The other 497 sit mid-word and stay verdicts. Full list
+   `/tmp/opencode/of_shipped_full.log`; the old engine's list at
+   `/tmp/opencode/optional_final_full.txt` is superseded.
+7. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings** — the census's 41 no-mark
+   final-unit charge is the class now (18 letter endings, item 6); whether
+   a mutamakkin-meem table review moves any of it is open.
 8. **Rebuild the word table with case vowels on finals** (26,733 bare-end
    words; the builder's STOP condition needs a deliberate corpus rescore,
    not a weakening).
-9. **The 2.65s word-latency floor** — re-measured 17 October: verdict batches
-   1.4–2.7s apart at pollSec 0.333. Untouched by every guard so far.
+9. **The 2.65s word-latency floor** — re-read 18 October: the walk's
+   `pollSec` counter is 0.310 — the earlier 0.56 claim was decided-frame
+   `dt`, never poll cadence (`pollMsEma` measures delay+work, not a
+   slowdown). Word batches: s16 full-ayah batches align to ayah pace at
+   pollSec 0.301 with 0.6–1.5s stragglers; `s-1792196309286-1` gaps reach
+   3.8s at pollSec 0.333. Per-word decode-time reconstruction fails on
+   records: no per-emission timestamps and `emissionBase` resets. An
+   instrument change (emission times in the record) is the requirement.
 10. **Engine comparison** per `engine/shootout/README.md`; swap only on loss,
     plugged into the current setup (user's decision).
 11. **DONE — Replay screen, desktop first.** `engine/replay/replay_export.py`
@@ -87,8 +99,11 @@ check items only when the shipped code proves them.
     `data.js` carries frames, emissions, arrivals, spans, word verdicts and
     per-WRONG causes where the record can reproduce them (NOT RECONSTRUCTABLE
     otherwise). No headless browser here — open the html.
-12. **Noise hardening** — `pollSec` 0.299 → 0.556 under noise; measure the
-    VAD/RMS cost.
+12. **Noise hardening** — `pollSec` 0.299 → 0.556 under noise. The
+    `workPollSec` counter (installed 18 October, `notePollWork`) now splits
+    feeding-poll work from the 250 ms cadence delay; the next noise session
+    on the new build reads it. The 15 October noise records are gone from
+    the device (10-file cap) — 0.556 lives in STATUS only.
 13. **UI polish** (deferred but requested): session-list hierarchy, list
     typography, RTL on the Live caption, search deep-link, reference-app
     pop-menu.
@@ -226,11 +241,13 @@ finding is a guess without it.
    by class in `STATUS.md`; 7 of 16 are ambiguous between a real error and a
    table defect. This is the highest-value item on the page because it converts
    the last unknown in the verdict path into data.
-2. **Whole-corpus measurement of the optional-final class.**
-   `engine/replay/optional_final.py` sweeps all 114 reference-reciter dumps and
-   reports every WRONG word with its final mark and whether the substitution is
-   on the final unit. Run it before trusting `UNMODELLED_FINAL` as more than a
-   partial fix — on surah 67 alone the guard catches none of the one WRONG word.
+2. **DONE — whole-corpus measurement, now on the shipped table.**
+   `engine/replay/optional_final.py` points at `word_aligned_phonemes.json`
+   (refuses the stale phrase-cut table). Latest: **566** WRONG words on the
+   reference reciter over 6,135 ayat judged, **28 (5%)** removed by the
+   optional-final guard; 41 of 69 final-unit charges have no licensed mark
+   and stay verdicts. Remaining question: whether the 41 are reachable by
+   any rule at all (letters scatter across 18 types — item 6/7 above).
 3. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings.** Four of sixteen WRONG words sit on
    these (`أَصَـٰبِعَهُمْ`, `وَأَنتُمْ`, `ءَأَمِنتُمْ`, `يَنصُرُكُمْ`). Whether this is
    a mutamakkin-meem table gap or a real limit is unknown until item 1 answers.

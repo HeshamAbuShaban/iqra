@@ -1159,19 +1159,58 @@ window. A `2:2:2`-shaped charge made after this build is replayable with no
 shrug. Gated in `device_blame_parity.py` (writer, filter, reader — three
 injections red), additively in `CORE_LOGIC.md`.
 
+## Shipped, 18 October — the corpus harness measures the engine the phone runs
+
+`optional_final.py` pointed at the stale phrase-cut table
+(`ordered_quran_phonemes.json`): the 699/12 numbers it published for weeks
+described an engine the phone does not run. It now loads
+`word_aligned_phonemes.json` and refuses to run without it; the gate's
+`word_rule_sweep.py` is ported the same way (163 word observations, was
+154). `optional_marks_parity` green after both ports — the python mirror
+agreed with the shipped table. Full corpus on the shipped table
+(`python3 engine/replay/optional_final.py $(seq 1 114)`, 114 Al-Dosari
+dumps, 6,135 of 6,236 ayat above the 0.9 gate): the reference reciter is
+accused on **566 words**, the optional-final guard removes **28 (5%)**.
+Of 69 final-unit charges, 41 have no licensed mark — the register requires
+those letters sounded, so the guard stays out correctly; letters scatter
+across 18 types (7×ب, 6×ه, no و/ي cluster), a thin, broad recogniser miss on
+reference audio. The other 497 sit mid-word and stay verdicts. Full list
+`/tmp/opencode/of_shipped_full.log`; the 699 list is superseded. The
+preceding numbers masqueraded as measurements of what the phone does: none
+of the guard rules were built against them.
+
+Also shipped the same evening, all gated:
+- **Jump catch-up** (`rejudgeJumpedAyat`): a jumped-past ayah is re-judged
+  against its own window, arrival stamped at the slice end the engine
+  actually knows about, CORRECT-only. The new `jump_rejudge_parity` check
+  holds it (fault-injected twice, both red). 38 checks.
+- **Diag story fence**: a record's `diagTail` is fenced at the previous
+  session's end line — a surah-106 record had 24 of 41 diag rows from a
+  surah-4 session.
+- **`workPollSec`** (`notePollWork`): EMA of feeding-poll work with the
+  250 ms cadence delay removed. pollSec includes the delay by construction,
+  so "poll escalation under noise" separates: work vs cadence, on the next
+  noise session on the new build.
+- **Surah-4 record (22 WRONG)**: pre-guard build, 13 moves, 411 words
+  judged — 14 charges at a word's last unit, 8 at its first, 0 mid-word;
+  no advisories on wrongly-charged keys; window pools misaligned across
+  ayat. The pinned escape fired after 39.5s motionless (96%/44%).
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
 words end bare; the mushaf text carries the vowel; the builder already walks
 word by word. The runtime `final_vowel_id` rule then becomes a backstop. Check
 the blame fall on the next session before touching anything else.
-**2. Replay screen, desktop first.** Data layer complete (`device_blame.py`
-reconstructs windows and names charges); the time-scrubbed mushaf rendering
-remains.
+**2. DONE — replay screen, desktop first** (`engine/replay/replay_export.py`
+writes `out/replay/<record>/`; open the html — no headless browser here).
+Per-WRONG causes render only where the record can reproduce them.
 **3. Engine comparison** on the noisy human corpus; swap only on loss, per the
 shootout's own decision rule.
-**4. The 2.65s word-latency floor.** Untouched; the trim did not move it and
-`wt` confirms.
+**4. The word-latency instrument.** The 2.65s floor is real but not
+reconstructable from records (no per-emission timestamps; `emissionBase`
+resets). An instrument change is the requirement, then one device
+confirmation.
 **5. Standing-word pointer** — fixed and gated; needs one device confirmation.
 **6. UI polish**: type sizes, session list order, RTL on the live caption,
 search deep-link, reference-app pop-menu.

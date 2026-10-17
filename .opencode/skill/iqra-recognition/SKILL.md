@@ -32,7 +32,7 @@ a user saw.
 | `docs/STATUS.md` | Always, first. What is fixed, what is open, ranked by what hurts. |
 | `docs/CORE_LOGIC.md` | Before touching recognition code. The six pipeline steps in plain English, plus the achieved / not-achieved table. |
 | `docs/LESSONS.md` | Before changing any threshold, metric or gate. 13 lessons, each earned. |
-| `engine/replay/optional_final.py` | The whole-corpus false-accusation sweep. 699 WRONG verdicts over 6,135 ayat judged of 6,236 (whole corpus, 2026-10-17). |
+| `engine/replay/optional_final.py` | The whole-corpus false-accusation sweep, against the word-aligned table the app ships (it refuses the stale phrase-cut one). 566 WRONG verdicts on the reference reciter over 6,135 ayat judged of 6,236; the optional-final guard removes 28 (5%) (whole corpus, 2026-10-18). |
 | `engine/replay/window_lead.py` | The first-word sweep, and the three hypotheses it rejected. |
 | `engine/replay/page_scope_escape.py` | Measures the sibling-surah escape rule on session records: sibling opening coverage over the last 120 symbols vs `here`, streak 3. The page-602 walk fires; the ten other records fired nothing (corpus-peak sibling coverage <= 0.35). The device build ports this rule (TAG_ESCAPE=3 in ring dumps). Args: one or more record JSON paths. |
 | `engine/replay/replay_export.py` | Turns session records into a self-contained desktop replay: `python3 engine/replay/replay_export.py <records...> --glyphdb <ayahinfo_1024.db> --pages-dir <png dir>` writes `engine/replay/out/replay/<stem>/` (html+app.js+data.js, pages embedded as base64). Scrub the timeline, see the lock, coverage and causes at each t. `out/` is gitignored - user records never enter git. |
