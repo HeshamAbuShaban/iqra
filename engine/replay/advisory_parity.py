@@ -84,6 +84,7 @@ def main() -> int:
 
     waqf_block = block_after(VM, "isWaqfJunction(key) &&")
     final_block = block_after(VM, "hasOptionalFinal(key) &&")
+    unanchored_block = block_after(VM, "ReaderPrefs.unanchoredNeverAccuses(getApplication()) &&")
 
     for name, ok in [
         ("archiveVerdict never sees an Advisory", "Advisory" not in archive_fn()),
@@ -97,12 +98,22 @@ def main() -> int:
         ("optional-final needs wrongAtWordEnd", "al.wrongAtWordEnd.getOrElse(i) { false }" in VM),
         ("optional-final guard is unconditional", "hasOptionalFinal(key) &&" in VM),
         ("optional-final emits its own kind", "AdvisoryKind.UNMODELLED_FINAL" in VM),
+        # Un-anchored head: measured on the user's circling experiment, 17
+        # October. Surah 107 was recited first while the lock sat on 106:1,
+        # whose window held 107's audio and accused 106:1:1 - the only wrong
+        # of a 15/16-correct session. The guard demotes only when the wrong
+        # sits at the word's start (where unattributable leading audio
+        # lands), and only when the previous ayah has no arrival - blame
+        # removed, never added.
+        ("unanchored guard demotes the verdict", demotes_to_unknown(unanchored_block)),
+        ("unanchored needs a missing previous arrival", 'ayahArrival["$activeSurah:${a - 1}"] == null' in VM),
+        ("unanchored emits its own kind", "AdvisoryKind.UNANCHORED_AUDIO" in VM),
         ("frame-shaped advisories count once per word", "ONCE_PER_WORD" in ADVISORY and "shouldCount" in ADVISORY),
         ("hard mode keeps engine-fact notes", "ReaderPrefs.AdvisoryAlarm.HARD_RULES_ONLY" in VM),
         ("cue suppressed in hide mode", "!hide && ReaderPrefs.advisoryDisplay" in MAIN),
         ("session record carries advisories", '\\"advisories\\":[' in VM and '\\"kind\\":\\"' in VM),
         ("enum separate from WordStatus", "enum class AdvisoryKind" in ADVISORY and "WordStatus" not in ADVISORY),
-        ("all emissions present", all(f"AdvisoryKind.{k}" in VM for k in ("NO_AUDIO_WINDOW", "LOW_EVIDENCE", "DECODER_STARVATION", "MISSED_RULING_POSSIBLE"))),
+        ("all emissions present", all(f"AdvisoryKind.{k}" in VM for k in ("NO_AUDIO_WINDOW", "LOW_EVIDENCE", "DECODER_STARVATION", "MISSED_RULING_POSSIBLE", "UNANCHORED_AUDIO"))),
         ("settings expose advisory rows", "AdvisoryAlarm" in SETTINGS and "AdvisoryDisplay" in SETTINGS),
         # A session record that browsed its way to zero. endSession used to call
         # resetSessionCounters(), and endSession also runs for every page jump

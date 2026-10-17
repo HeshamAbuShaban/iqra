@@ -751,9 +751,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             .append(",\"noWindowWords\":").append(sessionNoWindowWords)
             .append(",\"emptyWindows\":").append(sessionEmptyWindows)
             .append(",\"unjudgeableAyahs\":").append(unjudgeableKeys.size)
-            .append(",\"unjudgeableKeys\":[\"")
-            .append(unjudgeableKeys.joinToString("\",\""))
-            .append("\"]")
+            // The keys, written with a first-flag like the arrivals object:
+            // separators belong to the join, the brackets do not. A quoted
+            // join inside always-open brackets printed [""] for an empty set,
+            // which a reader counts as one unjudgeable ayah named "".
+            .append(",\"unjudgeableKeys\":[")
+            var firstUj = true
+            for (k in unjudgeableKeys) {
+                if (!firstUj) sb.append(',')
+                firstUj = false
+                sb.append('"').append(k).append('"')
+            }
+            sb.append(']')
             .append("}")
             .append(",\"frames\":")
         frameRing.appendJson(sb)
@@ -3236,6 +3245,25 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     ) {
                         s = WordStatus.UNKNOWN
                         addAdvisory(key, AdvisoryKind.UNMODELLED_FINAL)
+                    }
+                    // An ayah whose previous ayah has no arrival has no
+                    // anchor: its window's left edge is the log's start,
+                    // where any earlier audio can sit - another surah's
+                    // recitation, the tail of talk before the session.
+                    // Measured on the circling experiment, 17 October:
+                    // surah 107 was recited first while the lock sat on
+                    // 106:1, whose window held 107's audio and accused
+                    // 106:1:1 - the only wrong of a 15/16-correct session.
+                    // The wrong must sit at the word's start: that is where
+                    // unattributable leading audio lands. Same shape as the
+                    // waqf guard: blame removed, never added.
+                    if (s == WordStatus.WRONG &&
+                        ReaderPrefs.unanchoredNeverAccuses(getApplication()) &&
+                        ayahArrival["$activeSurah:${a - 1}"] == null &&
+                        al.wrongAtWordStart.getOrElse(i) { false }
+                    ) {
+                        s = WordStatus.UNKNOWN
+                        addAdvisory(key, AdvisoryKind.UNANCHORED_AUDIO)
                     }
                     // Remember WHERE the mismatch began, before the streak
                     // below can demote this frame's WRONG to SKIPPED. Written

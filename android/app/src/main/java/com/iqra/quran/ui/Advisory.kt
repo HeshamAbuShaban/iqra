@@ -82,6 +82,12 @@ enum class AdvisoryKind(
         2,
         AdvisoryCounting.ONCE_PER_WORD,
     ),
+    /** No previous ayah's arrival anchors the window, so its leading audio is unattributable. */
+    UNANCHORED_AUDIO(
+        "No audio anchors this ayah's window; the engine cannot say the audio is yours, so it is not accused",
+        3,
+        AdvisoryCounting.ONCE_PER_WORD,
+    ),
     /** The decoder was starved, so the frame cannot speak for the word. */
     DECODER_STARVATION(
         "The audio stream reset before the engine heard this",

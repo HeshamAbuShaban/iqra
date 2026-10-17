@@ -3,55 +3,107 @@
 Canonical backlog for the recognition work. Update at commit boundaries;
 check items only when the shipped code proves them.
 
-## Where this sits — 16 October
+## Where this sits — 17 October
 
-**Fixed and installed today:**
+**Fixed and installed today (08:57 build):**
 
-- **The window-trim regression.** A trim meant to fix ayah-boundary blame cost a
-  third of every decided verdict (332 to 27, 95.9% correct to 84.2%) because its
-  end was measured from an already-trimmed window and ratcheted. Now bounded by
-  `MIN_WINDOW_SYMBOLS` and a raw origin. `window_anchor_parity.py`.
-- **The standing word was null.** Confirmed in the record: session
-  `1792114078210-102` ended `103:3` with 9/9 words decided, the exact state that
-  nulled it. Falls back to the ayah's last word. `standing_word.py`.
-- **The page-turn "corruption" was one line.** `any { it > activeSurah }` counted
-  any later surah on the page as a change, and 51 pages hold two surahs, so
-  finishing surah 4 onto page 106 jumped to 5:1. Now "no word of the current
-  surah on the page". `page_turn_boundary.py`.
-- The **LiveTest ending before it began**, by inheriting the previous session's
-  scope. `live_scope_inherit_parity.py`.
+- **`unjudgeableKeys` reported a phantom ayah.** The record writer joined keys
+  inside always-quoted brackets, so an empty set printed `[""]` — a literal
+  empty-string key every reader counted as one unjudgeable ayah named "". All
+  three 17-October records carried it. The writer now uses a first-flag, like
+  the arrivals object.
+- **The un-anchored head no longer accuses.** Measured on the user's circling
+  experiment: surah 107 was recited first while the lock sat on `106:1`,
+  whose window then held 107's audio and blamed `106:1:1` — the only wrong of
+  a 15/16-correct session. An ayah with no previous ayah's arrival has no
+  anchor; a WRONG at the word's start from such a window now demotes to
+  UNKNOWN with a `UNANCHORED_AUDIO` note, behind the `unanchoredNeverAccuses`
+  toggle (default on, same ground as waqf and plain madd: the engine cannot
+  prove the audio is the reciter's). Blame removed, never added.
+  `advisory_parity.py` + `pref_consumption.py`.
+- **Spans confirmed on device.** All three records carry the span-end capture
+  (14, 4 and 5 entries), with the same retention filter as arrivals.
 
-**Where the recognition actually stands**, from the user's own noisy phone
-audio: 96-98% of decided words correct, `noWindowWords=0` in every session.
+**Still open, in order — the full list, so nothing is lost:**
 
-**Still open, in order:**
+1. **Verify today's fixes on the phone.** The next session that starts mid-
+   page is the un-anchored guard's first test; re-recite the first ayah and
+   the record must show UNKNOWN + note, not red.
+2. **Two-surah page walk** (finish surah 4 onto page 106). The user walked it
+   in bits on 17 October — surah 4 pieces, then Quraysh, then the circling
+   experiment — and the piecewise sessions behaved, but a continuous walk
+   with the page-turn at the boundary is the real test. "Would take some
+   time", user says.
+3. **The `standingWord`-stays-lit visual** at a completed surah — record the
+   behaviour in STATUS.
+4. **Repeat-to-refresh scenario** — backtrack exercised 17 October
+   (`reversals: 2`, no false accusation); repeat is not.
+5. **The duplicates-in-window charge class.** `4:2:12` was blamed (wu=1000)
+   while all 7 of its units match inside the final span-trimmed window — the
+   charge was made in an earlier poll, when `أَمْوَالَهُمْ` and `أَمْوَالَكُمْ`
+   (both in the 4:2–4:3 stream) were both visible and the window picked the
+   wrong twin. Named 17 October with spans; fix design not started.
+6. **Whole-corpus measurement of the optional-final class.**
+   `engine/replay/optional_final.py` sweeps all 114 reference-reciter dumps.
+   Run it before trusting `UNMODELLED_FINAL` as more than a partial fix.
+7. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings** — mutamakkin-meem table gap or
+   real limit, unknown until the sweep answers.
+8. **Rebuild the word table with case vowels on finals** (26,733 bare-end
+   words; the builder's STOP condition needs a deliberate corpus rescore,
+   not a weakening).
+9. **The 2.65s word-latency floor** — re-measured 17 October: verdict batches
+   1.4–2.7s apart at pollSec 0.333. Untouched by every guard so far.
+10. **Engine comparison** per `engine/shootout/README.md`; swap only on loss,
+    plugged into the current setup (user's decision).
+11. **Replay screen, desktop first** — data layer complete; the time-scrubbed
+    mushaf rendering remains. Note the record holds only the LATEST span end
+    per ayah, so per-poll replay of past charges stays impossible even with
+    spans; future charges are replayable.
+12. **Noise hardening** — `pollSec` 0.299 → 0.556 under noise; measure the
+    VAD/RMS cost.
+13. **UI polish** (deferred but requested): session-list hierarchy, list
+    typography, RTL on the Live caption, search deep-link, reference-app
+    pop-menu.
+14. **Memorisation workflow** — a "hide until recall" mode driven by
+    advisories.
+15. **Prune asymmetry** (documented, deliberately not changed): arrivals are
+    dropped for other surahs on a page handoff but spans are not; the record
+    writer's retention filter is what keeps both honest.
 
-1. **Verify these four fixes on the phone.** DONE for three, 17 October
-   03:00: LiveTest-after-completed-session (own scope, 35 fresh verdicts), the
-   deliberate 2:2→2:1 backtrack (`reversals: 2`, no false accusation), and the
-   first-word guard (0/11, 0/11, 0/17 first-word failures; see STATUS). Still
-   unverified on device: **two-surah page walk** (finish surah 4 onto page
-   106), the **`standingWord`-stays-lit** visual at a completed surah, and
-   **one new session confirming `spans` lands in the record** (the span-end
-   capture shipped 17 October 06:35; the next recording is its first test).
-2. **The remaining boundary blame.** The first-unit blame share fell from
-   13.4% pooled pre-guard to 0% in tonight's three runs and 2/31 in the 22:10
-   surah-2 session — where `device_blame.py` now names each: a real خ/ق
-   confusion, and the 2:21 boundary glide that charges one unit of five. The
-   `wu`/`wt` table is the thing to read; do not tune blind.
-3. **Repeat and backtrack scenarios.** Backtrack exercised 17 October
-   (reversals: 2, no false accusation). Repeat-to-refresh still unexercised.
-4. **The 2.65s word-latency floor.** Re-measured 17 October: verdict batches
-   1.4–2.7s apart at pollSec 0.333, unchanged by the first-word guard.
-5. **Engine comparison** per `engine/shootout/README.md`. The harness does not
-   care which model produced the emissions, so a candidate plugs in as a
-   different emission stream.
-6. **UI polish**: type sizes, session list order, RTL on the live caption,
-   search deep-link, reference-app pop-menu.
+## The user's idea, documented — 17 October
 
-**Notes on the wiring.** Subagents available for research, verification and
-fault injection. Everything that changes the verdict path is main-context and
-gated. Every new check must be proven able to fail before its result is used.
+The user proposed, in their words: **(A)** a list capturing the words they
+recited, compared to the actual words of the ayah; **(B)** a letter-detection
+level that understands tajweed complexity. Surveyed against the code, both
+have a partial basis already.
+
+**A — the recited transcript.** Nothing ordered exists today: verdicts are a
+map from expected word to status (`statusMap`/`sessionArchive`, Practice-
+ViewModel.kt), and the UI shows the expected side coloured
+(`ExpectedWordsLine`, MainActivity.kt:481–529; `LineText`/`LineBox` :2464+).
+What the user said is only implied by which expected words lit up. The
+base for building it exists in the session record: `emissions` (the phoneme
+stream) plus spans now reconstruct the exact window per ayah, so the recited
+phonemes can be walked against the expected table and printed as "you said X,
+the ayah reads Y" — per word, in the session report. This is a display layer
+over data that already ships; no new recognition work.
+
+**B — letter-level tajweed.** The engine already aligns at phoneme-unit
+level and maps units to mushaf words (`word_aligned_phonemes.json`), and
+holds per-word coverage and per-unit mismatch position (`wrongStartFrac`).
+What does not exist: named tajweed classes (qalqalah, ikhfa, ghunnah, madd
+already has a partial equivalence in `canonicalId`) attributed to specific
+letters. The advisory channel is the delivery mechanism that already exists
+(`AdvisoryKind`, severity, ONCE_PER_WORD/PER_EVENT), and the waqf/optional-
+final/madd guards are the first three members of exactly this family.
+`docs/TAJWEED_AND_MEMORISATION.md` tracks the gap list; B is the systematic
+version of it. The honest boundary: the unit alphabet must first grow a
+checked mapping letter → tajweed class, measured from the reference corpus,
+not guessed.
+
+(That is "if we aren't already on some bases with this": A is ~80% data-complete,
+0% UI; B is ~30% — the alignment and the channel exist, the class table does
+not. Both documented here so they are not lost.)
 
 ## Where this sits right now — measured, 15 October 2026
 

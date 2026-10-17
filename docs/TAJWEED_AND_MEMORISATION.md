@@ -1020,3 +1020,27 @@ Explanatory, per section:
 - §6 scoring: <https://id.scribd.com/document/648636571/FILE-MANZIL-SELURUH-HAFALAN-1>
 - Existing project context: `docs/STATUS.md`, `docs/DEFECTS_AND_METHOD.md`,
   `docs/WORD_ALIGNMENT_4116.md`
+## 8. Letter-level detection — the plan, and what already exists
+
+The user proposed a letter-detection level that understands tajweed
+complexity. Surveyed against the code, 17 October, the basis is partial and
+real:
+
+- **Exists.** The engine aligns phoneme units and maps them to mushaf words
+  (`word_aligned_phonemes.json`); per-word coverage and per-unit mismatch
+  position (`wrongStartFrac`) are computed already; madd length has a
+  partial equivalence in `canonicalId`; the advisory channel
+  (`AdvisoryKind`, severity, counting) delivers "informs, never accuses"
+  notes, and the waqf / optional-final / plain-madd / un-anchored guards are
+  the first four members of exactly this family.
+- **Does not exist.** A checked mapping of unit → tajweed class (qalqalah,
+  ikhfa, ghunnah, idhhar, iqlab…) attributed to specific letters. §2, §3 and
+  §5 of this document carry the counts of the sites; the table is the work.
+- **The honest boundary.** The unit alphabet must first grow that mapping,
+  measured from the reference corpus — not guessed. Same method as the waqf
+  junctions: count the sites in the mushaf, verify against the reference
+  reciter's audio, then let a guard demote instead of accuse where the
+  class is a legal realisation.
+- **Delivery.** As advisories in the session report, grouped per letter
+  class — a letter-level complement to the word verdicts, not a
+  replacement.

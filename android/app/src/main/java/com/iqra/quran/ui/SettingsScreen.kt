@@ -237,6 +237,15 @@ fun SettingsScreen(
                     onChange = { ReaderPrefs.setWaqfNeverAccuses(ctx, it) },
                 )
                 SettingDivider()
+                SwitchRow(
+                    title = "First ayah with nothing before it",
+                    subtitle = "When no previous ayah anchors the window, the audio in " +
+                        "front may be someone else's; the engine cannot prove it is " +
+                        "yours, so it is not accused.",
+                    checked = remember(tick) { ReaderPrefs.unanchoredNeverAccuses(ctx) },
+                    onChange = { ReaderPrefs.setUnanchoredNeverAccuses(ctx, it) },
+                )
+                SettingDivider()
                 Text(
                     "What the engine may tell you",
                     fontSize = 12.sp,

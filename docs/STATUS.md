@@ -1032,6 +1032,51 @@ including one that caught the check counting a comment mention as a guard, and
 one `evidence_window_parity` update (val→var) that was itself fault-injected
 before trusting.
 
+## Device-confirmed, 17 October 08:57 — the circling experiment, and the guard it earned
+
+The user recited three things on the spans build (installed 06:35): pieces of
+surah 4, then Quraysh from the page start, then — deliberately, "the testful
+part" — walked back into the middle of the page and recited surah 107 while
+the lock still sat on 106:1.
+
+**The circling case, decoded.** The record's log begins with surah 107's
+audio: the reciter said 107:1–3 while the lock sat on 106:1. Because
+`106:0` never arrives (ayah 1 has no previous ayah), 106:1's window opens at
+the log start — forever — and `106:1:1` was blamed (wu=1000) against audio
+that belongs to another surah. Every other word of the session is CORRECT
+(15/16). The user then re-recited 106 to satisfy the lock, and 107 painted at
+the second pass, with its arrival recorded at frame 249 — which also confirms
+arrivals are lock events, not audio anchors.
+
+**What shipped from it.** The un-anchored head demotion: an ayah with no
+previous ayah's arrival has no anchor, so a WRONG at the word's start from
+such a window demotes to UNKNOWN with an `UNANCHORED_AUDIO` note, behind the
+`unanchoredNeverAccuses` toggle (default on — the engine cannot prove the
+audio is the reciter's). Blame removed, never added; gated in
+`advisory_parity.py` and `pref_consumption.py`, fault-injected (guard removal
+goes red). A straight session's genuinely mispronounced first ayah will now
+show UNKNOWN + note instead of red — the honest cost, and the re-recitation
+path fixes the record by judgement, not by the toggle.
+
+**Spans confirmed on device.** All three records carry spans (14, 4, 5
+entries) with the arrival-style retention filter. They immediately earned
+their keep: `4:2:12` was blamed (wu=1000) while all 7 of its units match
+inside its span-trimmed window — the charge was made in an earlier poll,
+when `أَمْوَالَهُمْ` and `أَمْوَالَكُمْ` were both visible in the 4:2–4:3
+stream and the window picked the wrong twin. A new named class
+(duplicates-in-window from repeats), design not started.
+
+**A writer artifact, found and fixed.** `unjudgeableKeys` printed `[""]` for
+an empty set in all three records — quoted join inside always-open brackets.
+The phantom "" ayah that every reader counted. Now a first-flag writer, like
+the arrivals object.
+
+**The surah-4 session's shape** (411 evaluated, 315 judged, 22 WRONG): 8
+first-unit, 14 last-unit — the same classes the long 22:10 session showed,
+now with every charge named through the app's own table (`device_blame.py`
+reads `word_aligned_phonemes.json` since D23). `4:9:1` is the first-word
+charge in it; its cause is named in the read-back, not guessed.
+
 ## Device-confirmed, 17 October 03:00 — the user's own test script
 
 The user ran the planned sessions on the first-word-guard build (installed

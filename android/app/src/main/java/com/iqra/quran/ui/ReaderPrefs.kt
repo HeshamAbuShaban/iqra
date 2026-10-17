@@ -203,6 +203,25 @@ object ReaderPrefs {
     fun setWaqfNeverAccuses(ctx: Context, v: Boolean) = write(ctx) { putBoolean("recNoWaqf", v) }
 
     /**
+     * An ayah whose previous ayah has no arrival has no anchor: its window's
+     * left edge is the log's start, where any earlier audio can sit - the
+     * first ayah recited after a jump landed mid-page, another surah's
+     * recitation, the tail of talk before the session. Measured on the user's
+     * circling experiment, 17 October: surah 107 was recited first while the
+     * lock sat on 106:1, whose window then held 107's audio and accused
+     * 106:1:1 - the only wrong of a 15/16-correct session.
+     *
+     * Default true, same ground as waqf and plain madd: the engine cannot
+     * prove the audio belongs to this ayah, so it cannot charge it. A
+     * genuinely mispronounced first ayah shows UNKNOWN with a note instead of
+     * red, and re-reciting fixes the record by judgement, not by the toggle.
+     */
+    fun unanchoredNeverAccuses(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("recNoUnanchored", true)
+
+    fun setUnanchoredNeverAccuses(ctx: Context, v: Boolean) = write(ctx) { putBoolean("recNoUnanchored", v) }
+
+    /**
      * What "accuracy" means in the session report.
      *
      * SKIPPED is the ABSENCE of a verdict - no evidence covered the word. Counting
