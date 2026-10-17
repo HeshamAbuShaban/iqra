@@ -43,9 +43,22 @@ and none of them was reachable by a token corpus.
 | Un-anchored head accused on foreign audio | demote to UNKNOWN + note, toggled | the circling experiment + the walk; `advisory_parity` |
 | Reader washes synced across page-mates | scope carries the surah | the user's own observation; `paint_scope_parity` |
 | Multi-surah page: lock rooted to standing scope | sibling escape (ported from `page_scope_escape.py`) | page-602 walk fires; 0 false escapes on 10 records |
+| Sibling escape verified on device, both directions | the user's mid-page walk (record `s-1792255842167`) | `escape → s=107:1 coverage=0.88` at t=6.8s (the start mid-page) and `escape → s=106:1 coverage=1.00` at t=47.8s (the return). Zero false accusations in the whole session; 48 CORRECT / 4 UNKNOWN / 0 WRONG |
 | Two faults in my own recorder | `sessionEvaluations`, post-teardown flush | found by reading a real record back |
 
 ## Open, ranked by what is actually hurting you
+
+**0b. Jump-swallowed ayahs never get judged (found in the verified walk).**
+`lock 1 → 3` fired on 107:1→107:2→107:3 in one poll (jump coverage 0.92 fit a
+future ayah) and `107:2`'s four words were never the locked ayah again, so
+they retired UNKNOWN - never accused, but also never judged, in a session the
+reciter completed. `advanceLockTo` (PracticeViewModel.kt:1695) just moves the
+lock; the passed-over ayah has no re-judge path. Design not started. The
+walk's smaller artifacts, both recovered: after the escape-back the reader
+stayed on the page ahead until the manual turn ("page turn within s=106:
+navigation only"), and the first re-recited ayah advanced only via the pinned
+escape (18.3 s motionless, nextCov 47% in the dead band) rather than the
+normal chain.
 
 **0. Ground truth on the WRONG verdicts — ask the user.**
 The user's own sessions produced 16 WRONG verdicts across 699 decided words
