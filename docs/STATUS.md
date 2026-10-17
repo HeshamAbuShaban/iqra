@@ -1084,6 +1084,18 @@ apart at pollSec 0.333; the guard's fallback never had to fire beyond
   hamza elision in connected recitation — the window held the word's own
   audio; the engine's sensitivity, not a window artefact.
 
+## Span ends now survive into the record
+
+The read-back had one hole it could not close honestly: the record held the
+raw window (via `arrivals`) but not the trim, so a charge made against a
+window the app later shortened — `2:2:2` blamed then all five of its units
+matching in the wide window — stayed "unrecoverable" with a shrug. The record
+now carries `"spans"`, the same map `applySpanEndTrim` reads, and
+`device_blame.py` applies the trim's exact two guards when rebuilding a
+window. A `2:2:2`-shaped charge made after this build is replayable with no
+shrug. Gated in `device_blame_parity.py` (writer, filter, reader — three
+injections red), additively in `CORE_LOGIC.md`.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

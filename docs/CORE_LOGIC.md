@@ -293,6 +293,7 @@ The record holds:
 | `ayahStatus` | Per-ayah counts, including `SKIPPED` and `CORRECT`, and `words`: how many words that ayah was expected to have. Without the denominator the report can only print a bare judged count, and "did I finish the scope" is a question only a denominator can answer. It excludes the verse-end marker, because the mushaf appends the ayah number to the last word and that is not a word anyone said — the live counter excludes it too, so the two can never disagree by one per ayah. |
 | `advisories` | The engine's notes, by kind and count |
 | `frames` | The policy state at each poll |
+| `emissions`, `arrivals`, `spans` | The retained phoneme stream, each ayah's absolute arrival index, and the span end each ayah's own alignment placed. Arrivals rebuild the raw window; spans rebuild the trimmed one — the two together let a replay reproduce the exact window every verdict was judged against, the evidence the read-back needs to name a charge. |
 | `diagTail` | Lock moves, handoffs, and engine notes |
 | `thresholds` | The thresholds that were in force |
 | `pollSec`, `declaredPollSec` | The rate the loop delivered, and the rate it asked for |
