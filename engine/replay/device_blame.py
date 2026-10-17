@@ -105,7 +105,16 @@ def show_cause(o, path):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import word_verdicts as wv
-    table = json.load(open(wv.W + "/ordered_quran_phonemes.json", encoding="utf-8"))
+    # The app's own table: word_aligned_phonemes.json is what the runtime
+    # ships, already tokenized, with the mushaf's word boundaries. The old
+    # phrase-segmented table in the shootout weights is a different
+    # segmentation (measured: 2:5 has 6 phrase-words against the app's 8), so
+    # judging a device record against it invents mismatches the phone never
+    # saw. See HARNESS_FIDELITY_AUDIT.md, D23.
+    wt_path = (Path(__file__).resolve().parents[2]
+               / "android" / "app" / "src" / "main" / "assets"
+               / "word_aligned_phonemes.json")
+    table = json.load(open(wt_path, encoding="utf-8"))
     units = wv.load_units()
     unit_set = set(units)
     tok = wv.make_tokenizer(units)
@@ -115,13 +124,14 @@ def show_cause(o, path):
         if w.get("st") != "WRONG":
             continue
         n += 1
-        if n > 12:
+        if n > 40:
             break
         s_, a_, i_ = (int(v) for v in w["key"].split(":"))
-        words = table.get("%d:%d" % (s_, a_), {}).get("aya_phonemes_list")
-        if not words or i_ > len(words):
+        wlist = table.get("%d:%d" % (s_, a_))
+        if not wlist or i_ > len(wlist):
             continue
-        units = [u for wd in words for u in tok(wd)]
+        flat = [u for wd in wlist for u in wd]
+        uw2 = [j for j, wd in enumerate(wlist) for _ in wd]
         lo, hi, why = judged_span(o, s_, a_)
         if why:
             print("  %-9s wu=%-5s window: NOT RECONSTRUCTABLE (%s). The record's"
@@ -132,16 +142,15 @@ def show_cause(o, path):
         span = ems[lo - o.get("emissionBase", 0):hi - o.get("emissionBase", 0)]
         print("  %-9s wu=%-5s window[%d:%d] emitted: %s"
               % (w["key"], w.get("wu"), lo, hi, " ".join(span)))
-        exp_units = [units[k] for k, ow in enumerate([j for wd in words for j, _ in enumerate(tok(wd))])
-                     if ow == i_ - 1]
+        exp_units = [flat[k] for k in range(len(flat)) if uw2[k] == i_ - 1]
         print("            word's expected units: %s" % " ".join(exp_units))
         # Re-run the app's own alignment on this window and name what the
         # blamed unit was charged against. Only for words the phone marked
         # WRONG: this is the read-back that answers what was heard there.
         try:
             got = [e for e in span if e in unit_set]
-            flat = [u for wd in words for u in tok(wd)]
-            uw2 = [j for j, wd in enumerate(words) for _ in tok(wd)]
+            flat = [u for wd in wlist for u in wd]
+            uw2 = [j for j, wd in enumerate(wlist) for _ in wd]
             matched, wrong, _r2q, _e, _h, _nw = wv.align(got, flat, uw2)
             for k in range(len(flat)):
                 if uw2[k] != i_ - 1:

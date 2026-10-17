@@ -26,18 +26,21 @@ audio: 96-98% of decided words correct, `noWindowWords=0` in every session.
 
 **Still open, in order:**
 
-1. **Verify these four fixes on the phone.** A recitation that walks into a
-   two-surah page (finish surah 4 onto page 106), a surah that finishes
-   completely (`standingWord` must stay lit), and a LiveTest after a completed
-   session. All three now have code fixes; none has device evidence.
-2. **The remaining boundary blame.** The bounded trim takes at most a few
-   symbols, and now carries a first-word guard: when word 0 has zero matched
-   units, the ayah is re-judged against the untrimmed window. Expect the
-   first-unit blame share to fall on the next session; read it back with
-   `device_blame.py` rather than assuming it.
-3. **Repeat and backtrack scenarios.** The retreat budget exists and has never
-   been exercised by a real recitation.
-4. **The 2.65s word-latency floor.** Unchanged. Measure before touching.
+1. **Verify these four fixes on the phone.** DONE for three, 17 October
+   03:00: LiveTest-after-completed-session (own scope, 35 fresh verdicts), the
+   deliberate 2:2→2:1 backtrack (`reversals: 2`, no false accusation), and the
+   first-word guard (0/11, 0/11, 0/17 first-word failures; see STATUS). Still
+   unverified on device: **two-surah page walk** (finish surah 4 onto page
+   106) and the **`standingWord`-stays-lit** visual at a completed surah.
+2. **The remaining boundary blame.** The first-unit blame share fell from
+   13.4% pooled pre-guard to 0% in tonight's three runs and 2/31 in the 22:10
+   surah-2 session — where `device_blame.py` now names each: a real خ/ق
+   confusion, and the 2:21 boundary glide that charges one unit of five. The
+   `wu`/`wt` table is the thing to read; do not tune blind.
+3. **Repeat and backtrack scenarios.** Backtrack exercised 17 October
+   (reversals: 2, no false accusation). Repeat-to-refresh still unexercised.
+4. **The 2.65s word-latency floor.** Re-measured 17 October: verdict batches
+   1.4–2.7s apart at pollSec 0.333, unchanged by the first-word guard.
 5. **Engine comparison** per `engine/shootout/README.md`. The harness does not
    care which model produced the emissions, so a candidate plugs in as a
    different emission stream.

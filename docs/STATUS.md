@@ -1032,6 +1032,58 @@ including one that caught the check counting a comment mention as a guard, and
 one `evidence_window_parity` update (val→var) that was itself fault-injected
 before trusting.
 
+## Device-confirmed, 17 October 03:00 — the user's own test script
+
+The user ran the planned sessions on the first-word-guard build (installed
+20:22 the previous evening): Al-Adiyat complete, the LiveTest opened right
+after it, then Al-Fatiha straight into Al-Baqarah 2:2, a deliberate backtrack
+to 2:1, then 2:2 through 2:10 normally. Five records, all pulled and read back
+through `device_blame.py` — which this same round stopped judging against the
+stale shootout table (see the audit, D23).
+
+**The first-word guard, confirmed.** First-word failure share: 12/110, 6/46,
+14/82 across the three pre-guard long sessions on 16 October (13.4% pooled).
+On the guard build: 0/11 and 0/11 (Adiyat, both runs), 0/17 (Fatiha→Baqarah),
+and 2/31 in the 22:10 surah-2 session — where the read-back names both
+individually: `2:9:1` charged `خَ` against a heard `قَ` (a real phoneme
+confusion, the accusation stands), and `2:21:1` charged the leading `يَ` of
+`يَٰٓأَيُّهَا` against `قَدِير`'s trailing `ر` at the ayah boundary — 4 of 5
+units matched, so the guard's coverage-0 gate correctly did not fire; this is
+the boundary-glide class reduced to one unit of a five-unit word, not a
+starved opening.
+
+**The LiveTest scope fix, confirmed.** The LiveTest session on surah 100
+re-judged 35 words itself, each with its own `wt` — no inherited paint, no
+"ends fast". The `s-0-0` stub (opened, jumped out, zero frames) is the
+screen's no-recitation record and carries no accusation.
+
+**The retreat budget, exercised for the first time.** `reversals: 2` on the
+user's deliberate 2:2→2:1 backtrack; every re-crossed word re-judged CORRECT
+or stayed honestly UNKNOWN. `2:1` stayed unjudgeable in the honest path: 2:2
+was recited before it, so 2:1's window was inverted (before-arrival after
+here-arrival) — the record says "no verdict" and accuses nobody.
+
+**The handoff `2:2:2`, clean tonight.** All seven words of 2:2 CORRECT at one
+poll; the old defect (expecting `الْكِتَٰبُ` over Fatiha's text) did not
+reproduce. In the 22:10 session `2:2:2` *was* still blamed once (wu=1000),
+but the reconstructed window matches all five of its units — the charge was
+made in an earlier poll that this record cannot replay, which is the
+retention design, not a new defect.
+
+**Latency unchanged.** Verdict batches in the 2:1–2:10 run land 1.4–2.7s
+apart at pollSec 0.333; the guard's fallback never had to fire beyond
+2:5:1's honest UNKNOWN, so it cost no visible poll time.
+
+**New named classes, small and honest:**
+- Neighbour-gap UNKNOWN: `2:7:9,10`, `2:9:8`, `2:10:9` sat undecided between
+  two judged neighbours — fast continuous tilawa consumes inter-word
+  boundaries; UNKNOWN is the honest no-verdict state and accuses nobody.
+- `2:5:8` (the run's single WRONG): expected `ل مُ ف لِ حُ ۥۥۥۥ ن`, heard
+  `ل مُ ف` then divergence — one argumentable case in 113.
+- `2:12:4` / `2:13:9` wu=0 in the 22:10 session: lam-meem assimilation and
+  hamza elision in connected recitation — the window held the word's own
+  audio; the engine's sensitivity, not a window artefact.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

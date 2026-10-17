@@ -21,13 +21,14 @@ fault injection against the shipped Kotlin.
 
 ## Summary
 
-- **22 findings**, of two kinds, and the kinds are counted separately because
+- **23 findings**, of two kinds, and the kinds are counted separately because
   they have different fixes:
-  - **18 divergences** (D1-D17, D22) between the harness's model of the device
-    and the device's actual behaviour. **15 of the 18** can directly produce a
+  - **19 divergences** (D1-D17, D22-D23) between the harness's model of the device
+    and the device's actual behaviour. **15 of the 18 D1-D22** can directly produce a
     harness PASS with a device FAIL. The other three (D14, D15, D22) are
     amplifiers or bookkeeping: they do not decide an outcome on their own, but
     each corrupts a measurement or a baseline that another finding depends on.
+    D23 corrupts the device-blame read-back itself.
   - **4 gate defects** (D18-D21) in `run_checks.py` and the structural checks:
     checks that report numbers they did not measure, and assertions that stay
     green with the code they guard disabled. These are why the divergences
@@ -628,6 +629,29 @@ harness's `_Session` sets `rebase_pending` only in `reset_stream` and
 `full_reset`, i.e. only on a lock move, a handoff and the repeat hook. Page
 jumps and anchors — both of which the harness has no equivalent of at all —
 leave the harness's slice state as it was.
+
+### D23. `device_blame.py` judged device records against the stale table.
+
+Found on 17 October, reading back the user's Fatiha→Baqarah run. The tool's
+`show_cause` loaded `engine/shootout/weights/zipformer/ordered_quran_phonemes.json`
+— the phrase-segmented table — while the app ships
+`android/app/src/main/assets/word_aligned_phonemes.json` (mushaf-aware word
+boundaries, validated by `word_alignment_parity.py`). Measured: 2:5 has **6**
+phrase-words in the shootout table against the app's **8**; `word_aligned_phonemes.json`
+exists per the mushaf. The record said the phone judged 2:5:8 WRONG; the tool
+silently skipped that word (`i_ > len(words)`), so no cause was ever named.
+
+The consequence was silent and one-directional: words beyond the old table's
+segmentation produced no read-back at all, and words inside it were judged
+against word boundaries the phone does not use — exactly the "reconstructs the
+app's expectation from a different implementation" failure the audit warns
+about. Fixed by reading the app asset directly (it is committed and already
+tokenized), raising the display cap 12→40 after it clipped `2:21:1`, and
+re-running the 16 October records: every accusation is now nameable.
+
+This is a tool-fidelity finding, not a gate defect: it did not let a gate pass
+with a device fail, but it made the read-back — the thing TODO item 2 calls the
+complete data layer — untrustworthy without changing anything on the device.
 
 ---
 
