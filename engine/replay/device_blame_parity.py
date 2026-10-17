@@ -89,6 +89,20 @@ def main() -> int:
         # own window must refuse, not invent.
         ("the arrivals are filtered to the retained log",
          re.search(r"if \(v < emissionBase \|\| v > logEnd\) continue", raw) is not None),
+        # The span ends the trim reads must survive into the record, or the
+        # replay rebuilds only the RAW window while the app judged the TRIMMED
+        # one - a charge made against audio the trim removed could never be
+        # replayed, which is what left the 2:2:2 charge in the 16 October
+        # session unrecoverable ("all five units match in the wide window").
+        ("the per-ayah span ends are written",
+         'append(",\\"spans\\":{")' in raw),
+        ("the span ends come from the map the trim reads",
+         "for ((k, v) in ayahSpanEnd)" in raw),
+        ("the span ends are filtered to the retained log",
+         "if (v < emissionBase || v > logEnd) continue" in
+         raw[raw.find('append(",\\"spans\\":{")'):raw.find(',\\"words\\":[')]),
+        ("the reader applies the recorded span end",
+         re.search(r"spans\.get\(", TOOL.read_text(encoding="utf-8")) is not None),
         ("the reader refuses a window it cannot rebuild",
          re.search(r"no arrival in the retained log", TOOL.read_text(encoding="utf-8")) is not None),
         # the source of the value

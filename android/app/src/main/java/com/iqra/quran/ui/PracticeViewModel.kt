@@ -813,6 +813,25 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             sb.append('"').append(k).append("\":").append(v)
         }
         sb.append("}")
+        // The span end each ayah's own alignment placed - the same map the
+        // span-end trim reads. Arrivals alone can rebuild only the RAW window;
+        // the app judges the TRIMMED one, so a charge the replay cannot
+        // reproduce (blamed in an earlier poll, clean in the end-of-session
+        // window) stayed unrecoverable. With spans the replay applies
+        // applySpanEndTrim's exact arithmetic and rebuilds the window the app
+        // actually judged against. Same retention filter as arrivals: a span
+        // end outside the surviving log names a position that no longer
+        // exists, and a record that cannot rebuild its own windows must say
+        // so, not invent them.
+        sb.append(",\"spans\":{")
+        var firstSpan = true
+        for ((k, v) in ayahSpanEnd) {
+            if (v < emissionBase || v > logEnd) continue
+            if (!firstSpan) sb.append(',')
+            firstSpan = false
+            sb.append('"').append(k).append("\":").append(v)
+        }
+        sb.append("}")
         sb.append(",\"words\":[")
         var first = true
         for ((k, v) in sessionArchive) {

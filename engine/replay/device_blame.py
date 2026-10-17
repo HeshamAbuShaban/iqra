@@ -63,6 +63,7 @@ def judged_span(o, surah, ayah):
     """
     base = o.get("emissionBase", 0)
     arr = o.get("arrivals") or {}
+    spans = o.get("spans") or {}
     total = len(o.get("emissions", []))
     here = arr.get("%d:%d" % (surah, ayah))
     before = arr.get("%d:%d" % (surah, ayah - 1))
@@ -83,10 +84,17 @@ def judged_span(o, surah, ayah):
     hi = min(after if after is not None else base + total, base + total)
     # Same bound as ayahObs: hi - min(lo, hi - 480) can never exceed 480.
     bounded = max(lo, hi - 480)
+    # The span-end trim, exactly as applySpanEndTrim applies it - two guards,
+    # never backward, never below the window floor. The spans survive in the
+    # record on the same retention filter as arrivals; a missing previous
+    # span means the record cannot replay the trim, and the RAW window is the
+    # honest bound of what could have been judged (the app's own window is a
+    # sub-list of it, since the trim only ever moves the left edge right).
+    prevEnd = spans.get("%d:%d" % (surah, ayah - 1))
+    if prevEnd is not None and prevEnd > bounded:
+        from_ = min(prevEnd, hi - 32)
+        bounded = max(bounded, from_)
     return bounded, hi, None
-    lo = max(before if before is not None else here, base)
-    hi = min(after if after is not None else base + total, base + total)
-    return lo, hi, None
 
 
 def show_cause(o, path):
