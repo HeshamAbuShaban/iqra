@@ -932,9 +932,26 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // The diag tail carries the lock moves, handoffs and any diag() the
         // policy emitted - in order, with the reason each move happened.
         sb.append(",\"diagTail\":[")
-        // ConcurrentLinkedDeque is a java Deque; Kotlin's takeLast is a List
-        // extension and does not apply. Materialise then take the tail.
-        val tail = diagBuffer.toList().takeLast(300)
+        // The event ring spans the view-model's whole lifetime, so a raw copy
+        // gave every record the tail of the session BEFORE it: a surah-106
+        // record's first 24 of 41 rows were a surah-4 session's moves and its
+        // pinned-escape diag. A record owns one session, and its story is
+        // written between the previous session's end row and its own end -
+        // the end row is what the fence hooks onto because it carries the
+        // jump that led in. A periodic flush mid-session, and a session that
+        // was cancelled before its poll loop ever wrote "session start", both
+        // keep the fence pointing at the last end row so their own rows stay.
+        val diagStory = diagBuffer.toList()
+        val startIdx = diagStory.indexOfLast { it.contains("session start s=") }
+        val fenceIdx = if (startIdx >= 0) {
+            val prevEnd = diagStory.subList(0, startIdx)
+                .indexOfLast { it.contains("session end reason=") }
+            if (prevEnd >= 0) prevEnd else startIdx
+        } else {
+            diagStory.indexOfLast { it.contains("session end reason=") }
+        }
+        val tail = if (fenceIdx >= 0) diagStory.subList(fenceIdx, diagStory.size).takeLast(300)
+        else diagStory.takeLast(300)
         for ((i, line) in tail.withIndex()) {
             if (i > 0) sb.append(',')
             sb.append('"').append(line.replace('\\', '/').replace('"', '\'')).append('"')
