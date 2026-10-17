@@ -63,6 +63,20 @@ def build_expected(table, tok, surah, n_ayat):
     return exp
 
 
+# The exact helper the shipped table's builder asserts: the concatenated units
+# of a word-cut ayah equal the phrase-cut table's, so only ownership differs.
+def build_expected_word_aligned(wt, surah, n_ayat):
+    exp = {}
+    for a in range(1, n_ayat + 1):
+        units, unit_word = [], []
+        for wi, wu in enumerate(wt["%d:%d" % (surah, a)]):
+            for u in wu:
+                units.append(u)
+                unit_word.append(wi)
+        exp[a] = (units, unit_word, len(wt["%d:%d" % (surah, a)]))
+    return exp
+
+
 def final_indices(unit_word):
     """Ref indices that are the LAST unit of their word."""
     last = {}

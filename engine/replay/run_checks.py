@@ -55,7 +55,7 @@ CHECKS = [
     # Needs the dumps despite importing cleanly: with no real observations it
     # measures nothing, and a "PASS" over an empty set would be a lie.
     ("word_rule_sweep", "dumps",
-     "per-word status rule measured over 154 real word observations"),
+     "per-word status rule measured over 163 real word observations"),
     ("word_verdicts", "dumps",
      "per-word CORRECT/WRONG/SKIPPED on labelled mutations"),
     ("lock_trace", "dumps",

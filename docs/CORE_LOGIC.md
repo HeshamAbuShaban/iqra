@@ -253,9 +253,17 @@ records. Verdicts never change — only the surah does.
 
 The long jump can skip one ayah. Measured twice in one session: 18:65 to 18:67,
 which skips 18:66, and 18:91 to 18:93, which skips 18:92. Both moves fired with
-the next ayah at coverage 0.50. That coverage is partial evidence that you were
-speaking the next ayah, and the jump treated it as evidence that you had
-skipped it. This is open. See `STATUS.md`.
+the next ayah at coverage 0.50, and a mid-page jump on the page-602 walk skipped
+short 107:2 entirely — its words retired UNKNOWN because the lock moved on and
+nobody re-judged them. The **jump catch-up** now stamps the skipped ayah's
+arrival (the slice end is the one position the engine knows it passed that
+ayah) and re-judges it against its OWN evidence window — the same window the
+paint step reads, not the lock's slice — promoting only words whose every unit
+matched: it can turn an UNKNOWN green, it cannot invent a red. Across a jump
+of more than one ayah only the first skipped ayah gets a non-empty window; the
+rest stay UNKNOWN, which is the truth the engine holds. Gated in
+`jump_rejudge_parity.py`, which also keeps the promotion all-of-word and the
+catch-up CORRECT-only.
 
 ---
 
@@ -495,7 +503,7 @@ nothing.
 | `latin_wrap_parity` | A trailing full stop migrating to the left of an English sentence |
 | `mic_gate` | The gate closed on a whisper, or an absent VAD read as silence |
 | `pause_scope_report` | A pause that is silent about being paused, an empty default scope, or a record with no denominator |
-| `word_rule_sweep` | Per-word collateral damage over 154 real words |
+| `word_rule_sweep` | Per-word collateral damage over 163 real words |
 
 Three of those checks exist because of defects the ones before them could not
 see. `dead_code` required four spaces of indentation, so it passed over every

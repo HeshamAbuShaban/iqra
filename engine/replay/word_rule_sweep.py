@@ -26,7 +26,11 @@ import word_verdicts as W  # noqa: E402
 
 REPLAY = Path(__file__).resolve().parent
 OUT = REPLAY / "out"
-PHONEMES = os.path.join(W.W, "ordered_quran_phonemes.json")
+# The word-cut table the app ships. The sweep used to load the phrase-cut
+# table, whose words merge what the mushaf keeps apart, so its counts were of
+# an engine the phone does not run.
+PHONEMES = os.path.join(str(REPLAY.parent.parent), "android", "app", "src",
+                        "main", "assets", "word_aligned_phonemes.json")
 
 # (dump, surah, ayat) for every recorded clip
 CLIPS = [
@@ -59,14 +63,13 @@ def counts(matched, wrong, unit_word, nwords):
 def collect():
     """Gather per-word counts for clean, one-word-skipped, and swapped audio."""
     table = json.load(open(PHONEMES))
-    tok = W.make_tokenizer(W.load_units())
     cases = []   # (surah, ayah, kind, word, (tot, ok, bad), [(neighbour, ...)])
     for name, surah, n_ayat in CLIPS:
         path = OUT / name
         if not path.is_file():
             continue
         dump = json.load(open(path))
-        exp = W.build_expected(table, tok, surah, n_ayat)
+        exp = W.build_expected_word_aligned(table, surah, n_ayat)
         syms = [e["symbol"] for e in dump["emissions"]]
         for a in range(1, n_ayat + 1):
             ref, unit_word, nwords = exp[a]

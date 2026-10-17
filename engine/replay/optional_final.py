@@ -30,6 +30,12 @@ import word_verdicts as wv  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 MUSHAF = os.path.join(ROOT, "android/app/src/main/assets/mushaf.json")
+# What the app actually recognises against: the mushaf-word-cut table. The
+# sweep measured the phrase-cut table for weeks, on which every per-phrase
+# "word" merged what the mushaf keeps apart, so its counts described an engine
+# the phone does not run.
+WORD_TABLE = os.path.join(ROOT, "android", "app", "src", "main", "assets",
+                          "word_aligned_phonemes.json")
 OUT = os.path.join(ROOT, "engine/corpus/out")
 
 # High marks that let a word's final letter go unsounded: ۟ silent alef,
@@ -63,6 +69,11 @@ def n_ayat_of(table, surah):
     return best
 
 
+def build_expected_shipped(wt, surah, n_ayat):
+    """Wrapper so callers read the helper's provenance in word_verdicts."""
+    return wv.build_expected_word_aligned(wt, surah, n_ayat)
+
+
 def local_window(syms, ref, cursor, back=300, fwd=600):
     """Best window search restricted to a band around the cursor.
 
@@ -90,8 +101,12 @@ def local_window(syms, ref, cursor, back=300, fwd=600):
 
 def main():
     surahs = [int(a) for a in sys.argv[1:]] or [67]
-    table = json.load(open(os.path.join(wv.W, "ordered_quran_phonemes.json"), encoding="utf-8"))
-    tok = wv.make_tokenizer(wv.load_units())
+    if not os.path.isfile(WORD_TABLE):
+        print("no word-aligned table at %s - sweep the engine that ships,")
+        print("not a stale one. Build it: python3 engine/replay/build_word_table.py")
+        return 1
+    table = json.load(open(WORD_TABLE, encoding="utf-8"))
+    print("expected table: %s (the word-aligned table the app ships)" % os.path.basename(WORD_TABLE))
     W = words_by_key()
 
     total_wrong = covered = 0
@@ -107,7 +122,7 @@ def main():
         syms = [e["symbol"] for e in dump["emissions"]]
         n_ayat = n_ayat_of(table, surah)
         ayat_total += n_ayat
-        exp = wv.build_expected(table, tok, surah, n_ayat)
+        exp = build_expected_shipped(table, surah, n_ayat)
         cursor = 0
 
         for a in range(1, n_ayat + 1):
