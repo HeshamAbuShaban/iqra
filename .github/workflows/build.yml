@@ -8,28 +8,35 @@ on:
 permissions:
   contents: write
 
+# One build per ref: a new push supersedes an in-flight run instead of racing
+# it to the same APK identity.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # versionCode is the commit count (android/app/build.gradle.kts), and
+          # the release tag prints the same number. A shallow clone counts one
+          # commit and stamps every CI build versionCode 1 - the exact
+          # indistinguishability the commit-count scheme exists to end.
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
-      - name: Setup Android SDK
-        run: |
-          SDK=/usr/local/lib/android/sdk
-          echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV
-          CT=$(ls -d $SDK/cmdline-tools/*/ | sort | tail -1)
-          echo "${CT}bin" >> $GITHUB_PATH
-          echo "$SDK/platform-tools" >> $GITHUB_PATH
-
+      # The runner image ships the Android SDK (ANDROID_HOME set, cmdline-tools
+      # on PATH); only the packages matter here.
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses > /dev/null || true
 
@@ -48,10 +55,6 @@ jobs:
       - name: Measurement gate (model-free checks)
         run: python3 engine/replay/run_checks.py
 
-      - name: Build debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
-
       # The alignment kernel, executed. Until this existed, CI could compile the
       # matcher but never run it, so every proposal to change it was reviewed by
       # reading alone - and two of the three that arrived were broken. This runs
@@ -61,16 +64,49 @@ jobs:
         working-directory: android
         run: ./gradlew :app:testDebugUnitTest --no-daemon
 
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      # The APK must carry the number the workflow names it by. If checkout
+      # ever goes shallow again, CI says so here instead of shipping an APK
+      # stamped 1.
+      - name: Verify APK identity
+        run: |
+          AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          BADGING=$("$AAPT2" dump badging "$APK")
+          APK_CODE=$(echo "$BADGING" | grep -oP "versionCode='\K[0-9]+")
+          APK_NAME=$(echo "$BADGING" | grep -oP "versionName='\K[^']+")
+          BUILD=$(git rev-list --count HEAD)
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+          [ "$APK_CODE" = "$BUILD" ] || { echo "versionCode $APK_CODE != commit count $BUILD (shallow clone?)"; exit 1; }
+          [ "$APK_NAME" = "$VERSION" ] || { echo "versionName $APK_NAME != gradle $VERSION"; exit 1; }
+          echo "APK identity: $APK_NAME build #$APK_CODE"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: iqra-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
 
+      # One release per commit, named by the same number the APK carries:
+      # versionName from the gradle file, build = commit count = versionCode.
+      # Re-running the job for the same commit updates the release instead of
+      # failing on the existing tag.
       - name: Publish to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v0.1.0
-          name: Iqra v0.1.0
-          prerelease: false
-          files: android/app/build/outputs/apk/debug/*.apk
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+          BUILD=$(git rev-list --count HEAD)
+          TAG="v$VERSION-build$BUILD"
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --title "Iqra $VERSION · build $BUILD" \
+              --notes "Debug APK. versionCode = $BUILD (the commit count); the record's build tag is #$BUILD."
+          fi

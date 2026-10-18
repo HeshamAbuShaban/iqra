@@ -7,10 +7,11 @@ plugins {
 // The record's build tag is "#<versionCode>" and the APK's identity is
 // versionCode alone. A hardcoded 1 made every local install indistinguishable:
 // no record on the device could say which build produced it, and the About
-// screen's "0.1.0" was a literal that never changed. CI keeps its run number;
-// local builds count commits, so every committed change is a new installable
-// identity and an uncommitted tree reuses its parent's (honest: same tag,
-// same installable name).
+// screen's "0.1.0" was a literal that never changed. versionCode is the commit
+// count everywhere - CI checks out the full history (fetch-depth: 0) and its
+// workflow asserts the APK's versionCode equals `git rev-list --count HEAD` -
+// so every committed change is a new installable identity and an uncommitted
+// tree reuses its parent's (honest: same tag, same installable name).
 fun gitCommitCount(): Int = try {
     val proc = ProcessBuilder("git", "rev-list", "--count", "HEAD")
         .directory(rootProject.projectDir)
@@ -40,7 +41,7 @@ android {
             val emulatorAbi = providers.gradleProperty("emulatorAbi").orNull == "true"
             abiFilters += if (emulatorAbi) listOf("arm64-v8a", "x86_64") else listOf("arm64-v8a")
         }
-        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: gitCommitCount())
+        versionCode = gitCommitCount()
         versionName = "0.2.0"
     }
     signingConfigs {

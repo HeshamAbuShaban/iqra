@@ -1198,7 +1198,9 @@ Also shipped the same evening, all gated:
 
 ## Shipped, 18 October (late) — build identity, and a record only for sessions that ran
 
-`versionCode` is now the git commit count (CI keeps its run number) and
+`versionCode` is now the git commit count — CI checks out the full history
+and asserts the APK's versionCode equals `git rev-list --count HEAD` before
+releasing, so the number is the same one everywhere — and
 `versionName` is 0.2.0; Settings > About reads `BuildConfig` instead of a
 literal "0.1.0", and the record's `build` tag is `#<versionCode>`. Every
 install can now be named by the record it produced and by its own About
