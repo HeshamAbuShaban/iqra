@@ -311,10 +311,11 @@ long to confirm. Not yet explained.
 ## How anything gets verified now
 
 ```
-engine/.venv-replay/bin/python engine/replay/run_checks.py        # 14 checks, ~100 s
+engine/.venv-replay/bin/python engine/replay/run_checks.py        # 40 checks, ~160 s
 ```
 
-Five run anywhere in CI in ~15 s. The rest need the model and report SKIP loudly.
+Thirty-three run anywhere in CI, in ~50 s. The seven that need the model
+report SKIP loudly.
 
 Every check in this repository asserts that a judgement is **correct**. For six
 months none asserted that a judgement was **reached** — which is how 66% of the
@@ -1231,6 +1232,21 @@ conditional on `sessionRan`, and the start header moved after the counters,
 ring and generation reset (it used to hold the previous session's tail under
 the new session's name). New check `record_flush_guard.py`, all three clauses
 fault-injected. The gate runs 39.
+
+## Shipped, 18 October — the CI gate's red streak was one missing file
+
+Runs 170-197 and 200-201 failed at step 8 ("Measurement gate"); 198-199 died
+earlier, at the SDK step (fixed by `5829b8e`). Reproduced today in
+`/tmp/ci-sim` — a `git archive` of the failing SHA plus CI's own fetch env
+(`SKIP_MODEL=1 IQRA_SKIP_PAGES=1`): `device_blame_parity.py` runs
+`device_blame.py` on a synthetic record, and the tool's emission re-align
+called `word_verdicts.load_units()`, which reads the model's `tokens.txt` —
+absent on CI by design. The tool crashed; the check failed. (The model-free
+audit missed it because the read lives in a subprocess the check spawns, not
+in the check itself.) `device_blame.py` now refuses the re-align when the
+token table is absent, and says why; the emitted stream, expected units and
+buckets still print, so the check keeps testing what it names. Sim before:
+`1 failed, 7 skipped`. Sim after: `0 failed, 7 skipped`.
 
 ## What is open next
 

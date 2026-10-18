@@ -123,10 +123,19 @@ def show_cause(o, path):
                / "android" / "app" / "src" / "main" / "assets"
                / "word_aligned_phonemes.json")
     table = json.load(open(wt_path, encoding="utf-8"))
-    units = wv.load_units()
-    unit_set = set(units)
-    tok = wv.make_tokenizer(units)
-    print("\nEmission stream: %d symbols, base %d." % (len(ems), o.get("emissionBase", 0)))
+    # The token table lives in the gated model, which CI deliberately does not
+    # fetch. Refuse the re-align when it is absent - and say why - rather than
+    # crashing: the emitted stream and the expected units are still readable
+    # from the record and the committed word table.
+    try:
+        unit_set = set(wv.load_units())
+    except FileNotFoundError:
+        unit_set = None
+    print("\nEmission stream: %d symbols, base %d.%s"
+          % (len(ems), o.get("emissionBase", 0),
+             "" if unit_set is not None else
+             " No token table (the model was not fetched): the re-align below"
+             " is refused."))
     n = 0
     for w in o.get("words", []):
         if w.get("st") != "WRONG":
@@ -156,6 +165,8 @@ def show_cause(o, path):
         # blamed unit was charged against. Only for words the phone marked
         # WRONG: this is the read-back that answers what was heard there.
         try:
+            if unit_set is None:
+                continue
             got = [e for e in span if e in unit_set]
             flat = [u for wd in wlist for u in wd]
             uw2 = [j for j, wd in enumerate(wlist) for _ in wd]
