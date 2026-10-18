@@ -227,6 +227,14 @@ def show_lag(o, path):
                          ("three quarters", lags[3 * n // 4]),
                          ("last", lags[-1])):
             print("  %-16s %6d ms" % (label, v))
+        # The sign is the reading, and it was not obvious enough: a positive
+        # value is the engine resting on audio it already had; a NEGATIVE one
+        # is the word decided before the last symbol of its ayah's window had
+        # even arrived, which is the engine working during the recitation
+        # rather than after it. Early words in a long ayah are expected
+        # negative by exactly that much.
+        print("  (negative = decided before the window's own audio had fully "
+              "arrived; that is the engine deciding during the recitation)")
     # The gaps between polls' emission stamps, as the record saw them: a gap
     # near the declared poll period is the loop's cadence, not a slow engine.
     gaps = sorted(b - a for a, b in zip(emms, emms[1:]) if b > a)

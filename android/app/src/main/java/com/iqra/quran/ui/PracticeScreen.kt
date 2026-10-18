@@ -553,7 +553,16 @@ private fun RecentSessionsCard(
                     )
                     Text(
                         buildString {
-                            append("${r.judged} words")
+                            // With the denominator where the record carries
+                            // one. "29 words" is a number with nothing to be
+                            // a number OF - the same session's list showed
+                            // "13 words" for a 43-word scope, which reads as
+                            // a short session rather than a barely-decided
+                            // one. The report screen learned this first; the
+                            // list follows it.
+                            val scope = r.perAyah.values.sumOf { it.getOrNull(4) ?: 0 }
+                            if (scope > 0) append("${r.judged} of $scope words")
+                            else append("${r.judged} words")
                             val dur = r.durationSec
                             append(if (dur != null) " · ${formatSecs(dur)}" else " · length unknown")
                             if (r.ended) append(" · finished") else append(" · ended early")

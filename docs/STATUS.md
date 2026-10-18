@@ -1319,6 +1319,48 @@ depends on it - blame only ever lands on the locked ayah - so the read-back
 is unaffected; if an ahead window ever needs rebuilding, that gap has to be
 named.
 
+## Shipped, 18 October (evening) — the observer seat, and the latency split read
+
+The observer (TODO 16) is on the phone: from a session report, "Watch it
+again" replays the record's timed walk - the lock at every moment from the
+frame ring, every verdict at its `wt`, lock moves at their frame times
+(tagged advance / handoff / escape), and the emissions with their arrival
+times (`emMs`) growing on the same clock, at real time or scrubbed. It
+replays, it never re-judges. What the record cannot place, it says so:
+advisories are counted and named untimed (the writer stores key, kind and
+count only), and records written before `emMs` get the refusal instead of a
+panel pretending silence. Committed 820a917; its first self-review - content
+drawing under the top bar, and the strip needing a key because as-of-now
+colours are not the report's final outcomes - fixed in 4dc644e. Verified on
+the phone against a #238 record and against two pre-emMs writers.
+
+The latency split, read from the #238 record of the session where the
+reciter stopped (`device_blame.py`, which refuses rather than guesses):
+
+- Verdict latency (`wt`) quartiles: 8.7 / 15.9 / 21.5 / 26.6 s. `wt` is
+  time from session start, and the decisions are spread THROUGH the
+  recitation (4.6 s, 5.0 s, 5.9 s...), which is the per-word serving the
+  ahead rule asked for. The old "whole ayah colours in one batch at the
+  end" was never the engine batching; it was the paint window, and the
+  ahead fix is that fix.
+- Verdict lag against the ayah's final window: median **-3.8 s** - the
+  typical word is decided seconds BEFORE the last symbol of its own ayah's
+  audio has arrived. Negative is the healthy sign; the tool now prints
+  that reading instead of leaving the sign to superstition.
+- Feed cadence (median gap between emission stamps): **565 ms**. With the
+  poll at 250 ms, the per-word floor is the model's phoneme emission rate,
+  not the poll. Halving the poll buys at most ~130 ms against a 565 ms
+  model cadence, on a phone already hot from the recogniser - a measured
+  negative. The cadence experiment the plan allowed is closed by
+  measurement, not deferred.
+
+Smaller polish, verified rather than assumed: the session list now carries
+its denominator ("29 of 29 words", not "29 words"); the Live screen's Latin
+strings are all bidi-isolated already (`ltr()`); a verse search result
+already opens the reader anchored on the ayah; the reader's long-press
+already opens the action sheet (practice from here / repeat / listen /
+copy / bookmark). The stale TODO lines for those are corrected in place.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

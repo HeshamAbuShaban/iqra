@@ -113,9 +113,13 @@ check items only when the shipped code proves them.
    time per retained emission, poll-granular, on `wt`'s clock — and
    `device_blame.py` prints the verdict lag (engine time) and the feed
    cadence (poll time), refusing rather than guessing when the times are
-   absent. Gated and fault-injected in `device_blame_parity.py`. What
-   remains: ONE device session on build 237+, then read the split off it —
-   the engine half and the paint half are separable for the first time.
+   absent. Gated and fault-injected in `device_blame_parity.py`. **DONE 18
+   October (evening):** read off the #238 record of the last device session
+   - verdict-lag median **-3.8 s** (decisions during the recitation, before
+   the ayah's own audio finishes), feed cadence **565 ms** (the model's
+   phoneme rate is the floor, not the 250 ms poll; the tool now prints the
+   sign's meaning). The cadence experiment: closed by measurement. See
+   STATUS, item 5 above.
 10. **Engine comparison** per `engine/shootout/README.md`; swap only on loss,
     plugged into the current setup (user's decision).
 11. **DONE — Replay screen, desktop first.** `engine/replay/replay_export.py`
@@ -137,12 +141,15 @@ check items only when the shipped code proves them.
 15. **Prune asymmetry** (documented, deliberately not changed): arrivals are
     dropped for other surahs on a page handoff but spans are not; the record
     writer's retention filter is what keeps both honest.
-16. **The observer screen on the phone** — the desktop replay
-    (`replay_export.py`) inside the app: timeline scrub from the record,
-    lock moves, verdicts at their `wt`, advisories. The record already
-    carries everything it needs; design the smallest honest slice first,
-    then build. (The user asked for this: the desktop "observer seat"
-    should not be the only place a session can be re-watched.)
+16. **DONE — the observer screen on the phone** (18 October, 820a917 +
+    4dc644e). "Watch it again" from a session report: timeline scrub, the
+    lock's walk from the frame ring, verdicts at their `wt`, lock moves at
+    their frame times, the heard stream from `emMs`, real-time playback.
+    Advisories carry no time in the record, so they are counted and named
+    untimed rather than placed; pre-emMs records get the refusal. Verified
+    on device against #238 and two older writers. The desktop replay stays
+    the place with per-WRONG cause panels; the phone seat is the smallest
+    honest slice the user asked for.
 
 ## The user's idea, documented — 17 October
 
@@ -237,10 +244,19 @@ finding is a guess without it.
 4. **Noise hardening.** `pollSec` 0.299 → 0.556 under noise. Measure whether the
    VAD is being honest or the RMS/VAD path costs polls, and whether the
    word-latency floor rises with it.
-5. **The 2.65s word-latency floor.** Untouched; the trim did not move it and
-   `wt` confirms. The paint-latency half is now structurally fixed (ahead-ayah
-   judging, 18 October); the verdict-time floor is not.
-6. **UI polish**: type sizes, session list order, RTL on the live caption.
+5. **The 2.65s word-latency floor — CLOSED by measurement, 18 October
+   (evening).** The paint half was the ahead rule (see STATUS). The
+   verdict-time half: on the #238 record, decisions spread through the
+   recitation and the median word is decided 3.8 s BEFORE its ayah's final
+   window audio has arrived (negative lag = deciding during recitation);
+   the gap between emission stamps is 565 ms, so the floor is the model's
+   phoneme cadence, not the 250 ms poll. Poll halving buys ≤ ~130 ms - a
+   measured negative, not worth the CPU. See STATUS.
+6. **UI polish — status 18 October:** session list carries its denominator
+   (done); RTL on the Live caption was already complete (every Latin string
+   bidi-isolated); search deep-link already opens the anchored ayah; the
+   reader's long-press action sheet already exists. Remaining: none known -
+   reopen only with a specific observation.
 
 ## Shipped — measured, not hoped
 
