@@ -901,6 +901,20 @@ object PracticeLog {
     } catch (e: Exception) { null }
 
     /**
+     * The record file, unparsed. Null when it is gone.
+     *
+     * [record] folds the record down to what every report needs; the observer
+     * needs the walk itself - the frame ring's timestamps, the emission arrival
+     * times (emMs) - which the fold deliberately drops. Same path logic as
+     * [recordByName], so the two can never disagree about which file a name
+     * points at.
+     */
+    fun rawRecord(ctx: Context, name: String): String? = try {
+        val f = File(File(ctx.filesDir, SESSIONS), name)
+        if (f.isFile) f.readText() else null
+    } catch (e: Exception) { null }
+
+    /**
      * Everything the practice surface shows, from the durable aggregate plus the
      * live rows.
      *

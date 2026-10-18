@@ -78,6 +78,7 @@ import kotlinx.coroutines.withContext
 fun SessionReportScreen(
     data: QuranData,
     recordName: String,
+    onOpenObserver: () -> Unit,
     onBack: () -> Unit,
 ) {
     val c = LocalIqraColors.current
@@ -144,6 +145,13 @@ fun SessionReportScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item { VerdictCard(r, c) }
+                // The observer replays the record's timed walk. A record with
+                // no timed walk (an old writer, or a session that never let
+                // the engine look at a window) has nothing to replay, and the
+                // door is hidden rather than opening on an empty room.
+                if (r.frames > 0 || r.wordRows.any { it.wt != null }) {
+                    item { ObserverCard(c, onOpenObserver) }
+                }
                 if (r.perAyah.isNotEmpty()) item { AyahCard(r, c) }
                 item { BreakdownCard(r, c) }
                 item { MissesCard(r, data, c) }
@@ -232,6 +240,33 @@ fun SessionReportScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The door to the observer seat.
+ *
+ * Separate from the report's own cards because it is a different mode of
+ * reading the same record: the cards answer "how did it go", the observer
+ * replays "what happened, in order, at what time".
+ */
+@Composable
+private fun ObserverCard(c: IqraColors, onOpen: () -> Unit) {
+    Panel(c) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Watch it again", fontSize = 13.sp, color = c.ink,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                Text(
+                    "The session on a timeline: the lock's walk, every verdict at " +
+                        "the moment it was decided, and what the model heard.",
+                    fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
+                )
+            }
+            TextButton(onClick = onOpen) {
+                Text("Open", color = c.accent, fontSize = 14.sp)
             }
         }
     }

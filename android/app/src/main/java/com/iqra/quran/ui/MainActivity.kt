@@ -638,6 +638,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         )
         "live" -> Screen.Live(screenSurah, screenPage.coerceAtLeast(1), screenCount)
         "report" -> Screen.Report(screenReport)
+        "observer" -> Screen.Observer(screenReport)
         "choose" -> Screen.Choose
         else -> Screen.Picker
     }
@@ -674,7 +675,14 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             )
         }
         is Screen.Report -> data?.let { d ->
-            SessionReportScreen(d, screenReport) { screenName = "progress" }
+            SessionReportScreen(
+                d, screenReport,
+                onOpenObserver = { screenName = "observer" },
+            ) { screenName = "progress" }
+        }
+        // The observer reads the same record file as the report, back into it.
+        is Screen.Observer -> data?.let { d ->
+            SessionObserverScreen(d, screenReport) { screenName = "report" }
         }
         Screen.Picker -> HomeScreen(vm, lastRead,
             onOpen = { surah, page -> goReader(surah, page, null) },
@@ -749,6 +757,8 @@ sealed interface Screen {
     data object Progress : Screen
     /** One session in full, by record file name. */
     data class Report(val name: String) : Screen
+    /** The same record, replayed on a timeline instead of reported. */
+    data class Observer(val name: String) : Screen
     /** Standalone door for the recitation test. Asks what to train on. */
     data object Choose : Screen
     /** Recitation test from memory. Count 0 means "to the end of the surah". */

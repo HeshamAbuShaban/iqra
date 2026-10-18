@@ -366,6 +366,8 @@ fun AyahStrip(
     good: Color,
     bad: Color,
     unknown: Color,
+    /** Index into [outcomes] to outline as the current ayah; -1 draws none. */
+    currentIndex: Int = -1,
     current: Color = Color.Transparent,
     modifier: Modifier = Modifier,
     height: androidx.compose.ui.unit.Dp = 26.dp,
@@ -394,6 +396,18 @@ fun AyahStrip(
                 drawRoundRect(
                     c, Offset(x, 0f), Size(w, size.height),
                     CornerRadius(w.coerceAtMost(4f) * 0.35f),
+                )
+            }
+            // The current ayah, when the caller names one. The parameter was
+            // accepted and never drawn - a marker that marks nothing reads as
+            // "nothing is current" and is how the observer's scrubber would
+            // have looked broken. An outline, not a fill: the mark's own
+            // outcome stays readable underneath.
+            if (i == currentIndex) {
+                drawRoundRect(
+                    current, Offset(x, 0f), Size(w, size.height),
+                    CornerRadius(w.coerceAtMost(4f) * 0.35f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f),
                 )
             }
         }
