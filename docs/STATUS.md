@@ -311,7 +311,7 @@ long to confirm. Not yet explained.
 ## How anything gets verified now
 
 ```
-engine/.venv-replay/bin/python engine/replay/run_checks.py        # 40 checks, ~160 s
+engine/.venv-replay/bin/python engine/replay/run_checks.py        # 41 checks, ~160 s
 ```
 
 Thirty-three run anywhere in CI, in ~50 s. The seven that need the model
@@ -1282,6 +1282,42 @@ Candidate one-sided equivalence measured nowhere yet; deliberately not
 applied (item 8's rule: a corpus rescore, not a weakening).
 `optional_final.py`'s tag column also stops printing "mark but not final"
 on words with no mark - the booleans were always right, only the tag lied.
+
+## Shipped, 18 October — the ahead ayah's window is its own audio
+
+The ahead-ayah serving shipped the same day had a defect reported on the
+phone immediately: "words ahead flash to my current recitation, sometimes
+they match the current, more often they don't", and green words blinking off
+for a second. Both were structural.
+
+The flash: `ayahObs` anchored the next ayah's window on the locked ayah's
+arrival, so while the reciter was still inside that ayah the window's tail
+was the CURRENT speech, and the trim's `hi - MIN_WINDOW_SYMBOLS` floor kept
+the freshest symbols of it in the window no matter what. The next ayah's
+words matched it, and because a verdict is final for the session, the
+spurious colours stuck. The fix raises the ahead window's left edge to
+`lockedSpeechEnd` - the end of the locked ayah's own matched speech, measured
+from the SERVED window (a raw start is short by the trim) - and refuses until
+that end is known and real audio exists past it. The untrimmed fallback is
+gated to visited ayat, or the flash returns through it whenever the floor
+unseats the ahead ayah's opening.
+
+The blink: two `newMap` writes (the no-window path, the word-count-mismatch
+path) wrote UNKNOWN directly and bypassed the retention rule, and the painter
+prefers the live map over the reader's record - so a single degenerate poll
+repainted a retained verdict as colourless. Both paths now keep a retained
+terminal.
+
+Gate: `ahead_window_parity` (new; the gate is 41 checks), six injections red
+- floor removed, fallback gate removed, raw-start origin, both erasures
+restored, stale-key refusal removed. Neighbours re-run green:
+`window_anchor_parity`, `evidence_window_parity`, `paint_scope_parity`,
+`arrival_retention_parity`, `session_epoch_parity`.
+
+Honest caveat: `lockedSpeechEnd` is not in the record yet. No recorded charge
+depends on it - blame only ever lands on the locked ayah - so the read-back
+is unaffected; if an ahead window ever needs rebuilding, that gap has to be
+named.
 
 ## What is open next
 

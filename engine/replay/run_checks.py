@@ -102,6 +102,9 @@ CHECKS = [
      "the arrival retention spans every ayah still in the emission log"),
     ("window_anchor_parity", "none",
      "the window's leading edge is trimmed by the alignment and never by a default"),
+    ("ahead_window_parity", "none",
+     "the ahead ayah is judged against its own audio only, and a dead poll cannot "
+     "erase a retained verdict"),
     ("standing_word", "none",
      "the standing word is never null, and the verdict walk still leads"),
     ("page_turn_boundary", "none",

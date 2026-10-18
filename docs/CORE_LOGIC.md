@@ -299,11 +299,22 @@ disagreed.
 The ayah being recited next is judged while it is being recited. The lock only
 moves at 60% coverage of its target, so waiting for the lock - which the
 "never visited" window rule did - meant a whole ayah coloured in one batch
-after the reciter had finished it. The window does not need the next ayah's
-own arrival (it anchors on the lock's), so `ayahObs` serves it, and a word
-there earns its colour as it is said. A WRONG claim is still only made for the
-ayah the lock holds: red ahead of the lock arrives the normal way, when the
-lock does.
+after the reciter had finished it. So `ayahObs` serves the next ayah before
+its own arrival exists - but against its own audio, and only its own. The
+first version of this anchored the next window on the lock's arrival, which
+while the reciter is still inside that ayah is the CURRENT speech; the next
+ayah's words matched it, and because a verdict is final the spurious colours
+stuck. The device report: "words ahead flash to my current recitation,
+sometimes they match the current, more often they don't". The window's left
+edge is now raised to `lockedSpeechEnd`, the end of the locked ayah's matched
+speech as its own alignment placed it - measured from the SERVED window,
+since `emitWord` indexes that, and short by the trim if measured from the raw
+start - and the window refuses until that end is known and real audio exists
+past it. The untrimmed fallback window, which exists to unseat a trim that
+starved an ayah's opening, is gated to visited ayat for the same reason: for
+the ahead ayah the wide window IS the flash. A WRONG claim is still only made
+for the ayah the lock holds: red ahead of the lock arrives the normal way,
+when the lock does. Gated by `ahead_window_parity.py` (six injections red).
 
 The reader drops its copy exactly where the engine clears its retained
 verdicts — a new surah, a jump, an anchor, a new recitation — which the engine
@@ -517,7 +528,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 40 checks. Every check must be shown able to fail. Break the thing that
+It runs 41 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -541,6 +552,7 @@ nothing.
 | `device_blame_parity` | A WRONG word with no recorded blame position, buckets that collapse, or emission times falling out of lockstep with the log |
 | `arrival_retention_parity` | Arrivals pruned tighter than the emission log they index, or a reader that invents a window |
 | `window_anchor_parity` | A window's leading edge trimmed by a default rather than by the alignment |
+| `ahead_window_parity` | The ahead ayah judged against audio that belongs to the one being recited, or a dead poll erasing a retained verdict |
 | `standing_word` | A null standing pointer, or one that jumps to the ayah's first word |
 | `page_turn_boundary` | A swipe that arms a handoff while the reciter is still mid-surah |
 | `doc_check_count` | This document claiming a number of checks that the gate does not run |

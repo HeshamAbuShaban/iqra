@@ -46,7 +46,7 @@ leaves the documents stale teaches the next person a lie.
 python3 engine/replay/run_checks.py
 ```
 
-The gate runs 40 checks. It takes about four minutes. All checks must pass.
+The gate runs 41 checks. It takes about four minutes. All checks must pass.
 
 To run one check:
 

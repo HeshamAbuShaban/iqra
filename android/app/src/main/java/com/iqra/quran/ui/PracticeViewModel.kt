@@ -1389,6 +1389,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // the next session's first window start after a position from a
         // recitation that no longer exists.
         ayahSpanEnd.clear()
+        // The lock-scoped speech end too, value and key alike: either alone is
+        // a boundary in a stream that no longer exists.
+        lockedSpeechEnd = 0
+        lockedSpeechEndKey = ""
+        lockedObsStart = -1
     }
 
     // ---- per-ayah evidence windows -------------------------------------
@@ -1436,6 +1441,38 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * `clearEmissionLog` and `pruneAyahWindows`.
      */
     private val ayahSpanEnd = HashMap<String, Int>()
+
+    /**
+     * Log index the LOCKED ayah's most recent `ayahObs()` window started at,
+     * after every guard.
+     *
+     * `emitWord` indices are relative to the SERVED window - the trimmed
+     * subList - so the locked ayah's speech end can only be measured from
+     * here. A raw start would be short of the served one by the trim.
+     */
+    private var lockedObsStart = -1
+
+    /**
+     * The log index just past the last emission the LOCKED ayah's alignment
+     * has matched, measured from the served window's own start.
+     *
+     * The floor for the next ayah's window while the lock is still on this
+     * one: the reciter's voice at that moment is in the NEXT ayah, and a
+     * window that reaches behind this floor judges it against speech that
+     * belongs to the ayah being finished. The device report: "words ahead
+     * flash to my current recitation".
+     *
+     * Keyed by the ayah it belongs to, so a lock move invalidates it - a
+     * stale end names a boundary in an ayah the lock has already left.
+     *
+     * Deliberately NOT `ayahSpanEnd`: that map feeds `applySpanEndTrim` and
+     * is measured from a raw start on purpose (see `ayahWindowStartOf`) -
+     * feeding the trim an exact origin is what ratcheted it into losing 332
+     * decided words. This value only ever raises the AHEAD window's left
+     * edge; it never touches the trim.
+     */
+    private var lockedSpeechEnd = 0
+    private var lockedSpeechEndKey = ""
 
     /** Last diag's intent flag, so the gate logs only when the reason changes. */
     private var intentWasHonoured = false
@@ -1493,6 +1530,24 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // refused.
         val recitedNow = surah == activeSurah && ayah == lockedAyah + 1
         if (ayahArrival[key] == null && !recitedNow) return null
+        // THE AHEAD AYAH'S WINDOW IS ITS OWN AUDIO, AND ONLY ITS OWN.
+        //
+        // The window below opens on the locked ayah's arrival, and while the
+        // reciter is still inside that ayah, what follows that arrival is the
+        // reciter's CURRENT speech - the locked ayah's own words. Judged
+        // against it, the next ayah's words match, are retained as terminal,
+        // and the user sees "words ahead flash to my current recitation" on
+        // device. So the window may not reach behind the end of the locked
+        // ayah's own matched speech.
+        //
+        // Until that end is known there is no honest window here, and the
+        // answer is NULL, not a sliver: an ayah judged before its own audio
+        // exists is exactly the flash. This floor only ever DELAYS the ahead
+        // window; it never moves a visited ayah's window and never touches
+        // the trim (`lockedSpeechEnd` is deliberately its own value - see its
+        // declaration for why).
+        val ahead = ayahArrival[key] == null
+        if (ahead && lockedSpeechEndKey != "$surah:${ayah - 1}") return null
         // START AT THE PREVIOUS AYAH'S ARRIVAL, not at our own.
         //
         // The lock advances when the reciter is ADVANCE_COVERAGE (0.60) through
@@ -1530,6 +1585,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // unreachable guard implies the caller believes the impossible is
         // possible.
         var from = maxOf(lo, hi - ayahWindowLimit())
+        // Where the locked ayah's own speech ends, as the DP itself placed it.
+        // The ahead window starts after it or not at all - see `ahead` above.
+        if (ahead) {
+            from = maxOf(from, lockedSpeechEnd)
+            if (from >= hi) return null
+        }
         // The window starts at arrival(N-1) because the lock arrives mid-ayah:
         // the previous ayah's tail is real audio that ayah N needs. But it is
         // ALSO the boundary artefact that remains the largest source of false
@@ -1571,7 +1632,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         // the same window without the trim, so a word the trim unseated can be
         // judged against the validated wide window instead.
         val trimmed = if (allowTrim) applySpanEndTrim(from, hi, surah, ayah) else from
-        return emissionLog.subList(trimmed - emissionBase, hi - emissionBase)    }
+        // Remember where the SERVED window began. `emitWord` indexes this
+        // list, so a speech end measured against any other origin is wrong by
+        // the difference - which is how the trim ratcheted once already.
+        if (surah == activeSurah && ayah == lockedAyah) lockedObsStart = trimmed
+        return emissionLog.subList(trimmed - emissionBase, hi - emissionBase)
+    }
 
     /**
      * The window's left edge after span-end trimming, or [from] unchanged.
@@ -3408,7 +3474,17 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     // highlight. The reader sees where the lock is; nothing is
                     // accused.
                     unjudgeableKeys.add("$activeSurah:$a")
-                    for (i in ws.indices) newMap[keyOf(ws[i])] = WordStatus.UNKNOWN
+                    for (i in ws.indices) {
+                        // Even here the retention rule holds. A word that has
+                        // earned a terminal verdict keeps it, or an ayah the
+                        // word-count mapping cannot judge would blank colours
+                        // it has already earned - "the right shown kept word
+                        // go disappear for a second".
+                        val k = keyOf(ws[i])
+                        val kept = sessionStatuses[k]
+                        newMap[k] = if (kept == WordStatus.CORRECT || kept == WordStatus.WRONG)
+                            kept else WordStatus.UNKNOWN
+                    }
                     continue
                 }
                 // Empty window (ahead of the lock, or not yet visited): no
@@ -3443,7 +3519,14 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // un-blame a word the trim starved and cannot invent a new
                 // accusation. The handoff (`lastAyahObsCoverage`) keeps the
                 // trimmed window: the lock policy does not move on this change.
-                if (al != null && al.wordCoverage.getOrElse(0) { 0f } <= 0f) {
+                // The fallback belongs to VISITED ayat only. For the ahead
+                // ayah the wide window IS the flash - it reaches back into
+                // the audio of the ayah being recited - so an unseated
+                // opening there stays unseated and the word stays UNKNOWN.
+                // An honest gap beats a borrowed match.
+                if (al != null && ayahArrival["$activeSurah:$a"] != null &&
+                    al.wordCoverage.getOrElse(0) { 0f } <= 0f
+                ) {
                     val wideObs = ayahObs(activeSurah, a, allowTrim = false)
                     if (wideObs != null && wideObs.size > (aObs?.size ?: 0)) {
                         aObs = wideObs
@@ -3457,14 +3540,30 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // labelled is the end of this ayah's speech. Only ever advances
                 // the NEXT ayah's left edge, so it can remove blamed prefix and
                 // cannot add blame. See ayahObs.
-                if (al != null && aObs != null) {
-                    val spanBase = ayahWindowStartOf(activeSurah, a)
+                if (al != null && aObs != null && ayahArrival["$activeSurah:$a"] != null) {
                     val lastHit = al.emitWord.indices.lastOrNull { al.emitWord[it] >= 0 }
-                    if (spanBase >= 0 && lastHit != null) {
-                        val end = spanBase + lastHit + 1
-                        val prev = ayahSpanEnd["$activeSurah:$a"]
-                        if (prev == null || end > prev) {
-                            ayahSpanEnd["$activeSurah:$a"] = end
+                    if (lastHit != null) {
+                        val spanBase = ayahWindowStartOf(activeSurah, a)
+                        if (spanBase >= 0) {
+                            val end = spanBase + lastHit + 1
+                            val prev = ayahSpanEnd["$activeSurah:$a"]
+                            if (prev == null || end > prev) {
+                                ayahSpanEnd["$activeSurah:$a"] = end
+                            }
+                        }
+                        // The LOCKED ayah also records where its own speech
+                        // ends, measured from the window actually served -
+                        // `emitWord` indices are relative to it, not to the
+                        // raw start. The ahead window uses this as its floor;
+                        // a raw-start origin here would sit short by the trim
+                        // and let the flash back in through the floor itself.
+                        if (a == lockedAyah && lockedObsStart >= 0) {
+                            val key = "$activeSurah:$a"
+                            val end = lockedObsStart + lastHit + 1
+                            if (lockedSpeechEndKey != key || end > lockedSpeechEnd) {
+                                lockedSpeechEndKey = key
+                                lockedSpeechEnd = end
+                            }
                         }
                     }
                 }
@@ -3479,8 +3578,19 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 }
                 for (i in ws.indices) {
                     if (al == null) {
-                        newMap[keyOf(ws[i])] = WordStatus.UNKNOWN
-                        archiveVerdict(keyOf(ws[i]), WordStatus.UNKNOWN)
+                        // No usable window this poll: no evidence, so no NEW
+                        // verdict - and no ERASURE either. Writing UNKNOWN
+                        // over a retained terminal is what made a green word
+                        // blink off for a poll whenever a window degenerated
+                        // (the live map wins over the reader's record, so the
+                        // blank was what got painted): "the right shown kept
+                        // word go disappear for a second". The seed's value
+                        // stands.
+                        val k = keyOf(ws[i])
+                        val kept = sessionStatuses[k]
+                        newMap[k] = if (kept == WordStatus.CORRECT || kept == WordStatus.WRONG)
+                            kept else WordStatus.UNKNOWN
+                        archiveVerdict(k, WordStatus.UNKNOWN)
                         continue
                     }
                     val key = keyOf(ws[i])
