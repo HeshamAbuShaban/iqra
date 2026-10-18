@@ -77,6 +77,17 @@ not infer.
 - **They will tell you when something is wrong and mean it.** Red masking,
   colouring gaps and page-turn fights have all been reported accurately.
 
+## Vendored skills
+
+`.opencode/skill/` carries five reviewed third-party skills — `android-cli`,
+`mobile-android-design`, `kotlin-specialist`, `frontend-design`,
+`skill-creator` — each with a `SOURCE.md` naming its upstream commit and
+license. They are reference material, loaded only when a task matches their
+description, never as standing context. Where one disagrees with this file,
+`docs/`, or `iqra-recognition`, the project wins; prefer `iqra-recognition`'s
+route into `docs/` over general advice, and treat the web-flavoured design
+skill as thinking, not code to copy into Compose.
+
 ## Subagents
 
 - `researcher` — writes documentation. Must publish what it could not establish.
