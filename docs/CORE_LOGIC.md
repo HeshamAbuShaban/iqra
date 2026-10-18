@@ -341,6 +341,7 @@ The record holds:
 | `advisories` | The engine's notes, by kind and count |
 | `frames` | The policy state at each poll |
 | `emissions`, `arrivals`, `spans` | The retained phoneme stream, each ayah's absolute arrival index, and the span end each ayah's own alignment placed. Arrivals rebuild the raw window; spans rebuild the trimmed one — the two together let a replay reproduce the exact window every verdict was judged against, the evidence the read-back needs to name a charge. |
+| `emMs` | When each retained emission arrived, poll-granular, on `wt`'s clock. With `wt` it splits a late colour into engine time (symbols arriving late) and paint time (decided in time, drawn late) — the ambiguity behind the 2.65s floor. One entry per retained emission, trimmed and cleared in lockstep with the stream. |
 | `diagTail` | Lock moves, handoffs, and engine notes |
 | `thresholds` | The thresholds that were in force |
 | `pollSec`, `declaredPollSec` | The rate the loop delivered, and the rate it asked for |
@@ -537,7 +538,7 @@ nothing.
 | `dead_code` | A declaration, or a whole file, that nobody references |
 | `unused_imports` | An import that names a component that is not used |
 | `word_alignment_parity` | Ayat that get no word verdict, so the count cannot get worse |
-| `device_blame_parity` | A WRONG word with no recorded blame position, or buckets that collapse |
+| `device_blame_parity` | A WRONG word with no recorded blame position, buckets that collapse, or emission times falling out of lockstep with the log |
 | `arrival_retention_parity` | Arrivals pruned tighter than the emission log they index, or a reader that invents a window |
 | `window_anchor_parity` | A window's leading edge trimmed by a default rather than by the alignment |
 | `standing_word` | A null standing pointer, or one that jumps to the ayah's first word |

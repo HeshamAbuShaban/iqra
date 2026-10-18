@@ -1246,7 +1246,24 @@ audit missed it because the read lives in a subprocess the check spawns, not
 in the check itself.) `device_blame.py` now refuses the re-align when the
 token table is absent, and says why; the emitted stream, expected units and
 buckets still print, so the check keeps testing what it names. Sim before:
-`1 failed, 7 skipped`. Sim after: `0 failed, 7 skipped`.
+`1 failed, 7 skipped`. Sim after: `0 failed, 7 skipped`. CI run 202
+(`abf2413`) is the first green run since 10 October — all 13 steps,
+identity-verified, released as `v0.2.0-build236` (the same versionCode 236
+installed on the phone).
+
+## Shipped, 18 October (night) — the record times its emissions
+
+`emMs` joins `emissions` in the record: one arrival time per retained symbol,
+poll-granular (a poll's whole batch shares its clock reading — inventing
+sub-poll spread would be invention), on the same clock as `wt`, trimmed and
+cleared in lockstep with the log. That turns the 2.65s floor from a number
+that could not be argued with into two separable numbers: `device_blame.py`
+now prints the verdict lag (`wt` minus the arrival of the last symbol in the
+judged window — engine time) and the feed cadence (median gap between
+emission stamps — poll time), and refuses when the times are absent instead
+of guessing. `device_blame_parity.py` grew six clauses for the writer
+lockstep and the reader; all seven new paths fault-injected. Not yet read
+back: it needs one device session on build 237+.
 
 ## What is open next
 
@@ -1259,12 +1276,11 @@ writes `out/replay/<record>/`; open the html — no headless browser here).
 Per-WRONG causes render only where the record can reproduce them.
 **3. Engine comparison** on the noisy human corpus; swap only on loss, per the
 shootout's own decision rule.
-**4. The word-latency instrument.** The 2.65s floor is real but not
-reconstructable from records (no per-emission timestamps; `emissionBase`
-resets). An instrument change is the requirement, then one device
-confirmation. The PAINT half is now structurally fixed (18 October:
-ahead-ayah judging - colour no longer waits for the lock), but `wt`, the
-verdict-time floor, is untouched and still the number to move.
+**4. The word-latency instrument.** DONE (18 October night): `emMs` in the
+record and the lag/cadence split in `device_blame.py`; the paint half was
+already fixed structurally (ahead-ayah judging - colour no longer waits for
+the lock). What remains: one device session on build 237+, then the floor is
+a measured engine/paint split instead of an ambiguity.
 **5. Standing-word pointer** — fixed and gated; now also follows the reciter
 into the next ayah. Needs one device confirmation of both.
 **6. UI polish**: type sizes, session list order, RTL on the live caption,

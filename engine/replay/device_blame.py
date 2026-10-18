@@ -185,6 +185,56 @@ def show_cause(o, path):
               "expected line is that word's own units.")
 
 
+def show_lag(o, path):
+    """Split the verdict delay: engine time vs paint and poll time.
+
+    `wt` says when a word was decided; `emMs` says when each emitted symbol
+    arrived, on the same clock. The engine's delay is `wt` minus the arrival
+    of the LAST symbol in the judged window - after that symbol existed, any
+    delay is paint and poll cadence, not the engine. A record without `emMs`
+    cannot answer this, and the tool refuses rather than guesses.
+    """
+    words = [w for w in o.get("words", []) if "wt" in w]
+    if not words:
+        return
+    emms = o.get("emMs")
+    if emms is None:
+        print("\nNo emission times in this record (`emMs`): the verdict delay "
+              "cannot be split into engine time and paint time. Re-recite on "
+              "the build that writes it.")
+        return
+    base = o.get("emissionBase", 0)
+    lags = []
+    refused = 0
+    for w in words:
+        s_, a_, _i = (int(v) for v in w["key"].split(":"))
+        _lo, hi, why = judged_span(o, s_, a_)
+        if why or hi is None:
+            refused += 1
+            continue
+        j = hi - 1 - base
+        if j < 0 or j >= len(emms):
+            refused += 1
+            continue
+        lags.append(w["wt"] - emms[j])
+    print("\nVerdict lag (`wt` minus the arrival of the last symbol in the "
+          "judged window; %d words, %d refused):" % (len(lags), refused))
+    if lags:
+        lags.sort()
+        n = len(lags)
+        for label, v in (("first quarter", lags[n // 4]),
+                         ("median", lags[n // 2]),
+                         ("three quarters", lags[3 * n // 4]),
+                         ("last", lags[-1])):
+            print("  %-16s %6d ms" % (label, v))
+    # The gaps between polls' emission stamps, as the record saw them: a gap
+    # near the declared poll period is the loop's cadence, not a slow engine.
+    gaps = sorted(b - a for a, b in zip(emms, emms[1:]) if b > a)
+    if gaps:
+        print("Feed cadence (median gap between emission stamps): %d ms"
+              % gaps[len(gaps) // 2])
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -248,6 +298,7 @@ def main():
         print("ayah is done\". Compare it with the frames' per-poll cadence to tell")
         print("a slow engine from a late paint.")
 
+    show_lag(LAST_O.get(path), path)
     show_cause(LAST_O.get(path), path)
     print()
     if first_unit_words:

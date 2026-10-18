@@ -92,6 +92,13 @@ check items only when the shipped code proves them.
    3.8s at pollSec 0.333. Per-word decode-time reconstruction fails on
    records: no per-emission timestamps and `emissionBase` resets. An
    instrument change (emission times in the record) is the requirement.
+   **DONE 18 October (night):** the record now carries `emMs` — one arrival
+   time per retained emission, poll-granular, on `wt`'s clock — and
+   `device_blame.py` prints the verdict lag (engine time) and the feed
+   cadence (poll time), refusing rather than guessing when the times are
+   absent. Gated and fault-injected in `device_blame_parity.py`. What
+   remains: ONE device session on build 237+, then read the split off it —
+   the engine half and the paint half are separable for the first time.
 10. **Engine comparison** per `engine/shootout/README.md`; swap only on loss,
     plugged into the current setup (user's decision).
 11. **DONE — Replay screen, desktop first.** `engine/replay/replay_export.py`

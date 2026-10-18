@@ -15,6 +15,9 @@ Four things, each with a fault that must turn it red:
   2. PhonemeMapper exposes the fraction it is derived from.
   3. device_blame.py buckets a synthetic record correctly.
   4. The buckets do not collapse: first unit, middle and last unit are distinct.
+  5. The record times each retained emission (`emMs`), the trim and the clear
+     keep the times in lockstep with the log, and the tool splits the verdict
+     lag with them - refusing, not guessing, when they are absent.
 
 Run: python3 engine/replay/device_blame_parity.py
 """
@@ -105,6 +108,22 @@ def main() -> int:
          re.search(r"spans\.get\(", TOOL.read_text(encoding="utf-8")) is not None),
         ("the reader refuses a window it cannot rebuild",
          re.search(r"no arrival in the retained log", TOOL.read_text(encoding="utf-8")) is not None),
+        # The emission times, so a late colour can be split into a slow engine
+        # and a late paint - the unresolved half of the 2.65s floor. The trim
+        # and the clear must keep the times in lockstep with the log, or the
+        # times index symbols that no longer exist.
+        ("the record times each retained emission",
+         'append(",\\"emMs\\":[")' in raw),
+        ("the times are appended in lockstep with the symbols",
+         re.search(r"emissionLog\.add\(symbols\[i\]\)\s*\n\s*emissionMs\.add\(nowMs\)", raw) is not None),
+        ("the trim keeps the times in lockstep with the log",
+         re.search(r"emissionMs\.clear\(\)\s*\n\s*emissionMs\.addAll\(keptMs\)", raw) is not None),
+        ("the clear keeps the times in lockstep with the log",
+         re.search(r"fun clearEmissionLog\(\)[\s\S]{0,200}?emissionMs\.clear\(\)", raw) is not None),
+        ("the reader splits the verdict lag with the times",
+         "o.get(\"emMs\")" in TOOL.read_text(encoding="utf-8")),
+        ("the reader refuses a lag it cannot split",
+         "cannot be split into engine time and paint time" in TOOL.read_text(encoding="utf-8")),
         # the source of the value
         ("PhonemeMapper declares the field on Alignment",
          re.search(r"val wrongStartFrac: FloatArray", mp) is not None),
@@ -124,10 +143,11 @@ def main() -> int:
             {"key": "18:3:2", "st": "WRONG", "wu": -1},
             {"key": "18:4:1", "st": "CORRECT", "wt": 8123},
             {"key": "18:4:2", "st": "CORRECT", "wt": 9600},
-            {"key": "18:4:3", "st": "WRONG", "wu": 1000},
+            {"key": "18:4:3", "st": "WRONG", "wu": 1000, "wt": 9700},
         ],
         "emissionBase": 10,
         "emissions": ["نَ", "م", "قِ"],
+        "emMs": [5000, 5000, 7900],
         "arrivals": {"18:1": 10, "18:2": 10, "18:3": 11, "18:4": 11, "18:5": 13},
     }
     with tempfile.TemporaryDirectory() as d:
@@ -154,6 +174,24 @@ def main() -> int:
             if "نَ" not in out:
                 bad.append("the emitted symbols are not shown, so a WRONG word's "
                            "cause cannot be named from a record")
+            # 18:4:1 was decided at 8123 ms and the last symbol of its judged
+            # window (index 12) arrived at 7900 ms: engine lag 223 ms.
+            if "Verdict lag" not in out or "223 ms" not in out:
+                bad.append("the tool does not split the verdict lag with the "
+                           "emission times")
+            # The stamps are 5000, 5000, 7900: the only positive gap is 2900.
+            if "Feed cadence" not in out or "2900 ms" not in out:
+                bad.append("the tool does not report the feed cadence")
+        # A record that predates the times must get the refusal, not a crash
+        # and not a guessed split.
+        rec_old = {k: v for k, v in rec.items() if k != "emMs"}
+        p2 = Path(d) / "s_old.json"
+        p2.write_text(json.dumps(rec_old, ensure_ascii=False), encoding="utf-8")
+        r2 = subprocess.run([sys.executable, str(TOOL), str(p2)], capture_output=True, text=True)
+        if r2.returncode != 0:
+            bad.append("device_blame.py crashes on a record without emission times")
+        elif "cannot be split into engine time and paint time" not in r2.stdout:
+            bad.append("a record without `emMs` does not get the refusal it needs")
 
     if bad:
         for b in bad:

@@ -821,6 +821,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             sb.append('"').append(s).append('"')
         }
         sb.append("]")
+        // WHEN each retained symbol arrived, on `wt`'s clock, one entry per
+        // retained emission and in the same order. With `wt` this is the split
+        // "a slow engine" vs "a late paint" needed to argue the 2.65s floor:
+        // verdict time minus the arrival of the last symbol in the judged
+        // window is the engine's delay, the rest is paint and poll cadence.
+        sb.append(",\"emMs\":[")
+        var firstMs = true
+        for (t in emissionMs) {
+            if (!firstMs) sb.append(',')
+            firstMs = false
+            sb.append(t)
+        }
+        sb.append("]")
         // The absolute index at which the lock arrived on each ayah, so a
         // replay can rebuild the very window ayahObs() built.
         //
@@ -1256,6 +1269,21 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     // where anything lives.
     private val emissionLog = ArrayList<String>()
 
+    /**
+     * Arrival time of each symbol in [emissionLog], on `wt`'s clock (ms since
+     * [sessionStartedAtMs]). Poll-granular by construction: every symbol a poll
+     * newly produced is stamped with that poll's clock reading, because the
+     * batch is all the engine knows - inventing sub-poll spread would be
+     * invention, not measurement.
+     *
+     * Without this the record said WHEN a word was decided (`wt`) but not when
+     * the audio that decided it arrived, so a late colour could not be split
+     * into a slow engine (symbols arriving late) and a late paint (verdicts
+     * decided in time, drawn late) - the ambiguity behind the 2.65s floor.
+     * Trimmed and cleared in lockstep with [emissionLog].
+     */
+    private val emissionMs = ArrayList<Long>()
+
     /** Index in [emissionLog] of the first symbol, so arrivals are absolute. */
     private var emissionBase = 0
 
@@ -1327,8 +1355,10 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // New stream we were not shown the start of - begin at what it has.
             streamConsumed = 0
         }
+        val nowMs = System.currentTimeMillis() - sessionStartedAtMs
         for (i in streamConsumed until symbols.size) {
             emissionLog.add(symbols[i])
+            emissionMs.add(nowMs)
         }
         streamConsumed = symbols.size
 
@@ -1342,12 +1372,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             val kept = emissionLog.subList(drop, emissionLog.size)
             emissionLog.clear()
             emissionLog.addAll(kept)
+            val keptMs = emissionMs.subList(drop, emissionMs.size)
+            emissionMs.clear()
+            emissionMs.addAll(keptMs)
             emissionBase += drop
         }
     }
 
     private fun clearEmissionLog() {
         emissionLog.clear()
+        emissionMs.clear()
         emissionBase = 0
         streamConsumed = 0
         ayahArrival.clear()
