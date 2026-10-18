@@ -154,10 +154,12 @@ fun SessionObserverScreen(
                     color = c.inkMuted, fontSize = 13.sp, textAlign = TextAlign.Center,
                 )
             }
-            else -> ObserverBody(d, data, t, playing, c,
-                onSeek = { playing = false; t = it },
-                onTogglePlay = { playing = !playing },
-            )
+            else -> Box(Modifier.fillMaxSize().padding(pad)) {
+                ObserverBody(d, data, t, playing, c,
+                    onSeek = { playing = false; t = it },
+                    onTogglePlay = { playing = !playing },
+                )
+            }
         }
     }
 }
@@ -277,12 +279,13 @@ private fun ObserverBody(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(10.dp))
-                    val decided = outcomes.count { it != 2 }
-                    Text(
-                        "$decided of ${outcomes.size} ayat judged so far · " +
-                            "${outcomes.count { it == 1 }} with a word wrong",
-                        fontSize = 11.sp, color = c.inkMuted,
-                    )
+                    // The strip's colours are as-of-now states, not the
+                    // report's final outcomes, so they are named rather than
+                    // assumed: a reader who has seen the report's strip would
+                    // otherwise read "grey" as "unjudged at all".
+                    LegendRow(c, c.wordGood, "clean so far", outcomes.count { it == 0 })
+                    LegendRow(c, c.chartBad, "a word wrong", outcomes.count { it == 1 })
+                    LegendRow(c, c.wordUnknown, "not judged yet", outcomes.count { it == 2 })
                 }
             }
         }
@@ -409,6 +412,21 @@ private fun ObserverBody(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LegendRow(c: IqraColors, colour: androidx.compose.ui.graphics.Color,
+                      label: String, n: Int) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(9.dp).height(9.dp)
+            .clip(RoundedCornerShape(3.dp)).background(colour))
+        Spacer(Modifier.width(8.dp))
+        Text(label, fontSize = 11.sp, color = c.inkMuted, modifier = Modifier.weight(1f))
+        Text("$n", fontSize = 11.sp, color = c.inkFaint, fontFamily = FontFamily.Monospace)
     }
 }
 
