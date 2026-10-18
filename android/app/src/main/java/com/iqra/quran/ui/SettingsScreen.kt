@@ -154,6 +154,16 @@ fun SettingsScreen(
                 )
                 SettingDivider()
                 SwitchRow(
+                    title = "Vibrate on a wrong word",
+                    subtitle = "A short buzz the first time each word is marked " +
+                        "wrong in a session, so the verdict reaches you when " +
+                        "your eyes are on the page. Unheard words and engine " +
+                        "notes never vibrate.",
+                    checked = remember(tick) { ReaderPrefs.vibrateOnWrong(ctx) },
+                    onChange = { ReaderPrefs.setVibrateOnWrong(ctx, it) },
+                )
+                SettingDivider()
+                SwitchRow(
                     title = "Keep the screen on",
                     subtitle = "Holds the screen awake everywhere in the app, " +
                         "reciting included. A recitation usually runs past the " +

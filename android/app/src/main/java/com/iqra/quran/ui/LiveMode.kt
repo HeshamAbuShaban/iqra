@@ -163,6 +163,11 @@ private fun LiveModeContent(
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val policy by vm.policyLive.collectAsStateWithLifecycle()
 
+    // The wrong-verdict buzz: session-scoped, debounced, settings-gated. It
+    // watches the map as a whole because a per-word effect would fire again on
+    // every recomposition of that word. See Haptics.kt.
+    WrongVerdictBuzz(vm)
+
     // The lattice breathes on a period coprime with the horizon's, so the two never
     // visibly lock into a shared rhythm.
     val latticeFlow = rememberInfiniteTransition(label = "lattice")
@@ -914,15 +919,11 @@ private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean) {
     LaunchedEffect(status) {
         if (status != null) {
             reveal.animateTo(1f, spring(dampingRatio = 0.7f, stiffness = 520f))
-            // A light tick on every word, and a firmer one on a mistake. In a
-            // screen where you are looking at your memory rather than at the
-            // phone, haptics is the channel that reaches you without taking your
-            // eyes off the words.
-            if (status == WordStatus.WRONG) {
-                tick.performHapticFeedback(HapticFeedbackType.LongPress)
-            } else {
-                tick.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            }
+            // A light tick on every resolved word, mistakes included. The
+            // mistake's own signal is WrongVerdictBuzz, which is session-
+            // deduped, debounced and settings-gated; a firmer tick here used to
+            // fire again every time this word re-entered composition.
+            tick.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         } else {
             reveal.snapTo(0f)
         }

@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Normal permission, no prompt: the wrong-verdict buzz. Without it the
+         vibrate() call is refused by the system. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Optional: only needed so the app can WRITE downloaded data into the
          shared /sdcard/Iqra folder, which survives reinstall and is visible over
          USB. Reading files the user copied there needs no permission, and the

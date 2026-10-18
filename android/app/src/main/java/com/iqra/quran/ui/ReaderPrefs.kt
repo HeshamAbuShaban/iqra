@@ -128,6 +128,18 @@ object ReaderPrefs {
     fun setLiveAnimation(ctx: Context, v: Boolean) = write(ctx) { putBoolean("liveAnim", v) }
 
     /**
+     * A short buzz the first time a word is marked WRONG in a session.
+     *
+     * The one channel that reaches a reciter looking at the page - or at
+     * nothing - rather than at the screen. Default on. Only a real WRONG ever
+     * vibrates; UNKNOWN, SKIPPED and advisories are not accusations and must
+     * not be felt like one. Consumed by [WrongVerdictBuzz].
+     */
+    fun vibrateOnWrong(ctx: Context): Boolean = prefs(ctx).getBoolean("vibrateWrong", true)
+
+    fun setVibrateOnWrong(ctx: Context, v: Boolean) = write(ctx) { putBoolean("vibrateWrong", v) }
+
+    /**
      * Lay the recitation and choose screens out right-to-left.
      *
      * The reader screen forces RTL because the mushaf page image is printed
