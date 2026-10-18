@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -190,6 +191,12 @@ private fun ChooseContent(
                             ltr("Pick the surah, then choose whether to do all of it " +
                                 "or just a stretch."),
                             fontSize = 12.sp, lineHeight = 18.sp, color = c.inkMuted,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            ltr("A word you get wrong is revealed and marked; every " +
+                                "other word stays hidden."),
+                            fontSize = 12.sp, lineHeight = 18.sp, color = c.inkFaint,
                         )
                         if (lastRead != null) {
                             Spacer(Modifier.height(12.dp))
@@ -409,11 +416,13 @@ private fun ModeChip(
         if (selected) c.ground else c.inkMuted, tween(220), label = "chipfg"
     )
     Box(
+        // 48dp, not the ~40 the 11dp padding produced: this is a primary
+        // choice on the screen and it sat under the minimum tappable height.
         modifier
             .clip(RoundedCornerShape(12.dp))
             .background(bg)
             .clickable(onClick = onClick)
-            .padding(vertical = 11.dp),
+            .heightIn(min = 48.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(ltr(label), fontSize = 13.sp, color = fg,
@@ -484,13 +493,21 @@ private fun AyahStepper(
 
 @Composable
 private fun StepButton(glyph: String, enabled: Boolean, c: IqraColors, onClick: () -> Unit) {
+    // The drawn circle stays 34dp, but the touch target is 48dp: the visual
+    // does not change, the miss rate does.
     Box(
-        Modifier.size(34.dp)
-            .clip(RoundedCornerShape(17.dp))
-            .background(if (enabled) c.surfaceHigh else c.surface)
+        Modifier.size(48.dp)
+            .clip(RoundedCornerShape(24.dp))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(ltr(glyph), fontSize = 18.sp, color = if (enabled) c.ink else c.inkFaint)
+        Box(
+            Modifier.size(34.dp)
+                .clip(RoundedCornerShape(17.dp))
+                .background(if (enabled) c.surfaceHigh else c.surface),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(ltr(glyph), fontSize = 18.sp, color = if (enabled) c.ink else c.inkFaint)
+        }
     }
 }

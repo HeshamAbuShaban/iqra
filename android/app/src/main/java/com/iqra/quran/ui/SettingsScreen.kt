@@ -368,7 +368,7 @@ fun SettingsScreen(
                     },
                     fontSize = 13.sp,
                     color = if (missing.isEmpty()) {
-                        accentColor
+                        MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.error
                     },
@@ -695,7 +695,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = 1.2.sp,
-        color = accentColor,
+        color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 22.dp, bottom = 6.dp, start = 4.dp),
     )
     Surface(shape = SectionShape, color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {

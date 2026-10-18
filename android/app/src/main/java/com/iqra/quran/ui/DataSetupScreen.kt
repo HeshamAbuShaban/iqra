@@ -33,7 +33,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.iqra.quran.data.AssetPaths
 import com.iqra.quran.data.DataFetcher
+import com.iqra.quran.ui.theme.LocalIqraColors
 import kotlinx.coroutines.launch
 
 /**
@@ -56,7 +56,6 @@ fun DataSetupScreen(onDone: () -> Unit) {
     var statuses by remember { mutableStateOf(AssetPaths.allStatuses(ctx)) }
     var busy by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf("") }
-    var frac by remember { mutableStateOf(0f) }
     var permGranted by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -152,22 +151,24 @@ fun DataSetupScreen(onDone: () -> Unit) {
             onClick = {
                 busy = true
                 scope.launch {
-                    runCatching {
+                    // fetchAll throws on the first failed file; the message
+                    // used to be `runCatching { "" }.getOrElse { ... }`, a
+                    // branch that could never fire, so a failure was silent.
+                    val failed = runCatching {
                         DataFetcher.fetchAll(ctx) { p ->
                             progress = "${p.label}  ${fmt(p.bytesThisFile)}" +
                                 if (p.fileTotal > 0) " / ${fmt(p.fileTotal)}" else ""
-                            frac = if (p.total > 0) p.done.toFloat() / p.total else 0f
                         }
-                    }
+                    }.isFailure
                     busy = false
-                    progress = runCatching { "" }.getOrElse { "some downloads failed - press Re-check" }
+                    progress = if (failed) "some downloads failed - press Re-check" else ""
                     statuses = AssetPaths.allStatuses(ctx)
                 }
             },
             enabled = !busy && statuses.any { !it.present && it.spec.kind == AssetPaths.Kind.FETCHABLE },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = goldColor)
-        ) { Text("Download what's missing", color = Color.White) }
+            colors = ButtonDefaults.buttonColors(containerColor = cs.secondary)
+        ) { Text("Download what's missing", color = cs.onSecondary) }
 
         Spacer(Modifier.height(8.dp))
 
@@ -180,8 +181,8 @@ fun DataSetupScreen(onDone: () -> Unit) {
                 onClick = onDone,
                 enabled = statuses.all { it.present },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = accentColor)
-            ) { Text("Continue", color = Color.White) }
+                colors = ButtonDefaults.buttonColors(containerColor = cs.primary)
+            ) { Text("Continue", color = cs.onPrimary) }
         }
         if (statuses.any { !it.present }) {
             Spacer(Modifier.height(8.dp))
@@ -196,12 +197,14 @@ fun DataSetupScreen(onDone: () -> Unit) {
 
 @Composable
 private fun Box2(ok: Boolean, cs: androidx.compose.material3.ColorScheme) {
-    val good = Color(0xFF2E7D32)
-    val bad = Color(0xFFC62828)
+    // The last hardcoded Material green/red pair in the app: the two dots read
+    // as foreign colours on every theme. Present is the accent; missing is the
+    // scheme's error, matching the data summary in Settings.
+    val good = LocalIqraColors.current.accent
     Spacer(
         Modifier
             .size(10.dp)
-            .background(if (ok) good else bad, RoundedCornerShape(5.dp))
+            .background(if (ok) good else cs.error, RoundedCornerShape(5.dp))
     )
 }
 

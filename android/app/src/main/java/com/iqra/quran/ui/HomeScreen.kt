@@ -171,7 +171,7 @@ fun HomeScreen(
                 }
             },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = accentColor,
+                focusedBorderColor = cs.primary,
                 unfocusedBorderColor = cs.onSurface.copy(alpha = 0.18f),
             ),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -255,7 +255,7 @@ private fun SearchResults(
                         "${h.surah}:${h.ayah}",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        color = goldColor,
+                        color = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.width(52.dp),
                     )
                     Column(Modifier.weight(1f)) {
@@ -291,7 +291,10 @@ fun HomeTabRow(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
             val sel = t == selected
             Box(
                 Modifier.weight(1f).padding(horizontal = 2.dp).clip(IqraShape.pill)
-                    .background(if (sel) goldColor.copy(alpha = 0.16f) else Color.Transparent)
+                    .background(
+                        if (sel) MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f)
+                        else Color.Transparent,
+                    )
                     .clickable(role = Role.Tab) { onSelect(t) }.padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -303,7 +306,8 @@ fun HomeTabRow(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
                     },
                     fontSize = 14.sp,
                     fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (sel) goldColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    color = if (sel) MaterialTheme.colorScheme.secondary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
                 )
             }
@@ -529,7 +533,12 @@ private fun TestHeroCard(surah: Int, onTest: () -> Unit) {
 @Composable
 fun SectionHeader(title: String, count: Int, madani: Boolean) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(shape = CircleShape, color = (if (madani) accentColor else goldColor).copy(alpha = 0.2f), modifier = Modifier.size(10.dp)) {}
+        Surface(
+            shape = CircleShape,
+            color = (if (madani) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.secondary).copy(alpha = 0.2f),
+            modifier = Modifier.size(10.dp),
+        ) {}
         Spacer(Modifier.width(8.dp))
         Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.width(8.dp))
@@ -540,7 +549,7 @@ fun SectionHeader(title: String, count: Int, madani: Boolean) {
 @Composable
 fun SurahRow(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
     val madani = s.revelationType == "Madani"
-    val accent = if (madani) accentColor else goldColor
+    val accent = if (madani) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
     Card(
         Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onOpen(s.number, s.startPage) },
         shape = IqraShape.card,
@@ -573,7 +582,7 @@ fun SurahRow(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
 @Composable
 fun SurahGridCell(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
     val madani = s.revelationType == "Madani"
-    val accent = if (madani) accentColor else goldColor
+    val accent = if (madani) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
     Column(
         Modifier.padding(6.dp).fillMaxWidth().clickable { onOpen(s.number, s.startPage) }
             .clip(IqraShape.card).background(MaterialTheme.colorScheme.surface).padding(12.dp),
@@ -612,9 +621,18 @@ fun JuzList(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             ) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(shape = CircleShape, color = accentColor.copy(alpha = 0.16f), modifier = Modifier.size(42.dp)) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                        modifier = Modifier.size(42.dp),
+                    ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("${j.number}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = accentColor)
+                            Text(
+                                "${j.number}",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
                     }
                     Spacer(Modifier.width(12.dp))
@@ -650,7 +668,7 @@ fun BookmarkList(
             Icon(
                 Icons.Filled.BookmarkBorder,
                 null,
-                tint = goldColor.copy(alpha = 0.7f),
+                tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
                 modifier = Modifier.size(56.dp),
             )
             Spacer(Modifier.height(12.dp))
@@ -684,7 +702,7 @@ fun BookmarkList(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             ) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Bookmark, null, tint = goldColor)
+                    Icon(Icons.Filled.Bookmark, null, tint = MaterialTheme.colorScheme.secondary)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Page $page", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)

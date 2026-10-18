@@ -41,6 +41,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.iqra.quran.data.Mushaf
+import com.iqra.quran.data.MushafPage
+import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.PracticeLog
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.SurahInfo
@@ -91,6 +94,7 @@ fun PracticeScreen(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
     val summary = rememberSummary(ctx, data, tick)
+    val pages = rememberMushafPages(ctx)
 
     Scaffold(
         containerColor = c.ground,
@@ -121,6 +125,24 @@ fun PracticeScreen(
 
             else -> {
                 val s = summary
+                // Words to work on, keyed as the engine keys them. The text
+                // must come from the mushaf table: a hard word's `key` uses the
+                // mushaf word index, and the whitespace split this replaces
+                // disagreed with it from the first multi-word token - printing
+                // the wrong word at the top of "words you got wrong". A word
+                // whose text cannot be resolved falls back to naming its ayah,
+                // never to inventing text (rule 10).
+                val hardWords = remember(pages, s.hardest) {
+                    val bySurah = HashMap<Int, List<MushafWord>>()
+                    s.hardest.associate { w ->
+                        val inSurah = bySurah.getOrPut(w.surah) {
+                            pages?.let { Mushaf.wordsForSurah(it, w.surah) }.orEmpty()
+                        }
+                        w.key to inSurah
+                            .firstOrNull { it.verse == w.ayah && it.wordInVerse == w.wordInAyah }
+                            ?.text
+                    }
+                }
                 LazyColumn(
                     Modifier.fillMaxSize().padding(pad),
                     contentPadding = PaddingValues(16.dp),
@@ -131,7 +153,7 @@ fun PracticeScreen(
                     item("pace") { PaceTrendCard(s, c) }
                     item("activity") { ActivityCard(s, c) }
                     if (s.surahs.isNotEmpty()) item("surahs") { SurahMasteryCard(s, data, c, onOpen) }
-                    if (s.hardest.isNotEmpty()) item("hard") { HardestWordsCard(s, data, c) }
+                    if (s.hardest.isNotEmpty()) item("hard") { HardestWordsCard(s, data, c, hardWords) }
                     // Was gated on `size > 1`, so anyone with one session - which is
                     // everyone who has just started - saw no session list at all.
                     if (s.recent.isNotEmpty()) item("recent") {
@@ -143,8 +165,8 @@ fun PracticeScreen(
                         fontSize = 11.sp, lineHeight = 16.sp, color = c.inkFaint,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                     )
+                    }
                 }
-            }
             }
         }
     }
@@ -159,6 +181,21 @@ private fun rememberSummary(ctx: android.content.Context, data: QuranData, tick:
         st = withContext(Dispatchers.IO) { PracticeLog.summarise(ctx, data) }
     }
     return st
+}
+
+/**
+ * The mushaf word table, loaded off the main thread; [Mushaf.load] caches it
+ * process-wide, so this is one heavy read and then cheap. The screen needs it
+ * because a hard word's key is the mushaf word index, which need not match a
+ * whitespace position in the verse text.
+ */
+@Composable
+private fun rememberMushafPages(ctx: android.content.Context): List<MushafPage>? {
+    var pages: List<MushafPage>? by remember { mutableStateOf(null) }
+    LaunchedEffect(ctx) {
+        pages = Mushaf.load(ctx)
+    }
+    return pages
 }
 
 @Composable
@@ -482,21 +519,18 @@ private fun CoverageBar(v: Float, c: IqraColors) {
 }
 
 @Composable
-private fun HardestWordsCard(s: PracticeLog.Summary, data: QuranData, c: IqraColors) {
+private fun HardestWordsCard(
+    s: PracticeLog.Summary,
+    data: QuranData,
+    c: IqraColors,
+    hardWords: Map<String, String?>,
+) {
     val words = s.hardest.take(12)
     Panel(c) {
         PanelTitle("Words to work on", "Counted from misses only", c)
         Spacer(Modifier.height(12.dp))
         words.forEach { w ->
-            val verse = data.getVerse(w.surah, w.ayah)
-            // The engine's word index is its own segmentation. If it disagrees with
-            // the page's, indexing blindly prints the WRONG WORD in the middle of a
-            // list of words you got wrong - so the lookup is checked and the row
-            // falls back to naming the ayah.
-            val text = verse?.let {
-                val parts = it.textClean.split(Regex("\\s+")).filter { p -> p.isNotEmpty() }
-                parts.getOrNull(w.wordInAyah - 1)
-            }
+            val text = hardWords[w.key]
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,

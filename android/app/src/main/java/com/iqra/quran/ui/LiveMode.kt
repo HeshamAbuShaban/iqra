@@ -412,7 +412,10 @@ private fun LiveModeContent(
     }
 
     Scaffold(
-        containerColor = Color(0xFF05070D),
+        // The theme's ground, not a literal: the wave's own deep end fades into
+        // `lcG.ground`, and the old near-black stayed blue-black under a warm
+        // theme, which made the light look pasted on.
+        containerColor = lcG.ground,
         topBar = {
             Row(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp),
@@ -420,7 +423,7 @@ private fun LiveModeContent(
             ) {
                 IconButton(onClick = { showExit = true }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Leave",
-                        tint = Color(0xFF8FA0BE))
+                        tint = lcG.inkMuted)
                 }
                 Text(
                     ltr(// The name, not the number. "Surah 1" is a lookup; the name
@@ -430,7 +433,7 @@ private fun LiveModeContent(
                         "$scopeCount ${if (scopeCount == 1) "ayah" else "ayat"}",
                     ).joinToString("  ·  ")),
                     fontSize = 14.sp,
-                    color = Color(0xFF8FA0BE),
+                    color = lcG.inkMuted,
                     modifier = Modifier.weight(1f),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
@@ -506,9 +509,9 @@ private fun LiveModeContent(
                     fontSize = 13.sp,
                     color = when (state) {
                         LiveState.Thinking -> lc.crestHot
-                        LiveState.Quiet -> Color(0xFF64748B)
+                        LiveState.Quiet -> lcG.inkFaint
                         LiveState.Paused -> lcG.ink
-                        else -> Color(0xFF8FA0BE)
+                        else -> lcG.inkMuted
                     },
                 )
 
@@ -729,9 +732,6 @@ private fun LiveModeContent(
 
 private enum class LiveState { Idle, Quiet, Hearing, Thinking, Paused }
 
-
-/** The one warm accent this screen owns, so a stalled lock reads differently. */
-private val amberColor = Color(0xFFE09112)
 
 // The light's colours come from LocalLiveColors, which derives them from whichever
 // theme is active. The violet and cyan that used to live here were taken from a

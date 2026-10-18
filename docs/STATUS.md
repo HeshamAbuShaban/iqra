@@ -1386,6 +1386,59 @@ seat (by design) or a real stream failure on the phone — the pill makes the
 second case visible with its reason on the next attempt. Device check is
 the next step, on the build that carries this.
 
+## Shipped, 18 October (late) — the wrong word has a voice, and the last literals leave
+
+A UI and design pass, engine untouched. The one new behaviour:
+
+- **Vibrate on a wrong word.** A short buzz the first time a word's status
+  becomes WRONG in a session — the channel that reaches a reciter whose eyes
+  are on the page, not the screen. The rules that keep it from lying: strictly
+  `WRONG` (UNKNOWN, SKIPPED and advisories are not accusations and must not be
+  felt like one), one buzz per word per session (the seen set is keyed on
+  `sessionEpoch`, so a new session re-arms it and a re-painted word cannot
+  buzz twice), a 1.5 s cluster gap (five buzzes in two seconds reads as a
+  fault), and nothing at all while no session records (the paint map retains
+  the previous session's red, and stale red is not a new accusation). New
+  `ui/Haptics.kt` (`WrongVerdictBuzz`, wired on the Live screen); toggle
+  "Vibrate on a wrong word" in Settings, default on, consumed by the trigger
+  (`pref_consumption` territory). `VIBRATE` was added to the manifest — it
+  was absent, and Android refuses the call without it. The old per-word
+  LongPress on WRONG is removed: it re-fired whenever the word re-entered
+  composition, which is a defect the central trigger had to not inherit.
+  Not yet device-verified; a phone check is owed before this is called good.
+
+The pass proper, each item verified in code before and after:
+
+- **The last colour literals.** `DataSetupScreen`'s green/red dots and both
+  its button labels wore hardcoded colours over theme surfaces; they read
+  from the scheme now, as do Settings' section labels, Home's accents (both
+  surah kinds already meant primary/secondary), Live's scaffold ground and
+  state captions, and the Charts end-marker. That last one punched its
+  centre with `#070B0C` — the night theme's ground as a literal — so every
+  other theme grew a foreign dot inside its own line's last point. It is a
+  stroked ring now. A dead `amberColor` left in LiveMode is deleted.
+- **DataSetup's failure branch could never fire**: the message was
+  `runCatching { "" }.getOrElse { ... }` — a non-throwing call guarding the
+  message. `fetchAll` throws, so its failure is captured and now says so.
+  A write-only progress fraction (the fetcher only reports whole files) is
+  deleted rather than left pretending to feed a determinate bar.
+- **"Words to work on" printed the wrong word.** The lookup indexed a
+  whitespace split of `textClean` with the mushaf word index; the two
+  disagree from the first multi-word token (`بَعْدَ مَا` is one mushaf word).
+  The text now comes from the mushaf table by key, and a word that cannot be
+  resolved names its ayah instead of inventing text.
+- **Hide mode** re-audited: the reveal law (only a word's own verdict may
+  reveal it, `!hide` guards everywhere else) is intact and lives in
+  MainActivity — untouched. The one honest gap was first-use: Choose now
+  states the rule ("A word you get wrong is revealed and marked; every other
+  word stays hidden"). Rejected: a preview of the next word (leaks the
+  answer) and reveal-up-to-the-word (the reader is stricter, on purpose).
+- **Tap targets**: Choose's mode chips (~40 dp) and its ± steppers (34 dp)
+  now carry 48 dp targets; the drawn circles are unchanged.
+
+Compile-only verification (`:app:compileDebugKotlin`); nothing here has been
+on a device yet.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

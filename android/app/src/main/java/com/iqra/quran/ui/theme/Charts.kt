@@ -162,8 +162,15 @@ fun TrendLine(
         drawPath(line_, line, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
         pts.forEachIndexed { i, p ->
             val last = i == pts.size - 1
-            drawCircle(line.copy(alpha = if (last) 1f else 0.55f), if (last) 5.5f else 3f, p)
-            if (last) drawCircle(Color(0xFF070B0C), 2.2f, p)
+            if (last) {
+                // A ring, drawn as a stroke. The old marker was a filled dot
+                // with a ground-coloured hole punched through its middle, which
+                // wore the night theme's ground as a literal - on every other
+                // theme the "hole" was a mismatched dot inside the end marker.
+                drawCircle(line, 3.85f, p, style = Stroke(width = 3.3f))
+            } else {
+                drawCircle(line.copy(alpha = 0.55f), 3f, p)
+            }
         }
 
         // Only the ends are labelled. A label per point is how a five-session chart
