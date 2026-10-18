@@ -78,9 +78,26 @@ check items only when the shipped code proves them.
    The other 497 sit mid-word and stay verdicts. Full list
    `/tmp/opencode/of_shipped_full.log`; the old engine's list at
    `/tmp/opencode/optional_final_full.txt` is superseded.
-7. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings** — the census's 41 no-mark
-   final-unit charge is the class now (18 letter endings, item 6); whether
-   a mutamakkin-meem table review moves any of it is open.
+7. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings** — ANSWERED 18 October
+   (night), the 41 re-read to its letters: 17 distinct endings, ب7 ه6 ا4 م3
+   ل3 ى3 ط2 ن2 ء2 ج2 + seven singles (ك د ض ر ف ظ ق) (not 18; the earlier
+   count slipped). Three of the 41 end in meem by bare form, and only ONE is a
+   table defect. 2:136:10 إِبْرَٰهِـۧمَ and 4:94:24 مَغَانِمُ are plain
+   recogniser substitutions at the final unit (مَ heard هِ; مُ heard بُ -
+   both measured against the corpus dumps at coverage ≥0.99) and no table
+   rule reaches them. 57:12:9 وَبِأَيْمَـٰنِهِم IS one: its final unit is
+   `۾۾۾`, the phonemizer's idgham/iqlab material for the join into the NEXT
+   word's ب, absorbed into the word itself; the model emitted bare `م`
+   there, and `۾۾۾` is matchable only by the exact token (`final_vowel_id`
+   has no ۾ rule), so the word is charged. Sized: 981 words end on a pure
+   ۾-run over 91 surahs; the model emits `۾۾۾` 1,077 times corpus-wide, so
+   the table and the model mostly agree - the charge needs the model to
+   NOT merge. Candidate fix: a one-sided final-position equivalence
+   (`۾۾۾` vs the word's own meem/nun family, remove-blame direction only).
+   NOT applied: per item 8's own rule this needs a deliberate corpus
+   rescore first. `optional_final.py` now prints `no licensed mark`
+   truthfully (the old tag said "mark but not final" on every un-marked
+   row; the booleans were always right, only the tag lied).
 8. **Rebuild the word table with case vowels on finals** (26,733 bare-end
    words; the builder's STOP condition needs a deliberate corpus rescore,
    not a weakening).

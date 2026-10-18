@@ -167,7 +167,13 @@ def main():
     print("Removed by the optional-final guard: %d (%.0f%%)" % (covered, 100.0 * covered / total_wrong if total_wrong else 0.0))
     print()
     for key, txt, marks, at_end, guarded in rows:
-        tag = "GUARDED" if guarded else ("mark but not final" if marks else "-")
+        # `marks` here is the DISPLAY string ("-" when the word carries none),
+        # not the list - the old truthiness test tagged every un-marked row
+        # "mark but not final", which reads as the exact opposite of what
+        # marks=- shows. The census booleans were computed from the list, so
+        # the numbers were never affected; only the tag column lied.
+        tag = ("GUARDED" if guarded
+               else ("mark but not final unit" if marks != "-" else "no licensed mark"))
         print("  %-11s %-24s marks=%-3s wrongAtFinalUnit=%-5s %s" % (key, txt, marks, at_end, tag))
     print()
     print("A GUARDED row is a word the reference reciter was accused on. The")

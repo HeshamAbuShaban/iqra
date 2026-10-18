@@ -1265,6 +1265,24 @@ of guessing. `device_blame_parity.py` grew six clauses for the writer
 lockstep and the reader; all seven new paths fault-injected. Not yet read
 back: it needs one device session on build 237+.
 
+## Shipped, 18 October (night) — the no-mark final-unit class, read to its letters
+
+The census's 41 unguarded final-unit charges, read against the corpus dumps
+and the shipped table: 17 distinct ending letters (ب7 ه6 ا4 م3 ل3 ى3 ط2 ن2
+ء2 ج2 + seven singles: ك د ض ر ف ظ ق). Three end in meem by bare form; two of those are
+plain recogniser substitutions at the final unit (مَ→هِ on 2:136:10, مُ→بُ
+on 4:94:24, both at window coverage ≥0.99) that no table rule reaches. The
+third, 57:12:9 وَبِأَيْمَـٰنِهِم, is a genuine table defect: its final unit
+is `۾۾۾`, the phonemizer's idgham/iqlab material for the join into the next
+word's ب, absorbed into the word itself; the model emitted bare `م`, and
+`۾۾۾` is matchable only by the exact token. 981 words end on such a run (91
+surahs); the model emits `۾۾۾` 1,077 times corpus-wide, so the table and the
+model mostly agree and the defect bites only where the model does not merge.
+Candidate one-sided equivalence measured nowhere yet; deliberately not
+applied (item 8's rule: a corpus rescore, not a weakening).
+`optional_final.py`'s tag column also stops printing "mark but not final"
+on words with no mark - the booleans were always right, only the tag lied.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
