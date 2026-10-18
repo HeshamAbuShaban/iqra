@@ -397,6 +397,11 @@ private fun ObserverBody(
                 Text(
                     buildString {
                         append(
+                            "A record stores no audio, so this seat replays the " +
+                                "session silently: what the model heard is replayed " +
+                                "as the text stream above, not as sound. ",
+                        )
+                        append(
                             "Advisories carry no time in the record " +
                                 "(${d.advisoryCount} events in this session), so they " +
                                 "are listed in the report but cannot be placed on this " +

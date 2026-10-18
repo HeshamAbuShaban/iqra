@@ -3928,6 +3928,10 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
     private var mediaPlayer: MediaPlayer? = null
     private val _playingSurah = MutableStateFlow(-1)
     val playingSurah: StateFlow<Int> = _playingSurah
+    private val _playLoading = MutableStateFlow(false)
+    val playLoading: StateFlow<Boolean> = _playLoading
+    private val _playError = MutableStateFlow<String?>(null)
+    val playError: StateFlow<String?> = _playError
 
     // Word-by-word follow-along: maps each word key of the playing surah to a
     // global index, and tracks the index currently being recited by the audio.
@@ -3944,6 +3948,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             return
         }
         stopPlayback()
+        _playError.value = null
         val url = "https://download.quranicaudio.com/quran/mahmood_khaleel_al-husaree/" +
             "%03d.mp3".format(surah)
         try {
@@ -3957,6 +3962,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 setDataSource(url)
                 setOnPreparedListener { mp ->
                     mp.start()
+                    _playLoading.value = false
                     _playingSurah.value = surah
                     val pages = _mushaf.value
                     if (pages != null) {
@@ -3968,12 +3974,25 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     }
                 }
                 setOnCompletionListener { stopPlayback() }
-                setOnErrorListener { _, _, _ -> stopPlayback(); false }
+                // This used to be swallowed whole: playback stopped and nothing
+                // on screen said why, which reads exactly like "no sound, no
+                // reason". Name the failure instead.
+                setOnErrorListener { _, what, extra ->
+                    stopPlayback()
+                    _playError.value = "reference audio failed (media error $what/$extra)"
+                    true
+                }
+                _playLoading.value = true
                 prepareAsync()
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             stopPlayback()
+            _playError.value = "reference audio failed (${e.javaClass.simpleName})"
         }
+    }
+
+    fun clearPlayError() {
+        _playError.value = null
     }
 
     private fun startPlayPoll(mp: MediaPlayer, total: Int) {
@@ -3998,6 +4017,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         mediaPlayer?.stop()
         mediaPlayer?.release()
         mediaPlayer = null
+        _playLoading.value = false
         _playingSurah.value = -1
         _playIndex.value = emptyMap()
         _playHead.value = -1

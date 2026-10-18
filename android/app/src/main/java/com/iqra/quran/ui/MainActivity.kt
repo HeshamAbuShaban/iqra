@@ -1262,6 +1262,8 @@ fun ReaderScreen(
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val currentPage by vm.currentPage.collectAsStateWithLifecycle()
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
+    val playLoading by vm.playLoading.collectAsStateWithLifecycle()
+    val playError by vm.playError.collectAsStateWithLifecycle()
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
@@ -1555,6 +1557,7 @@ fun ReaderScreen(
                 info = surahInfo,
                 page = shownPage,
                 playing = playingSurah == surah,
+                loading = playLoading && playingSurah != surah,
                 bookmarked = bookmarkPages.contains(shownPage),
                 onPlayToggle = { vm.togglePlaySurah(surah) },
                 onToggleBookmark = { vm.toggleBookmark(shownPage) },
@@ -1563,6 +1566,33 @@ fun ReaderScreen(
                 night = night,
                 offset = chromeOffset,
             )
+            // A failed reference-audio start used to stop silently, which is
+            // indistinguishable from "tapped play, nothing happened". The pill
+            // names the failure; it dismisses itself or on tap.
+            playError?.let { err ->
+                Surface(
+                    shape = Pill,
+                    color = Chrome.Bar,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 84.dp, start = 24.dp, end = 24.dp)
+                        .clickable { vm.clearPlayError() },
+                ) {
+                    Text(
+                        err,
+                        fontSize = 12.sp,
+                        color = Chrome.OnChrome,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    )
+                }
+            }
+            LaunchedEffect(playError) {
+                if (playError != null) {
+                    kotlinx.coroutines.delay(8000)
+                    vm.clearPlayError()
+                }
+            }
             // Floating recitation bar - off the bottom while chrome is hidden
             // quran_android slides the bottom bar off the BOTTOM with
             // translationY(+height). Adding padding instead only grows the
@@ -1871,6 +1901,7 @@ fun ReaderHeader(
     info: com.iqra.quran.data.SurahInfo?,
     page: Int,
     playing: Boolean,
+    loading: Boolean = false,
     bookmarked: Boolean,
     onPlayToggle: () -> Unit,
     onToggleBookmark: () -> Unit,
@@ -1929,11 +1960,21 @@ fun ReaderHeader(
                 )
             }
             IconButton(onClick = onPlayToggle) {
-                Icon(
-                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    "Play recitation",
-                    tint = if (playing) accentColor else Chrome.OnChrome,
-                )
+                // Preparing a stream over the network takes a moment; the
+                // button used to keep showing "play" as if the tap missed.
+                if (loading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = Chrome.OnChrome,
+                    )
+                } else {
+                    Icon(
+                        if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        "Play recitation",
+                        tint = if (playing) accentColor else Chrome.OnChrome,
+                    )
+                }
             }
         }
         // Sibling of the action Row: align() is a BoxScope modifier and has no

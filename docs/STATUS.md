@@ -1361,6 +1361,31 @@ already opens the reader anchored on the ayah; the reader's long-press
 already opens the action sheet (practice from here / repeat / listen /
 copy / bookmark). The stale TODO lines for those are corrected in place.
 
+## Shipped, 18 October (night) — the silent seat says it is silent
+
+The user reported "there isn't sound coming out from the replay". Two honest
+gaps produced that reading; both are named now, neither invented over:
+
+- The observer replays the record, and **a record stores no audio** — that
+  seat was silent with nothing on screen saying so. Its limits panel now
+  says it first: "A record stores no audio, so this seat replays the session
+  silently: what the model heard is replayed as the text stream above, not
+  as sound."
+- The reader's reference-audio button (`togglePlaySurah`,
+  `PracticeViewModel.kt`) swallowed every failure whole: a network or
+  MediaPlayer error stopped a player that had never started, and the button
+  kept showing "play" — indistinguishable from a missed tap. It now shows a
+  spinner while the stream prepares (the header had no loading state at
+  all), and a failure surfaces as a pill naming the media error (`what`/
+  `extra`) or the exception class, dismissable and self-clearing after 8 s.
+  The error listener returns `true` now, so the completion callback no
+  longer fires over an error.
+
+What this does not yet claim: whether the user's silence was the observer
+seat (by design) or a real stream failure on the phone — the pill makes the
+second case visible with its reason on the next attempt. Device check is
+the next step, on the build that carries this.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
