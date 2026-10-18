@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.iqra.quran.BuildConfig
 import com.iqra.quran.data.AssetPaths
 import com.iqra.quran.data.PracticeLog
 import androidx.compose.foundation.layout.Box
@@ -401,7 +402,11 @@ fun SettingsScreen(
             }
 
             SettingsSection("About") {
-                KeyValue("Version", "0.1.0")
+                // Read, not written. "0.1.0" was a hardcoded string, so the
+                // About screen showed the same version for every install while
+                // the record's build tag moved independently - two claims about
+                // which build was running, neither checkable against the other.
+                KeyValue("Version", "${BuildConfig.VERSION_NAME} · #${BuildConfig.VERSION_CODE}")
                 KeyValue("Mushaf", "604 pages · Madinah")
                 KeyValue("Recognition", "on-device only")
                 Spacer(Modifier.height(10.dp))

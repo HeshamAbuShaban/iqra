@@ -4,6 +4,25 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// The record's build tag is "#<versionCode>" and the APK's identity is
+// versionCode alone. A hardcoded 1 made every local install indistinguishable:
+// no record on the device could say which build produced it, and the About
+// screen's "0.1.0" was a literal that never changed. CI keeps its run number;
+// local builds count commits, so every committed change is a new installable
+// identity and an uncommitted tree reuses its parent's (honest: same tag,
+// same installable name).
+fun gitCommitCount(): Int = try {
+    val proc = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    val out = proc.inputStream.bufferedReader().use { it.readText() }
+    proc.waitFor()
+    out.trim().toIntOrNull() ?: 1
+} catch (_: Exception) {
+    1
+}
+
 android {
     namespace = "com.iqra.quran"
     compileSdk = 36
@@ -21,8 +40,8 @@ android {
             val emulatorAbi = providers.gradleProperty("emulatorAbi").orNull == "true"
             abiFilters += if (emulatorAbi) listOf("arm64-v8a", "x86_64") else listOf("arm64-v8a")
         }
-        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
-        versionName = "0.1.0"
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: gitCommitCount())
+        versionName = "0.2.0"
     }
     signingConfigs {
         // A committed debug key so every CI build shares one signature.
@@ -51,7 +70,12 @@ android {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        // The About screen reads BuildConfig.VERSION_NAME / VERSION_CODE; a
+        // hardcoded "0.1.0" there was the reason two installs looked identical.
+        buildConfig = true
+    }
     packaging {
         resources { excludes += setOf("/META-INF/*") }
     }

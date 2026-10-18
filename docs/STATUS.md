@@ -1196,6 +1196,35 @@ Also shipped the same evening, all gated:
   no advisories on wrongly-charged keys; window pools misaligned across
   ayat. The pinned escape fired after 39.5s motionless (96%/44%).
 
+## Shipped, 18 October (late) — build identity, and a record only for sessions that ran
+
+`versionCode` is now the git commit count (CI keeps its run number) and
+`versionName` is 0.2.0; Settings > About reads `BuildConfig` instead of a
+literal "0.1.0", and the record's `build` tag is `#<versionCode>`. Every
+install can now be named by the record it produced and by its own About
+screen — before, every local build said `#1` and About said "0.1.0" for ever.
+
+The surah-75/76 record (09:23 on 17 October — the walk missed in the first
+batch of pulls) read back through `device_blame.py`: 243 words judged in
+surah 76, 186 CORRECT, **15 WRONG — 11 last-unit, 4 first-unit, 0 mid-word**;
+ten of the fifteen sit in four shared-window groups (one window deciding two
+or three words: 76:11, 76:14, 76:17, 76:19) — the window-composition race
+already named for surah 4. All fifteen reconstructed, no refusals,
+`noWindowWords` 0: the widened retention holds and the last-unit class is a
+named cause now, not a mystery. (The 76:11 pair was already in the docs; the
+other groups are new; DECODER_STARVATION 1× on 76:1:1, advisories on no
+WRONG key.)
+
+The zero-identity file found beside the real records (`s-0-0-#1.json`,
+`startedAt` 0, `surahStart` 0, empty rings, live `surahNow`/`lockNow`): the
+end write in `stopRecite` ran unconditionally, and the write's own guards
+cannot stop an `ended=true` write — so a page jump with no session running
+flushed a corpse the session list counted as a session. The end write is now
+conditional on `sessionRan`, and the start header moved after the counters,
+ring and generation reset (it used to hold the previous session's tail under
+the new session's name). New check `record_flush_guard.py`, all three clauses
+fault-injected. The gate runs 39.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

@@ -112,6 +112,12 @@ check items only when the shipped code proves them.
 15. **Prune asymmetry** (documented, deliberately not changed): arrivals are
     dropped for other surahs on a page handoff but spans are not; the record
     writer's retention filter is what keeps both honest.
+16. **The observer screen on the phone** — the desktop replay
+    (`replay_export.py`) inside the app: timeline scrub from the record,
+    lock moves, verdicts at their `wt`, advisories. The record already
+    carries everything it needs; design the smallest honest slice first,
+    then build. (The user asked for this: the desktop "observer seat"
+    should not be the only place a session can be re-watched.)
 
 ## The user's idea, documented — 17 October
 

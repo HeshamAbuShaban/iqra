@@ -320,6 +320,18 @@ The engine writes the record every 25 polls and once at the end. A record that
 is written after teardown would rewrite a good record with reset counters. The
 end write happens before the teardown.
 
+The end write runs only for a session that actually ran (`sessionRan`). It used
+to be unconditional, and the write's own guards (`!ended && …`) can never stop
+an ended=true write — so a page jump with no session running flushed a
+zero-identity corpse onto the device: `s-0-0-#<code>.json`, `startedAt` 0,
+`surahStart` 0, empty rings, `ended:true`, with `surahNow`/`lockNow` reporting
+wherever the reader happened to stand. The session list counted it as a
+session; it sat beside nine real records, found 17 October. The start header is
+written after the counters, the frame ring and the generation were reset, so a
+crash in a session's first seconds leaves a file about *this* session — before,
+the header held the previous session's frame tail and counters under the new
+session's name.
+
 ### Three rules for the record
 
 **1. Only the next session clears a session.**
@@ -347,6 +359,13 @@ loses its comparison. The app encodes `-1` for no data and `0` for zero.
 Any counter that one path clears and a sibling path does not clear. That class
 of fault produced the self-contradicting record above. `resetSessionCounters`
 now clears the siblings too: `consecutiveRetreats` and `noiseFloor`.
+
+A write path that is not conditional on the session having run. The guards
+inside `flushSessionRecord` cover only the timer path; the end path's
+condition lives at its single call site in `stopRecite`, and `sessionRan` —
+not `_recording` — is the predicate: a mic-start failure never sets
+`_recording` but must still leave a record. `record_flush_guard.py` pins the
+condition and the header ordering.
 
 ---
 
@@ -468,7 +487,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 38 checks. Every check must be shown able to fail. Break the thing that
+It runs 39 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -485,6 +504,7 @@ nothing.
 | `advisory_parity` | An advisory that accuses |
 | `pref_consumption` | A switch that nothing reads |
 | `session_record_integrity` | A counter that a browse wipes |
+| `record_flush_guard` | A record flushed for a session that never ran, or a header describing the previous session |
 | `dead_code` | A declaration, or a whole file, that nobody references |
 | `unused_imports` | An import that names a component that is not used |
 | `word_alignment_parity` | Ayat that get no word verdict, so the count cannot get worse |

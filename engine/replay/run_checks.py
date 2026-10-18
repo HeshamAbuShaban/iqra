@@ -76,6 +76,9 @@ CHECKS = [
      "every Settings toggle is consumed somewhere but the settings UI"),
     ("session_record_integrity", "none",
      "a session's counters survive browsing; only the next startRecite clears them"),
+    ("record_flush_guard", "none",
+     "a record is written only for a session that ran, and its header describes "
+     "its own session, not the previous one's tail"),
     ("dead_code", "none",
      "nothing in the recognition surface is declared and never referenced"),
     ("honest_numbers", "none",

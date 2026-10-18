@@ -2546,9 +2546,6 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         // session, leaving every word of it UNKNOWN with no colouring.
         pendingArrivalKey = "$s:${lockedAyah}"
         diag("session starts p=$page → s=$s:${lockedAyah}")
-        // Write the header immediately. If the process dies before the first
-        // timer tick there is still a file naming the session that died.
-        flushSessionRecord(ended = false)
         rebaseSlice = true
         pendingAnchor = null
         pageNumber = page
@@ -2575,6 +2572,13 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         // A new session invalidates any loop still winding down from the last
         // one, so it cannot feed the stream this session is about to create.
         val gen = ++sessionGen
+        // Write the header LAST. If the process dies before the first timer
+        // tick there is still a file naming the session that died - but the
+        // write used to happen before the counters, the frame ring and the
+        // generation were reset, so the crash-window file held the PREVIOUS
+        // session's frame tail and counters under the NEW session's name and
+        // timestamp: a franken-record whose every field looked plausible.
+        flushSessionRecord(ended = false)
         viewModelScope.launch(Dispatchers.IO) {
             val vadReady = SherpaVad.ensure(getApplication())
             if (!ensureVoice()) return@launch
@@ -3702,8 +3706,21 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         val endedGen = sessionGen
         sessionGen++
         // Final write BEFORE the session state is torn down, so the record keeps
-        // the moves and verdicts this session produced.
-        runCatching { flushSessionRecord(ended = true, reason = reason) }
+        // the moves and verdicts this session produced - but only once the
+        // session actually ran. `endSession` resets `sessionRan` at the end of
+        // every session, so this is false both before the first session of a
+        // VM and after the last one ended.
+        //
+        // It used to be unconditional, and `flushSessionRecord`'s guards
+        // (`!ended && ...`) can never stop an ended=true write - so a page jump
+        // with no session running flushed a corpse: a record named
+        // `s-0-0-#<code>.json`, `startedAt` 0, `surahStart` 0, empty rings,
+        // `ended:true`, with `surahNow`/`lockNow` reporting wherever the reader
+        // happened to stand. Picked up on the device 17 October: nine real
+        // sessions and one zero-identity file, which the session list then
+        // counted as a session. A preparing-cancelled session (nothing recorded
+        // yet) was the same case under a real name.
+        if (sessionRan) runCatching { flushSessionRecord(ended = true, reason = reason) }
         sessionActive = false
         cancelRepeat()
         SherpaZipformer.closeStream()
