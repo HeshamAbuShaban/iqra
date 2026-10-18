@@ -45,6 +45,11 @@ and none of them was reachable by a token corpus.
 | Multi-surah page: lock rooted to standing scope | sibling escape (ported from `page_scope_escape.py`) | page-602 walk fires; 0 false escapes on 10 records |
 | Sibling escape verified on device, both directions | the user's mid-page walk (record `s-1792255842167`) | `escape → s=107:1 coverage=0.88` at t=6.8s (the start mid-page) and `escape → s=106:1 coverage=1.00` at t=47.8s (the return). Zero false accusations in the whole session; 48 CORRECT / 4 UNKNOWN / 0 WRONG |
 | Two faults in my own recorder | `sessionEvaluations`, post-teardown flush | found by reading a real record back |
+| Verdicts revoked mid-ayah ("paint and unpaint") | retention chain final at every position, the locked ayah included | `archive_parity` retention model, fault-injected |
+| Colour arriving in one batch at the lock move | `ayahObs` serves the ayah being recited next; red still waits for the lock | `evidence_window_parity`; the 93.4%-wide-window measurement |
+| Colours wiped when the reciter stopped | the reader clears on the session epoch, not on an empty paint map | `session_epoch_parity`, fault-injected three ways |
+| Pointer sitting on the locked ayah while the next was recited | the pointer ayah follows the next ayah's evidence (forward moves only) | `standing_word`, fault-injected five ways |
+| Hide toggle reset on every visit | persisted in `ReaderPrefs` like night mode | source; no gate check (reader preference, not engine) |
 
 ## Open, ranked by what is actually hurting you
 
@@ -1241,8 +1246,11 @@ shootout's own decision rule.
 **4. The word-latency instrument.** The 2.65s floor is real but not
 reconstructable from records (no per-emission timestamps; `emissionBase`
 resets). An instrument change is the requirement, then one device
-confirmation.
-**5. Standing-word pointer** — fixed and gated; needs one device confirmation.
+confirmation. The PAINT half is now structurally fixed (18 October:
+ahead-ayah judging - colour no longer waits for the lock), but `wt`, the
+verdict-time floor, is untouched and still the number to move.
+**5. Standing-word pointer** — fixed and gated; now also follows the reciter
+into the next ayah. Needs one device confirmation of both.
 **6. UI polish**: type sizes, session list order, RTL on the live caption,
 search deep-link, reference-app pop-menu.
 

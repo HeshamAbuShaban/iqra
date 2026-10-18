@@ -48,7 +48,8 @@ check items only when the shipped code proves them.
    with the page-turn at the boundary is the real test. "Would take some
    time", user says.
 3. **The `standingWord`-stays-lit visual** at a completed surah — record the
-   behaviour in STATUS.
+   behaviour in STATUS. The pointer now follows the reciter past the ayah
+   boundary (18 October), so this visit covers both.
 4. **Repeat-to-refresh scenario** — backtrack exercised 17 October
    (`reversals: 2`, no false accusation); repeat is not.
 5. **The duplicates-in-window charge class.** `4:2:12` was blamed (wu=1000)
@@ -213,13 +214,27 @@ finding is a guess without it.
    VAD is being honest or the RMS/VAD path costs polls, and whether the
    word-latency floor rises with it.
 5. **The 2.65s word-latency floor.** Untouched; the trim did not move it and
-   `wt` confirms.
+   `wt` confirms. The paint-latency half is now structurally fixed (ahead-ayah
+   judging, 18 October); the verdict-time floor is not.
 6. **UI polish**: type sizes, session list order, RTL on the live caption.
 
 ## Shipped — measured, not hoped
 
 - **Paint scope.** The map is seeded from the session's verdicts, so a word
   keeps its colour when the lock moves on. `paint_scope_parity.py`.
+- **Verdicts are final for the session** (18 October). The retention chain is
+  final at every position — the locked ayah's provisional revision was what
+  produced the paint-and-unpaint — and the reader clears its copy only on the
+  engine's session epoch, never at teardown. `archive_parity` (retention
+  model), `session_epoch_parity`, both fault-injected. The Hide toggle
+  persists across visits.
+- **The next ayah colours while it is recited** (18 October). `ayahObs` no
+  longer refuses the ayah the lock has not reached yet, so a word earns its
+  colour as it is said instead of the whole ayah arriving in one batch at the
+  lock move; red still waits for the lock. `evidence_window_parity`.
+- **The standing pointer follows the reciter** (18 October) into the next
+  ayah once it holds a verdict, and does not move on with stale verdicts
+  after a repeat. `standing_word.py`, fault-injected.
 - **Word-final vowel rule**, including sukun: `م` and `مْ` now match, because
   pausing at an ayah end is the commonest way to finish a word and the first
   version of the rule charged it as a mistake. `final_vowel_parity.py`.

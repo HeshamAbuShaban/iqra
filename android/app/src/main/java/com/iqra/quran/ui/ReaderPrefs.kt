@@ -36,6 +36,9 @@ object ReaderPrefs {
     fun nightMode(ctx: Context): Boolean = prefs(ctx).getBoolean("night", false)
     fun setNightMode(ctx: Context, v: Boolean) = write(ctx) { putBoolean("night", v) }
 
+    fun hideVerse(ctx: Context): Boolean = prefs(ctx).getBoolean("hideVerse", false)
+    fun setHideVerse(ctx: Context, v: Boolean) = write(ctx) { putBoolean("hideVerse", v) }
+
     fun textBrightness(ctx: Context): Int = prefs(ctx).getInt("textB", 255)
     fun setTextBrightness(ctx: Context, v: Int) = write(ctx) { putInt("textB", v) }
 

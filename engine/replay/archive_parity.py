@@ -24,6 +24,9 @@ deleted, and then the next one ships. It asserts ONLY that:
   1. `loadSurah` does not clear the archive
   2. the prune `removeAll` does not reach the archive
   3. the archive is cleared exactly once per session, at session start
+  4. the retention chain is position-independent and keeps a terminal verdict -
+     the locked ayah's "provisional" revision was removed deliberately on
+     18 October (see `retention()`); it was the paint-and-unpaint defect
 
 Run: engine/.venv-replay/bin/python engine/replay/archive_parity.py
 """
@@ -151,34 +154,38 @@ def check(src, name="PracticeViewModel.kt"):
 # to do with the reciter. An `else` clause read that as "unearned" and deleted
 # the verdict. Modelling it makes the intended behaviour checkable without
 # reimplementing the DP.
+#
+# Position-independent since 18 October: a terminal verdict is final behind,
+# on and ahead of the lock. The locked ayah used to be "provisional" - a live
+# SKIPPED deleted a retained verdict - but the painter takes the engine's live
+# map over the reader's own record, so every deletion was a green word going
+# grey mid-ayah ("paint and unpaint"), and the archive never revokes.
 def retention(a, locked, live, held):
     """(status after the chain, what stays retained)."""
-    if a < locked:                                   # behind the lock: done work
-        if held in ("CORRECT", "WRONG"):
-            return held, held
-        if live in ("CORRECT", "WRONG"):
-            return live, live
-        return live, None
-    if a == locked:                                  # on it: verdicts are provisional
-        if live in ("SKIPPED", "UNKNOWN"):
-            return live, None
+    if held in ("CORRECT", "WRONG"):
+        return held, held
+    if live in ("CORRECT", "WRONG"):
         return live, live
-    return live, None                                # ahead: nothing earned yet
+    return live, None
 
 
 RETENTION_CASES = [
     # (a, locked, live, held, expect_status, expect_held, why)
     (60, 60, "CORRECT", None, "CORRECT", "CORRECT", "earned on the locked ayah"),
+    (60, 60, "SKIPPED", "CORRECT", "CORRECT", "CORRECT",
+     "the window moved on inside the locked ayah; that is not a revision"),
     (60, 61, "SKIPPED", "CORRECT", "CORRECT", "CORRECT",
      "the ring moved on; SKIPPED here is missing evidence, not a skipped word"),
     (60, 61, "SKIPPED", "WRONG", "WRONG", "WRONG",
      "a wrong word stays wrong after the lock advances"),
     (60, 61, "CORRECT", None, "CORRECT", "CORRECT",
      "still inside the ring, so the live verdict stands"),
+    (61, 60, "CORRECT", None, "CORRECT", "CORRECT",
+     "the next ayah colours while it is being recited (ayahObs serves it)"),
+    (61, 60, "SKIPPED", "CORRECT", "CORRECT", "CORRECT",
+     "an ayah ahead of a backward move keeps what it earned"),
     (61, 60, "SKIPPED", None, "SKIPPED", None,
      "ahead of the lock nothing is earned yet"),
-    (60, 60, "SKIPPED", "CORRECT", "SKIPPED", None,
-     "back on the ayah it may revise: SKIPPED is not a verdict to keep"),
 ]
 
 
@@ -208,10 +215,25 @@ def check_retention_is_wired(src):
             "PracticeViewModel.kt: no `val retained = sessionStatuses[key]`. The "
             "sticky-verdict chain was replaced; update this check deliberately "
             "rather than letting it go.")
-    if "if (a < lockedAyah) {" not in src:
+    if "s = retained" not in src or "sessionStatuses[key] = s" not in src:
         failures.append(
-            "PracticeViewModel.kt: no behind-the-lock branch in the retention "
-            "chain. Without it a retained verdict has nothing keeping it alive.")
+            "PracticeViewModel.kt: the sticky-verdict chain no longer branches on "
+            "the retained value (`s = retained` / `sessionStatuses[key] = s`). "
+            "Without it a retained verdict has nothing keeping it alive.")
+    # Position-independent: a terminal verdict is final behind, on and ahead of
+    # the lock. Re-introducing a per-position branch is how the locked ayah's
+    # revocation ("provisional") comes back, and with it a green word going
+    # grey mid-ayah.
+    start = src.find("val retained = sessionStatuses[key]")
+    end = src.find("newMap[key] = s", start) if start >= 0 else -1
+    if start >= 0 and end > start:
+        block = src[start:end]
+        if re.search(r"\ba [<>=!]=?\s*lockedAyah", block):
+            failures.append(
+                "PracticeViewModel.kt: the retention chain branches on the "
+                "word's position relative to the lock again. A terminal verdict "
+                "is final at every position; the locked ayah's provisional "
+                "revision is what produced the paint-and-unpaint defect.")
     return failures
 
 

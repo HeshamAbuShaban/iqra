@@ -1204,10 +1204,11 @@ private class EarnedVerdicts {
     }
 
     /**
-     * Forget everything, driven by the engine emptying its own paint map:
-     * teardown, jump, anchor, new recitation. So this holds exactly as long as
-     * the session that produced it and cannot leak one recitation's verdicts
-     * onto the next one's page.
+     * Forget everything, driven by the engine clearing its own retained
+     * verdicts - a new surah, a jump, an anchor, a new recitation, which is
+     * what the session epoch is bumped for. Teardown is deliberately NOT one
+     * of those: it clears the paint map only, so the verdicts the reciter
+     * earned stay on the page until the next session starts.
      */
     fun clear() {
         if (byWord.isEmpty()) return
@@ -1246,6 +1247,7 @@ fun ReaderScreen(
     val hide by vm.hideVerse.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     val statusMap by vm.statusMap.collectAsStateWithLifecycle()
+    val sessionEpoch by vm.sessionEpoch.collectAsStateWithLifecycle()
     val advisoryMap by vm.advisoryMap.collectAsStateWithLifecycle()
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val currentPage by vm.currentPage.collectAsStateWithLifecycle()
@@ -1279,17 +1281,17 @@ fun ReaderScreen(
         vm.standWordsFor(av)
     }
     // The session's decided words, held here because the engine's paint map
-    // forgets them. Fed on every emission below, and emptied whenever the
-    // engine empties its own, so it can never outlive the recitation that
-    // produced it.
+    // forgets them: it is pruned to the lock +/- 2 every poll. Fed on every
+    // emission. Emptying is keyed on the engine's session epoch, which is
+    // bumped exactly where the engine clears its own retained verdicts - a
+    // new surah, a jump, an anchor, a new recitation. It is deliberately NOT
+    // keyed on an empty paint map any more: the engine also empties the PAINT
+    // on teardown (stopRecite) without touching the verdicts, so keying on
+    // that wiped the colours the moment the reciter stopped - "they just
+    // stay shortly".
     val earned = remember { EarnedVerdicts() }
-    LaunchedEffect(recording, statusMap) {
-        // An empty paint map is the engine's own "this session's verdicts are
-        // gone" signal - stopRecite, jumpToPage, anchorToVerse and startRecite
-        // all emit one - so the reader's copy goes with it rather than being
-        // pinned to a page the engine has already moved off.
-        if (statusMap.isEmpty()) earned.clear() else earned.fold(statusMap)
-    }
+    LaunchedEffect(sessionEpoch) { earned.clear() }
+    LaunchedEffect(statusMap) { if (statusMap.isNotEmpty()) earned.fold(statusMap) }
     // scopeProgress indexed by ayah, for the paint. It is built from the DURABLE
     // session archive and never pruned, so unlike the per-word map it still
     // knows after a rotation that an ayah three ayat back was judged.

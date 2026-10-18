@@ -59,11 +59,19 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _preparing = MutableStateFlow(false)
     val preparing: StateFlow<Boolean> = _preparing
 
-    private val _hideVerse = MutableStateFlow(false)
+    private val _hideVerse = MutableStateFlow(ReaderPrefs.hideVerse(getApplication()))
     val hideVerse: StateFlow<Boolean> = _hideVerse
 
     private val _statusMap = MutableStateFlow<Map<String, WordStatus>>(emptyMap())
     val statusMap: StateFlow<Map<String, WordStatus>> = _statusMap
+
+    /** Bumped wherever the retained verdicts are cleared - a new surah, a
+     *  jump, an anchor, a new recitation - so the reader drops its own copy
+     *  exactly when the engine drops its own. Teardown is deliberately not
+     *  one of those: it clears the PAINT map only, and the verdicts the
+     *  reciter earned must stay on the page until the next session starts. */
+    private val _sessionEpoch = MutableStateFlow(0)
+    val sessionEpoch: StateFlow<Int> = _sessionEpoch
 
     private val _advisoryMap = MutableStateFlow<Map<String, Advisory>>(emptyMap())
     val advisoryMap: StateFlow<Map<String, Advisory>> = _advisoryMap
@@ -1430,15 +1438,27 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
      * The audio to judge [ayah] of [surah] against.
      *
      * Returns NULL - not an empty list - only when the lock has never been
-     * there, because "never visited" and "visited but the window degenerated"
-     * are different claims and the second one is a bug. An empty window used to
-     * be the silent form of that bug: it read as UNKNOWN on every word, so the
-     * failure looked like the reciter was silent rather than like the index was
-     * stale.
+     * there AND the ayah is not the one being recited now, because "never
+     * visited" and "visited but the window degenerated" are different claims
+     * and the second one is a bug. An empty window used to be the silent form
+     * of that bug: it read as UNKNOWN on every word, so the failure looked
+     * like the reciter was silent rather than like the index was stale.
      */
     private fun ayahObs(surah: Int, ayah: Int, allowTrim: Boolean = true): List<String>? {
         val key = "$surah:$ayah"
-        ayahArrival[key] ?: return null            // never visited
+        // The next ayah is being recited while the lock is still on this one.
+        // The lock only advances at ADVANCE_COVERAGE (0.60) into its target, so
+        // ayah N+1's first words are spoken while nothing watches them: its own
+        // arrival is not stamped until the lock moves. Refusing it here - the
+        // "never visited" rule applied literally - kept every word of the ayah
+        // under the reciter's voice UNKNOWN from its first word to its last,
+        // and the colour arrived in one batch at the lock move: the "colour
+        // only appears once most of the ayah is done". The window below does
+        // not need N+1's arrival - it anchors on arrival(N), the lock's own
+        // ayah - so only an ayah that is neither visited nor being recited is
+        // refused.
+        val recitedNow = surah == activeSurah && ayah == lockedAyah + 1
+        if (ayahArrival[key] == null && !recitedNow) return null
         // START AT THE PREVIOUS AYAH'S ARRIVAL, not at our own.
         //
         // The lock advances when the reciter is ADVANCE_COVERAGE (0.60) through
@@ -2050,6 +2070,7 @@ private fun computeWindow(): List<Int> {
     private fun loadSurah(surah: Int) {
         val pages = _mushaf.value ?: return
         sessionStatuses.clear()
+        _sessionEpoch.value = _sessionEpoch.value + 1
         activeSurah = surah
         _scopeSurah.value = surah
         val all = Mushaf.wordsForSurah(pages, surah)
@@ -2152,6 +2173,7 @@ private fun computeWindow(): List<Int> {
         diag("jump → s=$s:$a p=$page")
         wrongStreak.clear()
         sessionStatuses.clear()
+        _sessionEpoch.value = _sessionEpoch.value + 1
         pendingAnchor = null
         refreshWindow()
         _activeVerse.value = null
@@ -2267,6 +2289,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         pendingBackAyah = null; pendingBackFrames = 0
         wrongStreak.clear()
         sessionStatuses.clear()
+        _sessionEpoch.value = _sessionEpoch.value + 1
         _statusMap.value = emptyMap()
         _currentKey.value = null
         val targetPage = versePage[ayah]
@@ -2418,7 +2441,11 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             "$activeSurah:1 with no verdict credited")
     }
 
-    fun toggleHide() { _hideVerse.value = !_hideVerse.value }
+    fun toggleHide() {
+        val v = !_hideVerse.value
+        _hideVerse.value = v
+        ReaderPrefs.setHideVerse(getApplication(), v)
+    }
 
     /** Pager bookkeeping only: records which page the user is viewing.
      *  Never touches the lock — the lock follows the reciter (or an
@@ -2564,6 +2591,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         frameRing.clear()
             wrongStreak.clear()
             sessionStatuses.clear()
+            _sessionEpoch.value = _sessionEpoch.value + 1
             _statusMap.value = emptyMap()
         publishAnchor()
         _engineHint.value = null
@@ -3301,11 +3329,13 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             // and on a short scope, which is super telling".
             //
             // Seeding from sessionStatuses carries every verdict the reciter has
-            // EARNED forward. sessionStatuses holds exactly those: an ayah ahead
-            // of the lock is removed rather than retained, so nothing
-            // not-yet-recited sticks. The loop below then overwrites the ayat in
-            // the window with their freshly computed values, which is what makes
-            // the colour move as the reciter speaks.
+            // EARNED forward. sessionStatuses holds exactly those: a word with
+            // no terminal verdict is removed rather than retained, so nothing
+            // not-yet-recited sticks - including ahead of the lock, which is
+            // judged live now and retained the moment a word there earns its
+            // verdict. The loop below re-judges the window every frame; the
+            // retention rule decides what a re-judgment may change, which is
+            // what makes the colour move as the reciter speaks.
             //
             // Decision, from the user: "as long as the user is active on the
             // recitation and he carries on". sessionStatuses is cleared on
@@ -3404,9 +3434,11 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                         }
                     }
                 }
-                if (al == null && aObs != null) {
+                if (al == null && aObs != null && ayahArrival["$activeSurah:$a"] != null) {
                     // Visited, yet no usable audio. That is not "the reciter was
                     // quiet" - it is an index that no longer points at anything.
+                    // An ayah being recited ahead of the lock has no arrival
+                    // yet, and its not-yet-audio is not a stale index.
                     sessionEmptyWindows++
                     sessionNoWindowWords += ws.size
                     for (i in ws.indices) addAdvisory(keyOf(ws[i]), AdvisoryKind.NO_AUDIO_WINDOW)
@@ -3505,7 +3537,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     } else {
                         wrongStreak.remove(key)
                     }
-// Retain a verdict the reciter has already earned.
+                // Retain a verdict the reciter has already earned.
                 //
                 // Behind the lock, `align` is being asked to score these words
                 // against the NEXT ayah's audio: the ring no longer holds their
@@ -3519,34 +3551,28 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // reached 0.933 coverage. Recognition was never the problem.
                 //
                 // A terminal verdict is final, first one wins - the same contract
-                // the session archive already uses. Ahead-of-lock words are still
-                // recomputed live, because nothing has been earned there yet.
+                // the session archive already uses (archiveVerdict) - and final
+                // at EVERY position: behind, on, and ahead of the lock. The
+                // locked ayah used to be provisional, with a live SKIPPED or
+                // UNKNOWN deleting the retained verdict on the reasoning that
+                // the ayah could be re-judged while the lock sat on it. But the
+                // painter prefers the engine's live map over the reader's own
+                // record ("the live map first ... never the other way round",
+                // MushafPageView), so every deletion was a green word going grey
+                // again mid-ayah - the "paint and unpaint" reported on the
+                // phone. The archive never revoked; only the paint disagreed.
+                // Ahead of the lock the same rule lets the next ayah colour
+                // while it is being recited (ayahObs serves it) instead of the
+                // batch arriving with the lock move.
                 val retained = sessionStatuses[key]
-                if (a < lockedAyah) {
-                    if (retained == WordStatus.CORRECT || retained == WordStatus.WRONG) {
-                        s = retained
-                    } else if (s == WordStatus.CORRECT || s == WordStatus.WRONG) {
-                        sessionStatuses[key] = s
-                    } else {
-                        sessionStatuses.remove(key)
-                    }
-                } else if (a == lockedAyah) {
-                    // UNKNOWN is a non-verdict, so there is nothing worth
-                    // retaining: it would otherwise stick around as a
-                    // permanent "not quite done" mark.
-                    if (s != WordStatus.SKIPPED && s != WordStatus.UNKNOWN) {
-                        sessionStatuses[key] = s
-                    } else {
-                        sessionStatuses.remove(key)
-                    }
-                } else if (lastMoveDir < 0 && s == WordStatus.CORRECT &&
-                    retained == WordStatus.CORRECT
-                ) {
+                if (retained == WordStatus.CORRECT || retained == WordStatus.WRONG) {
+                    s = retained
+                } else if (s == WordStatus.CORRECT || s == WordStatus.WRONG) {
                     sessionStatuses[key] = s
                 } else {
                     sessionStatuses.remove(key)
                 }
-                    newMap[key] = s
+                newMap[key] = s
                     // Archive every verdict as it is reached, including SKIPPED.
                     // The paint map will discard most of these within a second;
                     // the record must not, or a clean session reads as an empty
@@ -3571,8 +3597,10 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 }
             }
             pruneAyahWindows(activeSurah, lockedAyah)
-            // Expire verdicts outside lock±2: stale paint can never freeze.
-            // WRONG is never retained: recomputed live every frame.
+            // Expire retained verdicts outside lock±2 so the map cannot grow
+            // without bound. Only this map forgets: the record keeps every
+            // verdict and the reader's own earned map covers the ayat the
+            // prune drops.
             val keep = (lockedAyah - 2)..(lockedAyah + 2)
             sessionStatuses.keys.removeAll { k ->
                 val v = k.split(":").getOrNull(1)?.toIntOrNull()
@@ -3581,9 +3609,24 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             for ((k, v) in sessionStatuses) newMap.putIfAbsent(k, v)
             wrongStreak.keys.removeAll { k -> !k.startsWith("$activeSurah:$lockedAyah:") }
 
-            var currentKey: String? = timedKey
+            // Which ayah the pointer describes. While the reciter is still
+            // inside the locked ayah it is that ayah; once the next ayah holds
+            // any real verdict the reciter has moved on to it - ayahObs judges
+            // it ahead now - and the pointer follows, or it sits on the ayah
+            // behind the voice for the whole recitation of the next one. A
+            // backward lock move reverses this: the reciter is repeating the
+            // locked ayah and the next ayah's stale verdicts must not drag the
+            // pointer on.
+            val ahead = lockedAyah + 1
+            val aheadKey = "$activeSurah:$ahead:"
+            val aheadHasEvidence = lastMoveDir >= 0 && newMap.any { (k, v) ->
+                k.startsWith(aheadKey) &&
+                    (v == WordStatus.CORRECT || v == WordStatus.WRONG)
+            }
+            val pointerAyah = if (aheadHasEvidence) ahead else lockedAyah
+            var currentKey: String? = if (aheadHasEvidence) null else timedKey
             if (currentKey == null) {
-                val ws = verseWords[lockedAyah] ?: emptyList()
+                val ws = verseWords[pointerAyah] ?: emptyList()
                 var seen = false
                 for (w in ws) {
                     val st = newMap[keyOf(w)] ?: WordStatus.SKIPPED
@@ -3608,13 +3651,13 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // is finished, which is when they need it most, and the blue
                 // standing word is the only thing that says where they are.
                 //
-                // The fallback is the ayah's own last word: it is a real word in
-                // the ayah being recited, it exists whenever `lockedAyah` does,
-                // and being the end of the ayah it matches the state of a
+                // The fallback is the pointer ayah's own last word: it is a real
+                // word in the ayah being recited, it exists whenever the ayah
+                // does, and being the end of the ayah it matches the state of a
                 // recitation that has just finished it. Never the first word -
                 // that would jump the pointer backwards onto already-judged
                 // material.
-                currentKey = verseWords[lockedAyah]?.lastOrNull()?.let { keyOf(it) }
+                currentKey = verseWords[pointerAyah]?.lastOrNull()?.let { keyOf(it) }
             }
 
             // The page normally follows the lock. The one exception is the last

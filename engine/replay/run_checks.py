@@ -114,6 +114,8 @@ CHECKS = [
      "long-press selects then extends a range, order kept, tap or chrome ends it"),
     ("paint_scope_parity", "none",
      "a verdict is permanent for the session, and hide reveals on the verdict"),
+    ("session_epoch_parity", "none",
+     "the reader drops its verdicts exactly where the engine drops its own"),
     ("live_scope_inherit_parity", "none",
      "a session that never began cannot be finished, nor a finished scope inherited"),
 ]

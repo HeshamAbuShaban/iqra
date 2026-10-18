@@ -283,6 +283,35 @@ There are three things to keep true:
 The advisory mark must not show on a masked word. It would show which word the
 engine had a note about.
 
+### A verdict is final for the session
+
+Once a word has a terminal verdict — CORRECT or WRONG — nothing in the session
+takes it back. The engine keeps it (the paint map is seeded from the retained
+verdicts every poll and pruned only to the lock ± 2 to bound memory), the
+record keeps it (`archiveVerdict`, first terminal wins), and the reader keeps
+its own copy so the colour survives even that prune. The locked ayah used to
+be provisional — a frame with no evidence could delete a verdict already
+earned — but the painter prefers the engine's live map over the reader's
+record, so every deletion was a green word going grey again: the "paint and
+unpaint" reported on the phone. The archive never revoked; only the paint
+disagreed.
+
+The ayah being recited next is judged while it is being recited. The lock only
+moves at 60% coverage of its target, so waiting for the lock - which the
+"never visited" window rule did - meant a whole ayah coloured in one batch
+after the reciter had finished it. The window does not need the next ayah's
+own arrival (it anchors on the lock's), so `ayahObs` serves it, and a word
+there earns its colour as it is said. A WRONG claim is still only made for the
+ayah the lock holds: red ahead of the lock arrives the normal way, when the
+lock does.
+
+The reader drops its copy exactly where the engine clears its retained
+verdicts — a new surah, a jump, an anchor, a new recitation — which the engine
+publishes as a session epoch. Teardown is deliberately not one of those: it
+clears the paint map only, so stopping a recitation no longer wipes the page.
+The Hide toggle persists across visits (`ReaderPrefs`), so a memoriser returns
+to the same mode. Gated by `session_epoch_parity.py`.
+
 The live list paints the same verdicts. It takes its words from the mushaf, and
 it uses the same word index as the verdict maps. A whitespace split of the
 uthmani text does not agree with that index. The mushaf prints `بَعْدَ مَا` as
@@ -459,7 +488,7 @@ is a fraction of.
 | `noWindowWords` on long sessions | Back at 2,501 on the 1,428-second session. Open. |
 | The long jump skips an ayah | Two measured events. Open. |
 | Page turns at a surah end | Code changed. Not confirmed on a device. |
-| The standing-word pointer | Can still be empty between evidence windows. |
+| The standing-word pointer | Never null (gated fallback), and follows the reciter into the next ayah since 18 October. Needs one device confirmation. |
 | UI polish: text size, list order, RTL on live, search to text | Deferred. |
 
 The truth about the goal: the app keeps a clean lock, and it keeps an honest
@@ -487,7 +516,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 39 checks. Every check must be shown able to fail. Break the thing that
+It runs 40 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -517,6 +546,7 @@ nothing.
 | `final_vowel_parity` | A word-final consonant deciding a verdict, or the rule leaking inside a word |
 | `selection_parity` | A long-press range that cannot open, or a reversed one |
 | `paint_scope_parity` | A verdict that dies when the lock moves on, or hide revealing on the layer |
+| `session_epoch_parity` | The reader dropping verdicts at teardown, or keeping them across a session change |
 | `live_scope_inherit_parity` | A LiveTest that ends before it began, by inheriting the previous session's scope |
 | `honest_numbers` | Two meanings of zero |
 | `tone_measurement` | A crest that reads reading speed instead of tone |
