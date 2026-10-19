@@ -2130,7 +2130,8 @@ private fun computeWindow(): List<Int> {
     }
 
     /**
-     * End-of-session summary, emitted from BOTH stopRecite paths.
+     * End-of-session summary, emitted from BOTH stopRecite paths - the
+     * preparing path only when a session was actually preparing.
      *
      *  stopRecite used to emit no diag() at all, and returned before
      *  anything else when the session had not reached the recording state -
@@ -2156,10 +2157,11 @@ private fun computeWindow(): List<Int> {
         //
         // startRecite already resets every counter and clears the archive, so
         // this call was redundant. Worse than redundant: endSession also runs
-        // for sessions that never started (`reason=preparing-cancelled`,
-        // `ran=no`, `durMs=0`), which is what every page jump produces. Jumping
-        // around after a recitation therefore wiped the counters of the record
-        // still being written - and because sessionArchive and
+        // when a jump cancels a session that was still preparing
+        // (`reason=preparing-cancelled`, `ran=no`, `durMs=0`), and it used to
+        // run for jumps with no session at all - so browsing after a
+        // recitation wiped the counters of the record still being written.
+        // Because sessionArchive and
         // sessionEvaluations are NOT in that reset, the record survived with a
         // self-contradictory body:
         //
@@ -3899,6 +3901,16 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         // recording after the user had already moved on.
         val endedGen = sessionGen
         sessionGen++
+        // Whether there is anything to end at all. jumpToPage calls this
+        // unconditionally - a jump must cancel a session that is still
+        // preparing - but most jumps happen with NO session (the reader open,
+        // a resume, a Go to page). Those used to reach
+        // endSession too and log `preparing-cancelled via=jump ran=no`, and
+        // because endSession deliberately no longer resets counters, the
+        // phantom line echoed the PREVIOUS session's moves and lock beside
+        // `ran=no` - the contradictory shape that cost two evenings of
+        // record forensics on 18 October.
+        val hadSession = sessionActive
         // Final write BEFORE the session state is torn down, so the record keeps
         // the moves and verdicts this session produced - but only once the
         // session actually ran. `endSession` resets `sessionRan` at the end of
@@ -3920,7 +3932,10 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         SherpaZipformer.closeStream()
         if (!_recording.value) {
             resetSessionUi()
-            endSession("preparing-cancelled", reason, endedGen)
+            // Only a session that actually existed can be cancelled. A jump
+            // with nothing running has nothing to end, and saying otherwise
+            // would be this file lying about the microphone.
+            if (hadSession) endSession("preparing-cancelled", reason, endedGen)
             return
         }
         _recording.value = false

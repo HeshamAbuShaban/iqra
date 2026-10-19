@@ -6,16 +6,19 @@ s-1791438643998-67 reported, for a 406 s recitation of Al-Mulk at 105 wpm:
     333 words evaluated, 322 CORRECT, 0 judged words, 0 moves, fed 0
 The lock had plainly moved (diagTail: "lock 14 -> 15", "lock 15 -> 16").
 
-endSession() called resetSessionCounters(), and endSession also runs for every
-page jump (`reason=preparing-cancelled`, `ran=no`). Jumping around after a
+endSession() called resetSessionCounters(), and endSession also ran for
+page jumps with no session at all (`reason=preparing-cancelled`, `ran=no`).
+Jumping around after a
 recitation therefore zeroed the headline counters of the record still being
 written, while sessionArchive and sessionEvaluations - not in that reset -
 survived. The record stayed internally contradictory and still looked real.
 
-This asserts the two halves of the fix:
+This asserts the three parts of the fix:
   1. endSession no longer calls resetSessionCounters();
   2. every counter the record writes is reset by startRecite alone, so a
-     session's numbers cannot be zeroed by anything but its own beginning.
+     session's numbers cannot be zeroed by anything but its own beginning;
+  3. a jump with nothing running emits no session summary, so the log cannot
+     report a session the microphone never had.
 """
 import re, sys
 from pathlib import Path
@@ -107,10 +110,22 @@ if last_ayah_uses_page_scope(VM):
 if "private fun surahEndAyah" not in VM:
     bad.append("surahEndAyah() is gone; the surah boundary has no single source")
 
+# A jump with no session must end nothing and say nothing. stopRecite used to
+# emit the preparing-cancelled summary for every jump - the reader open, a
+# resume, a Go to page (jumpToPage calls it unconditionally) - and because
+# endSession no longer resets the counters, the phantom line carried the
+# previous session's moves and lock beside `ran=no` - the shape that made the
+# 22:12 record read as a session that never ran. The guard must be a
+# conditional on the emission's own path, not a mention nearby.
+stop = fn_body("stopRecite")
+if not re.search(r'if \(hadSession\) endSession\("preparing-cancelled"', stop):
+    bad.append("stopRecite can log preparing-cancelled for a jump with no session")
+
 
 if bad:
     for b in bad:
         print("FAIL:", b)
     sys.exit(1)
-print("ok: counters survive browsing, the surah is not left at a page break, "
+print("ok: counters survive browsing, a jump without a session ends silently, "
+      "the surah is not left at a page break, "
       "and seconds are derived from the measured poll interval")

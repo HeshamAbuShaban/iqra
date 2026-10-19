@@ -82,8 +82,9 @@ object SherpaZipformer {
     /** True when a live native stream exists.
      *
      *  "The recognizer is loaded" is NOT the same question. stopRecite()
-     *  releases the stream, and jumpToPage() calls stopRecite(), so any page
-     *  swipe mid-session destroys the stream. A readiness check that only asks
+     *  releases the stream, and every jump - the reader open, a resume, a Go
+     *  to page - calls stopRecite(), so a stream can be gone while the
+     *  recognizer still reports ready. A readiness check that only asks
      *  whether the recognizer is up will happily report ready for a stream that
      *  no longer exists, and every accept() then fails silently. */
     fun hasStream(): Boolean = stream != null

@@ -1514,6 +1514,46 @@ gap: a reciter without a timing database (anything but Al-Husary and
 al-Minshawi) still needs a phone check that the note appears - the code path
 is short but unverified.
 
+## Fixed, 19 October (night) — a jump with no session ends nothing, and says nothing
+
+Every jump - a reader open, a resume, a Go to page - logged
+
+    g0 session end reason=preparing-cancelled via=jump ran=no ...
+
+and the 18 October record `s-1792350751308-1-#243` carried the same line in its
+own diagTail next to a real `session starts`. The line was read as a session;
+it was not one, and no microphone opened.
+
+- **The mechanism.** `jumpToPage` calls `stopRecite("jump")` unconditionally —
+  a jump must cancel a session that is still preparing — but `stopRecite`
+  emitted the preparing-cancelled summary whenever the recorder was not
+  running, session or no session. And because `endSession` deliberately no
+  longer resets counters (the 18 October browsing fix), the phantom, arriving
+  after a real recitation, echoed THAT session's moves and lock beside
+  `ran=no` — `moves=110 ... ran=no`, the contradictory shape that made the
+  22:07/22:12 lines unreadable.
+- **Not a mic event.** On the emulator (build 249, 19 October) a fresh
+  install opening the reader produced exactly this pair and nothing else — no
+  `session starts`, no mic calibration. All three `startRecite` call sites are
+  user taps (reader mic, Home's "Recite from memory", the ayah sheet's
+  "Practice from here"); no code path starts a session by itself.
+- **What #243 was.** Its diagTail: the phantom + `jump → s=1:1 p=1` at
+  22:07:24, 307 s of silence, then a real `g1 session starts p=1 → s=1:1` at
+  22:12:31, `mic floor calibrated: 0.6138` (a very loud room), locks walking
+  1→5→6→7 on ambient sound, 27 words evaluated / 12 judged, ended
+  `reason=user stop` 39 s later. A Record surface was pressed at 22:12:31 and
+  End at 22:13:10; who pressed them is not in the artifacts — only the user
+  can say whether the phone was touched. What was never real is the phantom
+  line in front of it.
+- **The fix.** `stopRecite` captures `hadSession = sessionActive` before
+  teardown, and emits the preparing-cancelled summary only when a session was
+  actually preparing; a genuine preparing cancellation still logs, because
+  that emission exists so a cancelled preparation is visible.
+- **The guard is gated.** `session_record_integrity` now asserts the
+  conditional on the emission's own path; fault-injected, the check goes red
+  without the `if (hadSession)`. Full gate after the fix: 0 failed,
+  0 skipped, 157 s.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
