@@ -1474,6 +1474,36 @@ choose who recites, and be able to control the file and the playing.
 Not yet device-verified; the phone check for this and for the 18 October
 haptics pass is owed next.
 
+## Shipped, 19 October (night) — the ayah is the handle: seek, and a second bookmark
+
+The user asked for the ayat to be interactive: tap an ahead ayah and the
+reference audio continues from it, each ayah bookmarkable from the same sheet
+that holds the controls, and gestures that stay truthful.
+
+- **Tap-to-seek while audio is up.** A single tap on an ayah seeks the
+  reference audio there. The tap checks state in a fixed order — open
+  selection collapses, then active audio seeks, else chrome toggles — so one
+  gesture never carries two meanings. Long-press still selects/extends a
+  range; double-tap still moves the recitation lock.
+- **Timings from the reference app's own datasets.** quran_android's timing
+  databases (through android.quran.com, served by files.quran.app) are used,
+  but only where that app pairs the database with the exact mp3 we stream:
+  Al-Husary (`husary`) and al-Minshawi (`minshawi_murattal`). For other
+  reciters a tap says there are no timings rather than guess. Checked against
+  the actual downloaded file: Husary sura 1's db entries (5664, 11837 …
+  39117 ms) each fall inside an ffmpeg-measured silence (speech resumes 6500
+  … 39764 ms), so a seek lands just ahead of the words, never inside them.
+  Tapping ayah 1 follows the reference app's rule: the basmala key when the
+  dataset has one, else the file start.
+- **Ayah bookmarks.** `data/AyahBookmarks.kt` stores "surah:ayah" separately
+  from page bookmarks; the ayah sheet toggles it with a live label, and Saved
+  lists an "Ayahs" section (text snippet, tap opens the reader at that ayah).
+  Section headers appear only when both bookmark kinds exist.
+- **"Listen from this ayah"** replaces the sheet's "Listen from here", which
+  started the surah from zero regardless of which ayah was selected.
+
+Not yet device-verified.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

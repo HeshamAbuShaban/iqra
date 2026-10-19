@@ -117,6 +117,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.data.AudioPrefs
+import com.iqra.quran.data.AyahBookmarks
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
@@ -1282,6 +1283,7 @@ fun ReaderScreen(
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
     val playLoading by vm.playLoading.collectAsStateWithLifecycle()
     val playError by vm.playError.collectAsStateWithLifecycle()
+    val seekNote by vm.seekNote.collectAsStateWithLifecycle()
     val playPaused by vm.playPaused.collectAsStateWithLifecycle()
     val playPosMs by vm.playPosMs.collectAsStateWithLifecycle()
     val playDurMs by vm.playDurMs.collectAsStateWithLifecycle()
@@ -1566,6 +1568,8 @@ fun ReaderScreen(
                     onAnchorAyah = vm::anchorToVerse,
                     onSelectAyah = { s, a -> vm.selectAyah(s, a) },
                     onToggleSelectAyah = { s, a -> vm.toggleSelectAyah(s, a) },
+                    onSeekAyah = { s, a -> vm.playFromAyah(s, a) },
+                    playActive = playingSurah >= 0,
                     selectionOpen = selectedAyah != null,
                     selectedAyah = selectedAyah, activeWindow = activeWindow,
                     scopeSurah = scopeSurah,
@@ -1589,10 +1593,11 @@ fun ReaderScreen(
                 night = night,
                 offset = chromeOffset,
             )
-            // A failed reference-audio start used to stop silently, which is
-            // indistinguishable from "tapped play, nothing happened". The pill
-            // names the failure; it dismisses itself or on tap.
-            playError?.let { err ->
+            // A failed reference-audio start used to stop silently, and an ayah
+            // seek on a reciter without timings would too. The pill names which
+            // it was; it dismisses itself or on tap.
+            val notice = playError ?: seekNote
+            notice?.let { msg ->
                 Surface(
                     shape = Pill,
                     color = Chrome.Bar,
@@ -1600,20 +1605,24 @@ fun ReaderScreen(
                     modifier = Modifier.align(Alignment.BottomCenter)
                         .navigationBarsPadding()
                         .padding(bottom = 84.dp, start = 24.dp, end = 24.dp)
-                        .clickable { vm.clearPlayError() },
+                        .clickable {
+                            vm.clearPlayError()
+                            vm.clearSeekNote()
+                        },
                 ) {
                     Text(
-                        err,
+                        msg,
                         fontSize = 12.sp,
                         color = Chrome.OnChrome,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                     )
                 }
             }
-            LaunchedEffect(playError) {
-                if (playError != null) {
+            LaunchedEffect(notice) {
+                if (notice != null) {
                     kotlinx.coroutines.delay(8000)
                     vm.clearPlayError()
+                    vm.clearSeekNote()
                 }
             }
             // Floating recitation bar - off the bottom while chrome is hidden
@@ -1853,8 +1862,12 @@ fun ReaderScreen(
                     } else null
                 }
                 var repeatCount by remember(selectedAyah) { mutableStateOf(5) }
+                var ayahTick by remember(selectedAyah) { mutableStateOf(0) }
                 val clipboard = LocalClipboardManager.current
                 val sheetCtx = LocalContext.current
+                val selAyahBookmarked = remember(selectedAyah, ayahTick) {
+                    AyahBookmarks.isBookmarked(sheetCtx, selSurah, selAyah)
+                }
                 ModalBottomSheet(
                     onDismissRequest = { vm.clearSelection() },
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -1909,9 +1922,16 @@ fun ReaderScreen(
                                 Text("Start")
                             }
                         }
-                        SheetAction(Icons.Filled.PlayArrow, "Listen from here (surah audio)") {
+                        SheetAction(Icons.Filled.PlayArrow, "Listen from this ayah") {
                             vm.clearSelection()
-                            vm.togglePlaySurah(selSurah)
+                            vm.playFromAyah(selSurah, selAyah)
+                        }
+                        SheetAction(
+                            if (selAyahBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            if (selAyahBookmarked) "Remove ayah bookmark" else "Bookmark ayah $selSurah:$selAyah",
+                        ) {
+                            AyahBookmarks.toggle(sheetCtx, selSurah, selAyah)
+                            ayahTick++
                         }
                         SheetAction(
                             if (selBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
@@ -2656,6 +2676,8 @@ fun MushafPageView(
     mat: Color = Color(0xFFF4EAD3),
     chromeVisible: Boolean = true,
     onTapChrome: () -> Unit = {},
+    playActive: Boolean = false,
+    onSeekAyah: (Int, Int) -> Unit = { _, _ -> },
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -2853,20 +2875,24 @@ val st = statusMap[key] ?: earned[key]
                                 }
                                 return null
                             }
-                            // Gesture map, matching quran_android's PagerActivity:
-                            //   single tap  -> toggle the chrome
-                            //   long press  -> anchor the recitation lock to that ayah
-                            //   double tap  -> ayah actions sheet
+                            // Gesture map - one meaning per gesture, no overlap:
+                            //   single tap  -> toggle the chrome; on an ayah it
+                            //                  collapses an open selection to that
+                            //                  ayah, and while the reference
+                            //                  audio is up it seeks there instead
+                            //   long press  -> select that ayah / extend a range
+                            //   double tap  -> pull the recitation lock to that ayah
                             detectTapGestures(
                                 onTap = { offset ->
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    // A tap on an ayah collapses an open selection
-                                    // to it; a tap on the chrome still toggles the
-                                    // chrome. The mode is state, so the two never
-                                    // fight over one gesture.
+                                    // The modes are state, so the branches never
+                                    // fight over one gesture: an open selection
+                                    // captures the tap first, then active audio.
                                     val tapped = hit(offset.x, offset.y)
                                     if (tapped != null && selectionOpen) {
                                         onSelectAyah(tapped.first, tapped.second)
+                                    } else if (tapped != null && playActive) {
+                                        onSeekAyah(tapped.first, tapped.second)
                                     } else {
                                         onTapChrome()
                                     }

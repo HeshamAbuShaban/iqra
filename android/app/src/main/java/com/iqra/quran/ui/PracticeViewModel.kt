@@ -13,6 +13,7 @@ import com.iqra.quran.audio.AudioRecorder
 import com.iqra.quran.data.AudioFetcher
 import com.iqra.quran.data.AudioPrefs
 import com.iqra.quran.data.AudioStore
+import com.iqra.quran.data.AyahTimings
 import com.iqra.quran.data.Mushaf
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
@@ -3955,6 +3956,14 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
     private val _cacheNote = MutableStateFlow<String?>(null)
     val cacheNote: StateFlow<String?> = _cacheNote
 
+    // Ayah seek: timings loaded per (reciter, surah), a pending seek aim for a
+    // start that has not prepared yet, and an honest note when the reciter
+    // has no timings rather than a seek that silently goes nowhere.
+    private val timingsCache = HashMap<Pair<String, Int>, LongArray>()
+    private var pendingSeekMs: Int? = null
+    private val _seekNote = MutableStateFlow<String?>(null)
+    val seekNote: StateFlow<String?> = _seekNote
+
     // Word-by-word follow-along: maps each word key of the playing surah to a
     // global index, and tracks the index currently being recited by the audio.
     private var playWords: List<MushafWord> = emptyList()
@@ -3998,6 +4007,11 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                         _playIndex.value = map
                         startPlayPoll(mp, playWords.size)
                     }
+                    pendingSeekMs?.let { ms ->
+                        mp.seekTo(ms)
+                        _playPosMs.value = ms
+                        pendingSeekMs = null
+                    }
                 }
                 setOnCompletionListener {
                     if (AudioPrefs.autoNext(app) && surah < 114) togglePlaySurah(surah + 1)
@@ -4008,6 +4022,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // reason". Name the failure instead.
                 setOnErrorListener { _, what, extra ->
                     stopPlayback()
+                    pendingSeekMs = null
                     _playError.value = "reference audio failed (media error $what/$extra)"
                     true
                 }
@@ -4019,6 +4034,14 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             _playError.value = "reference audio failed (${e.javaClass.simpleName})"
         }
         if (!local.isFile) cacheSurah(surah)
+        if (AyahTimings.isSupported(reciter.id)) {
+            viewModelScope.launch(Dispatchers.IO) {
+                AyahTimings.ensure(app, reciter.id)
+                AyahTimings.startsFor(app, reciter.id, surah)?.let {
+                    timingsCache[reciter.id to surah] = it
+                }
+            }
+        }
     }
 
     fun clearPlayError() {
@@ -4027,6 +4050,62 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
 
     fun clearCacheNote() {
         _cacheNote.value = null
+    }
+
+    /**
+     * Play the reference audio from a chosen ayah: seek if that surah is
+     * already up, start-then-seek if it is not. The ayah-1 rule mirrors the
+     * reference app: seek to the basmala key where the dataset has one, else
+     * to the file start, so tapping ayah 1 does not skip the opening.
+     */
+    fun playFromAyah(surah: Int, ayah: Int) {
+        val app = getApplication<Application>()
+        val reciter = Reciters.byId(AudioPrefs.reciter(app))
+        if (!AyahTimings.isSupported(reciter.id)) {
+            _seekNote.value = "Ayah seek has no timings for ${reciter.name}; " +
+                "Al-Husary and al-Minshawi are the reciters that have them"
+            autoClearSeekNote()
+            return
+        }
+        viewModelScope.launch {
+            val key = reciter.id to surah
+            val starts = timingsCache[key] ?: withContext(Dispatchers.IO) {
+                AyahTimings.ensure(app, reciter.id)
+                AyahTimings.startsFor(app, reciter.id, surah)
+            }?.also { timingsCache[key] = it }
+            val ms = starts?.let { ts ->
+                if (ayah == 1) {
+                    ts.getOrElse(0) { -1L }.takeIf { it >= 0 } ?: 0L
+                } else {
+                    ts.getOrElse(ayah) { -1L }.takeIf { it >= 0 }
+                }
+            }
+            if (ms == null) {
+                _seekNote.value = "No ayah timing exists for surah $surah on " +
+                    "${reciter.name}; the tap does nothing rather than guess"
+                autoClearSeekNote()
+                return@launch
+            }
+            _seekNote.value = null
+            if (_playingSurah.value == surah) {
+                seekPlay(ms.toInt())
+            } else {
+                togglePlaySurah(surah)
+                pendingSeekMs = ms.toInt()
+            }
+        }
+    }
+
+    fun clearSeekNote() {
+        _seekNote.value = null
+    }
+
+    private fun autoClearSeekNote() {
+        val note = _seekNote.value ?: return
+        viewModelScope.launch {
+            delay(6000)
+            if (_seekNote.value == note) _seekNote.value = null
+        }
     }
 
     /** Pause/resume the reference audio without losing the surah or position. */

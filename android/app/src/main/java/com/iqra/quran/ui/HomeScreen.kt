@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.iqra.quran.data.AyahBookmarks
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.SurahInfo
 import com.iqra.quran.ui.theme.IqraShape
@@ -207,7 +208,7 @@ fun HomeScreen(
         when (tab) {
             HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs, onTest)
             HomeTab.Juz -> JuzList(vm, data, onOpen)
-            HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen)
+            HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen, onOpenAyah)
         }
     }
 }
@@ -655,11 +656,24 @@ fun BookmarkList(
     vm: PracticeViewModel,
     data: com.iqra.quran.data.QuranData,
     onOpen: (Int, Int) -> Unit,
+    onOpenAyah: (Int, Int, Int) -> Unit = { _, _, _ -> },
 ) {
     val pages by vm.bookmarks.collectAsStateWithLifecycle()
     val sorted = pages.sorted()
     val surahs = remember { data.surahList() }
-    if (sorted.isEmpty()) {
+    val ctx = LocalContext.current
+    var ayahTick by remember { mutableStateOf(0) }
+    val ayahKeys = remember(ayahTick) {
+        AyahBookmarks.all(ctx)
+            .mapNotNull { k ->
+                val p = k.split(":")
+                val s = p.getOrNull(0)?.toIntOrNull()
+                val a = p.getOrNull(1)?.toIntOrNull()
+                if (s != null && a != null) s to a else null
+            }
+            .sortedWith(compareBy({ it.first }, { it.second }))
+    }
+    if (sorted.isEmpty() && ayahKeys.isEmpty()) {
         Column(
             Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.Center,
@@ -680,7 +694,7 @@ fun BookmarkList(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "Tap the bookmark icon while reading to save a page.",
+                "The header icon saves a page; an ayah's sheet saves the ayah.",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 textAlign = TextAlign.Center,
@@ -689,10 +703,62 @@ fun BookmarkList(
         }
         return
     }
+    val bothSections = sorted.isNotEmpty() && ayahKeys.isNotEmpty()
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 12.dp),
         contentPadding = PaddingValues(bottom = 24.dp, top = 8.dp),
     ) {
+        if (ayahKeys.isNotEmpty()) {
+            if (bothSections) {
+                item(key = "hdr-ayah") { BookmarkSectionHeader("Ayahs") }
+            }
+            items(ayahKeys, key = { "a:${it.first}:${it.second}" }) { (s, a) ->
+                val info = surahs.firstOrNull { it.number == s }
+                val text = remember(s, a) { vm.ayahText(s, a) }
+                Card(
+                    Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable {
+                        onOpenAyah(s, vm.pageOfVerse(s, a) ?: info?.startPage ?: 1, a)
+                    },
+                    shape = IqraShape.card,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Bookmark, null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${info?.nameEn ?: "Surah $s"} · Ayah $a",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        IconButton(onClick = {
+                            AyahBookmarks.toggle(ctx, s, a)
+                            ayahTick++
+                        }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                "Remove ayah bookmark",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (sorted.isNotEmpty()) {
+            if (bothSections) {
+                item(key = "hdr-page") { BookmarkSectionHeader("Pages") }
+            }
         items(sorted, key = { it }) { page ->
             val info = surahs.firstOrNull { page in it.startPage..it.endPage }
             Card(
@@ -722,5 +788,17 @@ fun BookmarkList(
                 }
             }
         }
+        }
     }
+}
+
+@Composable
+private fun BookmarkSectionHeader(text: String) {
+    Text(
+        text,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        modifier = Modifier.padding(start = 4.dp, top = 14.dp, bottom = 2.dp),
+    )
 }
