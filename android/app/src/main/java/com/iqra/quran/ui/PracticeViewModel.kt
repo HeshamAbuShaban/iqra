@@ -4,14 +4,20 @@ import android.app.Application
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.iqra.quran.audio.AudioRecorder
+import com.iqra.quran.data.AudioFetcher
+import com.iqra.quran.data.AudioPrefs
+import com.iqra.quran.data.AudioStore
 import com.iqra.quran.data.Mushaf
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.QuranData
+import com.iqra.quran.data.Reciters
 import com.iqra.quran.data.GlyphCoords
 import com.iqra.quran.data.WordStatus
 import com.iqra.quran.ml.SherpaVad
@@ -3923,8 +3929,11 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         endSession(reason, "recite", endedGen)
     }
 
-    // ---- Reference recitation audio (stream-on-tap, nothing bundled) ----
+    // ---- Reference recitation audio (streamed once, then kept) ----
     // Mirrors quran_android's gapless scheme: download.quranicaudio.com/quran/<reciter>/<NNN>.mp3
+    // The first listen streams while the file saves in the background (on by
+    // default), so every replay after it reads the local copy. The reciter is
+    // a Settings choice, not the constant it used to be.
     private var mediaPlayer: MediaPlayer? = null
     private val _playingSurah = MutableStateFlow(-1)
     val playingSurah: StateFlow<Int> = _playingSurah
@@ -3932,6 +3941,19 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
     val playLoading: StateFlow<Boolean> = _playLoading
     private val _playError = MutableStateFlow<String?>(null)
     val playError: StateFlow<String?> = _playError
+    private val _playPaused = MutableStateFlow(false)
+    val playPaused: StateFlow<Boolean> = _playPaused
+    private val _playPosMs = MutableStateFlow(0)
+    val playPosMs: StateFlow<Int> = _playPosMs
+    private val _playDurMs = MutableStateFlow(0)
+    val playDurMs: StateFlow<Int> = _playDurMs
+
+    // Background offline save of the streamed surah.
+    private var cacheJob: Job? = null
+    private val _cacheProgress = MutableStateFlow<Float?>(null)
+    val cacheProgress: StateFlow<Float?> = _cacheProgress
+    private val _cacheNote = MutableStateFlow<String?>(null)
+    val cacheNote: StateFlow<String?> = _cacheNote
 
     // Word-by-word follow-along: maps each word key of the playing surah to a
     // global index, and tracks the index currently being recited by the audio.
@@ -3949,8 +3971,10 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         }
         stopPlayback()
         _playError.value = null
-        val url = "https://download.quranicaudio.com/quran/mahmood_khaleel_al-husaree/" +
-            "%03d.mp3".format(surah)
+        val app = getApplication<Application>()
+        val reciter = Reciters.byId(AudioPrefs.reciter(app))
+        val local = AudioStore.file(app, reciter.id, surah)
+        val source = if (local.isFile) local.absolutePath else Reciters.url(reciter, surah)
         try {
             mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
@@ -3959,11 +3983,13 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .build()
                 )
-                setDataSource(url)
+                setDataSource(source)
                 setOnPreparedListener { mp ->
                     mp.start()
+                    applyPlaySpeed(mp)
                     _playLoading.value = false
                     _playingSurah.value = surah
+                    _playPaused.value = false
                     val pages = _mushaf.value
                     if (pages != null) {
                         playWords = Mushaf.wordsForSurah(pages, surah)
@@ -3973,7 +3999,10 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                         startPlayPoll(mp, playWords.size)
                     }
                 }
-                setOnCompletionListener { stopPlayback() }
+                setOnCompletionListener {
+                    if (AudioPrefs.autoNext(app) && surah < 114) togglePlaySurah(surah + 1)
+                    else stopPlayback()
+                }
                 // This used to be swallowed whole: playback stopped and nothing
                 // on screen said why, which reads exactly like "no sound, no
                 // reason". Name the failure instead.
@@ -3989,21 +4018,124 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             stopPlayback()
             _playError.value = "reference audio failed (${e.javaClass.simpleName})"
         }
+        if (!local.isFile) cacheSurah(surah)
     }
 
     fun clearPlayError() {
         _playError.value = null
     }
 
+    fun clearCacheNote() {
+        _cacheNote.value = null
+    }
+
+    /** Pause/resume the reference audio without losing the surah or position. */
+    fun togglePlayPause() {
+        val mp = mediaPlayer ?: return
+        if (_playLoading.value) return
+        try {
+            if (_playPaused.value) {
+                mp.start()
+                _playPaused.value = false
+            } else if (mp.isPlaying) {
+                mp.pause()
+                _playPaused.value = true
+            }
+        } catch (_: IllegalStateException) {
+        }
+    }
+
+    fun seekPlay(ms: Int) {
+        val mp = mediaPlayer ?: return
+        val d = _playDurMs.value
+        if (d <= 0) return
+        val to = ms.coerceIn(0, d)
+        try {
+            mp.seekTo(to)
+            _playPosMs.value = to
+        } catch (_: IllegalStateException) {
+        }
+    }
+
+    /** Jump to the neighbouring surah (delta -1 / +1). */
+    fun playAdjacent(delta: Int) {
+        val cur = _playingSurah.value
+        val target = if (cur < 0) 1 else (cur + delta).coerceIn(1, 114)
+        if (target != cur) togglePlaySurah(target)
+    }
+
+    fun setPlaySpeed(percent: Int) {
+        AudioPrefs.setSpeedPercent(getApplication(), percent)
+        mediaPlayer?.let { applyPlaySpeed(it) }
+    }
+
+    private fun applyPlaySpeed(mp: MediaPlayer) {
+        val pct = AudioPrefs.speedPercent(getApplication())
+        try {
+            mp.playbackParams = mp.playbackParams.setSpeed(pct / 100f)
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Saves a streamed surah for replay. Runs behind playback; a second
+     * request while one is in flight is dropped rather than queued — the only
+     * caller is "the user started another surah", and that one will ask for
+     * its own save.
+     */
+    fun cacheSurah(surah: Int) {
+        val app = getApplication<Application>()
+        if (!AudioPrefs.keepOffline(app)) return
+        val reciter = Reciters.byId(AudioPrefs.reciter(app))
+        val target = AudioStore.file(app, reciter.id, surah)
+        if (target.isFile) return
+        if (AudioPrefs.wifiOnly(app) && !onWifi(app)) return
+        if (cacheJob?.isActive == true) return
+        cacheJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _cacheProgress.value = 0f
+                AudioFetcher.download(target, Reciters.url(reciter, surah)) { got, total ->
+                    if (total > 0) _cacheProgress.value = (got.toFloat() / total).coerceIn(0f, 1f)
+                }
+                diag("audio saved s=$surah reciter=${reciter.id} bytes=${target.length()}")
+            } catch (t: Throwable) {
+                val msg = t.message ?: t.javaClass.simpleName
+                diag("audio save failed s=$surah reciter=${reciter.id} ($msg)")
+                _cacheNote.value = "not saved for offline replay ($msg)"
+                launch {
+                    delay(6000)
+                    if (_cacheNote.value == "not saved for offline replay ($msg)") {
+                        _cacheNote.value = null
+                    }
+                }
+            } finally {
+                _cacheProgress.value = null
+            }
+        }
+    }
+
+    private fun onWifi(app: Application): Boolean {
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val caps = cm?.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
+
     private fun startPlayPoll(mp: MediaPlayer, total: Int) {
         playPoll?.cancel()
         playPoll = viewModelScope.launch(Dispatchers.Main) {
-            while (mp.isPlaying && total > 0) {
+            // Paused playback still reports its position; the loop ends when
+            // this player stops being the current one, not when it pauses.
+            while (mediaPlayer === mp) {
                 val d = mp.duration
-                val p = mp.currentPosition
-                if (d > 0) {
-                    val idx = ((p.toFloat() / d) * total).toInt().coerceIn(0, total - 1)
-                    _playHead.value = idx
+                val p = if (d > 0) mp.currentPosition else -1
+                if (d > 0 && p >= 0) {
+                    _playDurMs.value = d
+                    _playPosMs.value = p
+                    if (total > 0) {
+                        _playHead.value =
+                            ((p.toFloat() / d) * total).toInt().coerceIn(0, total - 1)
+                    }
                 }
                 delay(80)
             }
@@ -4021,6 +4153,9 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         _playingSurah.value = -1
         _playIndex.value = emptyMap()
         _playHead.value = -1
+        _playPaused.value = false
+        _playPosMs.value = 0
+        _playDurMs.value = 0
     }
 
     override fun onCleared() {

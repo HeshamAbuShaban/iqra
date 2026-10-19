@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Read-only network state: whether the offline-audio save may run now
+         (the Wi-Fi-only policy). No prompt; not a location permission. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Normal permission, no prompt: the wrong-verdict buzz. Without it the
          vibrate() call is refused by the system. -->
     <uses-permission android:name="android.permission.VIBRATE" />

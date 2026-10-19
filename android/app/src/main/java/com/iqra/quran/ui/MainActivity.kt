@@ -43,6 +43,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Bookmark
@@ -114,6 +116,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.iqra.quran.data.AudioPrefs
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
@@ -640,6 +643,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         "report" -> Screen.Report(screenReport)
         "observer" -> Screen.Observer(screenReport)
         "choose" -> Screen.Choose
+        "library" -> Screen.Library
         else -> Screen.Picker
     }
     val goReader: (Int, Int?, Int?) -> Unit = { s, p, a ->
@@ -653,6 +657,18 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onBack = { screenName = "picker" },
             onOpenData = { screenName = "data" },
             onOpenProgress = { screenName = "progress" },
+            onOpenLibrary = { screenName = "library" },
+        )
+        Screen.Library -> AudioLibraryScreen(
+            onBack = { screenName = "settings" },
+            onPlay = { surah, reciterId ->
+                // The row's file and the row's reciter are one choice: seat
+                // the reciter first so playback resolves to the file that was
+                // tapped, then open its mushaf page with the transport up.
+                AudioPrefs.setReciter(appCtx, reciterId)
+                goReader(surah, null, null)
+                vm.togglePlaySurah(surah)
+            },
         )
         // The practice surface. Replaces the old ProgressScreen, which reported
         // lock advances and audio polls as though they were a score.
@@ -754,6 +770,8 @@ sealed interface Screen {
     data object Diag : Screen
     data object Data : Screen
     data object Settings : Screen
+    /** The offline reference-audio library, reached from Settings. */
+    data object Library : Screen
     data object Progress : Screen
     /** One session in full, by record file name. */
     data class Report(val name: String) : Screen
@@ -1264,6 +1282,11 @@ fun ReaderScreen(
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
     val playLoading by vm.playLoading.collectAsStateWithLifecycle()
     val playError by vm.playError.collectAsStateWithLifecycle()
+    val playPaused by vm.playPaused.collectAsStateWithLifecycle()
+    val playPosMs by vm.playPosMs.collectAsStateWithLifecycle()
+    val playDurMs by vm.playDurMs.collectAsStateWithLifecycle()
+    val cacheProgress by vm.cacheProgress.collectAsStateWithLifecycle()
+    val cacheNote by vm.cacheNote.collectAsStateWithLifecycle()
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
@@ -1598,6 +1621,8 @@ fun ReaderScreen(
             // translationY(+height). Adding padding instead only grows the
             // surface, so the bar stayed on screen.
             val bottomShift = with(density) { (chromeOffset * 200.dp.toPx()).toDp() }
+            val playerActive = playingSurah >= 0 || playLoading
+            var playSpeedPct by remember { mutableStateOf(AudioPrefs.speedPercent(ctx)) }
             Surface(
                 shape = Pill,
                 color = Chrome.Bar,
@@ -1605,8 +1630,37 @@ fun ReaderScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .offset(y = bottomShift)
                     .navigationBarsPadding()
-                    .padding(bottom = 14.dp, start = 12.dp, end = 12.dp),
+                    .padding(bottom = 14.dp, start = 12.dp, end = 12.dp)
+                    .then(if (playerActive) Modifier.fillMaxWidth() else Modifier),
             ) {
+                // Listening and reciting are two different modes. While the
+                // reference audio is up the bar is a transport; it cannot be
+                // the recite bar, because a mic session running under the
+                // speaker would judge the reciter for what the speaker said.
+                if (playerActive) {
+                    ReferencePlayerBar(
+                        loading = playLoading && playingSurah < 0,
+                        paused = playPaused,
+                        posMs = playPosMs,
+                        durMs = playDurMs,
+                        speedPercent = playSpeedPct,
+                        cacheProgress = cacheProgress,
+                        cacheNote = cacheNote,
+                        onPlayPause = vm::togglePlayPause,
+                        onSeek = vm::seekPlay,
+                        onPrev = { vm.playAdjacent(-1) },
+                        onNext = { vm.playAdjacent(1) },
+                        onCycleSpeed = {
+                            playSpeedPct = if (playSpeedPct >= AudioPrefs.SPEED_MAX) {
+                                AudioPrefs.SPEED_MIN
+                            } else {
+                                playSpeedPct + AudioPrefs.SPEED_STEP
+                            }
+                            vm.setPlaySpeed(playSpeedPct)
+                        },
+                        onDismissNote = vm::clearCacheNote,
+                    )
+                } else {
                 Row(
                     Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1694,6 +1748,7 @@ fun ReaderScreen(
                             modifier = Modifier.weight(1f),
                         )
                     }
+                }
                 }
             }
             if (showSearch) {
@@ -2447,6 +2502,126 @@ private fun resolveWordStyle(
         HighlightLayer.NONE,
         HighlightLayer.UNSTARTED,
         -> WordStyle(onSurface, Color.Transparent, Color.Transparent, 0f, false, false)
+    }
+}
+
+private fun fmtClock(ms: Int): String {
+    if (ms <= 0) return "0:00"
+    val s = ms / 1000
+    return "%d:%02d".format(s / 60, s % 60)
+}
+
+private fun speedLabel(percent: Int): String {
+    val v = percent / 100f
+    return if (v == v.toInt().toFloat()) "${v.toInt()}×" else "$v×"
+}
+
+/**
+ * The transport that replaces the recite bar while reference audio is up.
+ * Prev/next walk surahs (wrapping the cache on disk or the stream), the
+ * slider scrubs, the chip cycles the saved speed, and the thin row under it
+ * reports the background offline save honestly rather than silently failing.
+ */
+@Composable
+fun ReferencePlayerBar(
+    loading: Boolean,
+    paused: Boolean,
+    posMs: Int,
+    durMs: Int,
+    speedPercent: Int,
+    cacheProgress: Float?,
+    cacheNote: String?,
+    onPlayPause: () -> Unit,
+    onSeek: (Int) -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onCycleSpeed: () -> Unit,
+    onDismissNote: () -> Unit,
+) {
+    var scrub by remember { mutableStateOf<Float?>(null) }
+    val shownPos = scrub?.toInt() ?: posMs
+    Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onPrev, enabled = !loading, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Filled.SkipPrevious, "Previous surah", tint = Chrome.OnChrome)
+            }
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = Chrome.OnChrome,
+                )
+            } else {
+                IconButton(onClick = onPlayPause, modifier = Modifier.size(38.dp)) {
+                    Icon(
+                        if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        if (paused) "Resume" else "Pause",
+                        tint = Chrome.OnChrome,
+                    )
+                }
+            }
+            IconButton(onClick = onNext, enabled = !loading, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Filled.SkipNext, "Next surah", tint = Chrome.OnChrome)
+            }
+            Text(
+                fmtClock(shownPos),
+                fontSize = 11.sp,
+                color = Chrome.OnChromeMuted,
+                modifier = Modifier.padding(start = 2.dp),
+            )
+            Slider(
+                value = if (durMs > 0) scrub ?: posMs.toFloat() else 0f,
+                onValueChange = { scrub = it },
+                onValueChangeFinished = {
+                    scrub?.let { onSeek(it.toInt()) }
+                    scrub = null
+                },
+                enabled = durMs > 0,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            )
+            Text(fmtClock(durMs), fontSize = 11.sp, color = Chrome.OnChromeMuted)
+            Spacer(Modifier.width(6.dp))
+            Surface(
+                shape = Pill,
+                color = Chrome.OnChrome.copy(alpha = 0.12f),
+                modifier = Modifier.clickable(onClick = onCycleSpeed),
+            ) {
+                Text(
+                    speedLabel(speedPercent),
+                    fontSize = 11.sp,
+                    color = Chrome.OnChrome,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
+        if (cacheProgress != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 6.dp, top = 2.dp, bottom = 2.dp),
+            ) {
+                CircularProgressIndicator(
+                    progress = { cacheProgress },
+                    modifier = Modifier.size(12.dp),
+                    strokeWidth = 1.5.dp,
+                    color = Chrome.OnChromeMuted,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Saving this surah for replay (${(cacheProgress * 100).toInt()}%)",
+                    fontSize = 11.sp,
+                    color = Chrome.OnChromeMuted,
+                )
+            }
+        } else if (cacheNote != null) {
+            Text(
+                cacheNote,
+                fontSize = 11.sp,
+                color = wrongColor.copy(alpha = 0.85f),
+                modifier = Modifier
+                    .padding(start = 6.dp, top = 2.dp, bottom = 2.dp)
+                    .clickable(onClick = onDismissNote),
+            )
+        }
     }
 }
 

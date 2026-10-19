@@ -22,7 +22,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.BuildConfig
 import com.iqra.quran.data.AssetPaths
+import com.iqra.quran.data.AudioPrefs
+import com.iqra.quran.data.AudioStore
 import com.iqra.quran.data.PracticeLog
+import com.iqra.quran.data.Reciters
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -67,6 +70,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenData: () -> Unit = {},
     onOpenProgress: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     // The store's change tick, COLLECTED FOR REAL.
@@ -87,6 +91,10 @@ fun SettingsScreen(
 
     var confirmClear by remember { mutableStateOf(false) }
     val log = remember { PracticeLog.load(ctx) }
+    // Same write-then-reread pattern as `tick`, for the audio prefs in their
+    // own store: the getters below are keyed on this, and each control bumps
+    // it, which is what makes a write visible without leaving the screen.
+    var audioTick by remember { mutableStateOf(0) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -354,6 +362,74 @@ fun SettingsScreen(
                 )
             }
 
+            // The reference recitation used to be one hardcoded reciter,
+            // streamed fresh on every tap and thrown away. This section is the
+            // control surface for what replaced it: who recites, whether the
+            // audio is kept, and what the transport does with it.
+            SettingsSection("Reference audio") {
+                ReciterRow(audioTick) { audioTick++ }
+                SettingDivider()
+                SwitchRow(
+                    title = "Keep a copy for replay",
+                    subtitle = "The first play streams while the file saves in " +
+                        "the background, so replays read the local copy " +
+                        "instead of downloading the surah again.",
+                    checked = remember(audioTick) { AudioPrefs.keepOffline(ctx) },
+                    onChange = { AudioPrefs.setKeepOffline(ctx, it); audioTick++ },
+                )
+                SettingDivider()
+                SwitchRow(
+                    title = "Save only on Wi-Fi",
+                    subtitle = "Playback always streams regardless; this only " +
+                        "holds back the saved copy while on mobile data.",
+                    checked = remember(audioTick) { AudioPrefs.wifiOnly(ctx) },
+                    onChange = { AudioPrefs.setWifiOnly(ctx, it); audioTick++ },
+                )
+                SettingDivider()
+                val speedOptions = listOf(75, 100, 125, 150)
+                ChoiceRow(
+                    label = "Playback speed",
+                    options = speedOptions.map { speedPctLabel(it) },
+                    selected = remember(audioTick) {
+                        speedPctLabel(AudioPrefs.speedPercent(ctx))
+                    },
+                    onSelect = { label ->
+                        speedOptions.firstOrNull { speedPctLabel(it) == label }?.let {
+                            AudioPrefs.setSpeedPercent(ctx, it)
+                            audioTick++
+                        }
+                    },
+                )
+                SettingDivider()
+                SwitchRow(
+                    title = "Play the next surah when one ends",
+                    subtitle = "Al-Faatiha rolls into Al-Baqarah instead of " +
+                        "stopping at the last ayah.",
+                    checked = remember(audioTick) { AudioPrefs.autoNext(ctx) },
+                    onChange = { AudioPrefs.setAutoNext(ctx, it); audioTick++ },
+                )
+                SettingDivider()
+                val downloads = remember(audioTick) { AudioStore.list(ctx) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Downloaded audio", fontSize = 15.sp)
+                        Text(
+                            when (downloads.size) {
+                                0 -> "Nothing saved yet"
+                                1 -> "1 surah · ${fmtMb(downloads.sumOf { it.bytes })}"
+                                else -> "${downloads.size} surahs · " +
+                                    fmtMb(downloads.sumOf { it.bytes })
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                    TextButton(onClick = onOpenLibrary, enabled = downloads.isNotEmpty()) {
+                        Text("Manage")
+                    }
+                }
+            }
+
             SettingsSection("Your data") {
                 val statuses = remember { AssetPaths.allStatuses(ctx) }
                 val missing = statuses.filter { !it.present }
@@ -594,6 +670,83 @@ private fun SwitchRow(
         Spacer(Modifier.width(12.dp))
         Switch(checked = checked, onCheckedChange = null)
     }
+}
+
+/**
+ * The reciter chooser: current choice on the row, the full list in a dialog.
+ * Ten names would not survive as chips - the names are long enough to fill
+ * three FlowRow lines and bury the rest of the section - so the list gets its
+ * own scrolled dialog and the row stays one line, like every other control.
+ */
+@Composable
+private fun ReciterRow(tick: Int, onChanged: () -> Unit) {
+    val ctx = LocalContext.current
+    var pick by remember { mutableStateOf(false) }
+    val current = remember(tick) { Reciters.byId(AudioPrefs.reciter(ctx)) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { pick = true }
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Reciter", fontSize = 15.sp)
+            Text(
+                current.name,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+        }
+        Text(
+            "Change",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    if (pick) {
+        AlertDialog(
+            onDismissRequest = { pick = false },
+            title = { Text("Reciter") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Reciters.ALL.forEach { r ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    AudioPrefs.setReciter(ctx, r.id)
+                                    pick = false
+                                    onChanged()
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = r.id == current.id,
+                                onClick = {
+                                    AudioPrefs.setReciter(ctx, r.id)
+                                    pick = false
+                                    onChanged()
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(r.name, fontSize = 14.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { pick = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+private fun speedPctLabel(percent: Int): String {
+    val v = percent / 100f
+    return if (v == v.toInt().toFloat()) "${v.toInt()}×" else "$v×"
 }
 
 @Composable

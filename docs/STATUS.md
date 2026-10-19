@@ -1439,6 +1439,41 @@ The pass proper, each item verified in code before and after:
 Compile-only verification (`:app:compileDebugKotlin`); nothing here has been
 on a device yet.
 
+## Shipped, 19 October — the played surah keeps itself, and the bar is its transport
+
+The reference audio was one hardcoded reciter (Husaree), streamed fresh on
+every tap and thrown away. The user asked for the obvious better: save it,
+choose who recites, and be able to control the file and the playing.
+
+- **Reciter choice.** Ten reciters in `data/Reciters.kt`, slugs taken from
+  quranicaudio.com's own `/api/qaris` and each verified with a range request
+  (206) before being written down — guessing the slugs fails, as three rounds
+  of 404s showed (`mishary_alafasy` is really `mishaari_raashid_al_3afaasee`).
+  Default is Husaree, i.e. exactly the old behaviour until changed.
+- **The file stays.** First play streams (same latency as before) while
+  `AudioFetcher` saves the surah to `filesDir/audio/<reciter>/<NNN>.mp3`
+  through a `.part` + rename, so a dropped connection cannot leave a truncated
+  surah that would later play as a cut-off recording; a short read and a
+  non-audio content type both fail the save and say so. Every replay after
+  reads the file. Save failures surface in the bar ("not saved for offline
+  replay (reason)") and in `diag.log`; they never stop playback.
+- **The bar became a transport.** While audio is up, the bottom bar shows
+  prev/next surah, pause/resume, a scrub slider with clock, a speed chip
+  (0.75×–1.5×, persisted), and the save's live progress. It replaces the
+  recite row on purpose: a mic session under the speaker would judge the
+  reciter for what the speaker said. Polling now reports position/duration
+  continuously, including while paused (it used to stop at pause).
+- **"Downloaded audio" screen** (Settings → Reference audio → Manage): what is
+  on disk with size and date, sorted by surah / reciter / newest / largest,
+  play per row (seats that row's reciter first — the file and the reciter are
+  the same choice), delete per row or wholesale, each behind a confirm.
+- **Settings**: reciter picker, keep-a-copy toggle (default on), Wi-Fi-only
+  save policy (default on; playback always streams), speed, auto-play next
+  surah. `ACCESS_NETWORK_STATE` added — read-only, for the Wi-Fi policy.
+
+Not yet device-verified; the phone check for this and for the 18 October
+haptics pass is owed next.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
