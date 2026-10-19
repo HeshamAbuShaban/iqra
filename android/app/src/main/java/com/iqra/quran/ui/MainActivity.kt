@@ -1338,6 +1338,13 @@ fun ReaderScreen(
     var showSearch by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
 
+    // The reader records in place: the Recite button and the ayah sheet's
+    // "Practice from here" both start a session without leaving the mushaf, so
+    // the wrong-verdict buzz is composed here too. It is the same session as
+    // one on the live screen; a buzz that fires on one surface and stays
+    // silent on the other makes the toggle a lies display on the other.
+    WrongVerdictBuzz(vm)
+
     val active = recording || statusMap.isNotEmpty()
     val startIdx = remember(surah, startPage) { (startPage ?: Mushaf_firstPage(mushaf, surah)) - 1 }
     val pagerState = rememberPagerState(initialPage = startIdx, pageCount = { mushaf.size })

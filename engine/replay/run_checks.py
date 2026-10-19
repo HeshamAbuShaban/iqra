@@ -73,7 +73,8 @@ CHECKS = [
     ("jump_rejudge_parity", "none",
      "a jump past an ayah re-judges it against its own window, CORRECT-only"),
     ("pref_consumption", "none",
-     "every Settings toggle is consumed somewhere but the settings UI"),
+     "every Settings toggle is consumed beyond the settings UI, and the vibrate "
+     "buzz is composed wherever a session records"),
     ("session_record_integrity", "none",
      "a session's counters survive browsing; only the next startRecite clears them"),
     ("record_flush_guard", "none",

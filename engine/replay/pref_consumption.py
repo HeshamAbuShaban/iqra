@@ -6,6 +6,15 @@ the settings UI itself: ReaderPrefs.kt (definition) and SettingsScreen.kt
 
 Consumption is traced through one level of derived settings, because a strictness
 choice is consumed by the coverage floor it maps to, not by name.
+
+A second property rides here because it closes the same kind of lie: the
+wrong-verdict buzz (the vibrate toggle's consumer) must be composed on every
+surface where a session can record without leaving - the live screen and the
+reader. A buzz that fires on one surface and stays silent on the other is the
+toggle lying about half the app. This is a source-level assertion, not a
+composition proof; it pins the call inside each surface composable, the same
+way session_record_integrity pins the stopRecite guard, and it strips comments
+so prose cannot satisfy it.
 """
 
 import re
@@ -30,6 +39,27 @@ def reader_entries() -> dict:
         for key in re.findall(r"get(?:Boolean|Int|String|Float)\(\"([^\"]+)\"", body):
             out.setdefault(key, set()).add(m.group(1))
     return out, src
+
+
+def strip_comments(text: str) -> str:
+    out = []
+    for l in text.splitlines():
+        s = l.strip()
+        if s.startswith("//"):
+            continue
+        out.append(s.split("//")[0])
+    return "\n".join(out)
+
+
+def top_level_body(src: str, name: str) -> str:
+    """A top-level fun's body, up to the next top-level declaration. One level
+    of nesting is enough here: the call sits near the top of the composable."""
+    m = re.search(r"^fun %s\b" % name, src, re.M)
+    if not m:
+        return ""
+    rest = src[m.start():]
+    nxt = re.search(r"\n(?=@|fun |private fun |internal fun )", rest)
+    return rest if nxt is None else rest[: nxt.start()]
 
 
 def main() -> int:
@@ -69,7 +99,26 @@ def main() -> int:
         for b in bad:
             print("FAIL:", b)
         return 1
-    print(f"ok: {len(readers)} pref keys are each consumed beyond the settings UI")
+
+    # The reader records in place (the Recite button and the ayah sheet's
+    # "Practice from here"), so WrongVerdictBuzz - the vibrate toggle's
+    # consumer - must be composed there as well as on the live screen.
+    live = next((p for p in bag if p.name == "LiveMode.kt"), None)
+    main_kt = next((p for p in bag if p.name == "MainActivity.kt"), None)
+    surfaces = {}
+    if live is not None:
+        surfaces["LiveMode.kt"] = strip_comments(bag[live])
+    if main_kt is not None:
+        surfaces["ReaderScreen"] = strip_comments(top_level_body(bag[main_kt], "ReaderScreen"))
+    missing = sorted(n for n, t in surfaces.items() if "WrongVerdictBuzz(vm)" not in t)
+    if len(surfaces) < 2 or missing:
+        print("FAIL: WrongVerdictBuzz is not composed on:", ", ".join(missing) or "its surfaces")
+        return 1
+
+    print(
+        f"ok: {len(readers)} pref keys are each consumed beyond the settings UI; "
+        "the vibrate buzz is composed on the live screen and the reader"
+    )
     return 0
 
 
