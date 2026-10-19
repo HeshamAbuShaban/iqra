@@ -1502,7 +1502,17 @@ that holds the controls, and gestures that stay truthful.
 - **"Listen from this ayah"** replaces the sheet's "Listen from here", which
   started the surah from zero regardless of which ayah was selected.
 
-Not yet device-verified.
+Device-verified, 19 October night (build 248, device 35d5637e). The seek
+resolves and lands: `diag.log` recorded `seek ayah s=1 a=5 → 26791ms (seeked)`
+for a tap on playing audio, and the bar's clock read 0:29 seconds later (it
+would have read ~0:05 had the seek not moved the player). The sheet's "Listen
+from this ayah" from idle recorded `→ 26791ms (start then seek)` and began
+playing. The sheet's bookmark toggle flipped its label live; Saved listed
+"Ayahs" with the ayah's text; the row opened the reader with the ayah's first
+word highlighted; deleting from Saved returned the empty state. One honest
+gap: a reciter without a timing database (anything but Al-Husary and
+al-Minshawi) still needs a phone check that the note appears - the code path
+is short but unverified.
 
 ## What is open next
 

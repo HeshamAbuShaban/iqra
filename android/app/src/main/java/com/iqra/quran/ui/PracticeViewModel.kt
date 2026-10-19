@@ -4081,6 +4081,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 }
             }
             if (ms == null) {
+                diag("seek ayah s=$surah a=$ayah no timing for ${reciter.id}")
                 _seekNote.value = "No ayah timing exists for surah $surah on " +
                     "${reciter.name}; the tap does nothing rather than guess"
                 autoClearSeekNote()
@@ -4089,9 +4090,11 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
             _seekNote.value = null
             if (_playingSurah.value == surah) {
                 seekPlay(ms.toInt())
+                diag("seek ayah s=$surah a=$ayah → ${ms}ms (seeked)")
             } else {
                 togglePlaySurah(surah)
                 pendingSeekMs = ms.toInt()
+                diag("seek ayah s=$surah a=$ayah → ${ms}ms (start then seek)")
             }
         }
     }
