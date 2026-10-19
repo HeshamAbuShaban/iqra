@@ -1399,7 +1399,8 @@ A UI and design pass, engine untouched. The one new behaviour:
   buzz twice), a 1.5 s cluster gap (five buzzes in two seconds reads as a
   fault), and nothing at all while no session records (the paint map retains
   the previous session's red, and stale red is not a new accusation). New
-  `ui/Haptics.kt` (`WrongVerdictBuzz`, wired on the Live screen); toggle
+  `ui/Haptics.kt` (`WrongVerdictBuzz`, wired on the Live screen and the reader);
+  toggle
   "Vibrate on a wrong word" in Settings, default on, consumed by the trigger
   (`pref_consumption` territory). `VIBRATE` was added to the manifest — it
   was absent, and Android refuses the call without it. The old per-word
@@ -1509,10 +1510,10 @@ would have read ~0:05 had the seek not moved the player). The sheet's "Listen
 from this ayah" from idle recorded `→ 26791ms (start then seek)` and began
 playing. The sheet's bookmark toggle flipped its label live; Saved listed
 "Ayahs" with the ayah's text; the row opened the reader with the ayah's first
-word highlighted; deleting from Saved returned the empty state. One honest
-gap: a reciter without a timing database (anything but Al-Husary and
-al-Minshawi) still needs a phone check that the note appears - the code path
-is short but unverified.
+  word highlighted; deleting from Saved returned the empty state. One honest
+  gap: a reciter without a timing database (anything but Al-Husary and
+  al-Minshawi) needed a check that the note appears; the emulator drew it on
+  19 October morning (Alafasy, build 250) — no phone has yet.
 
 ## Fixed, 19 October (night) — a jump with no session ends nothing, and says nothing
 
@@ -1553,6 +1554,39 @@ it was not one, and no microphone opened.
   conditional on the emission's own path; fault-injected, the check goes red
   without the `if (hadSession)`. Full gate after the fix: 0 failed,
   0 skipped, 157 s.
+
+## Verified and fixed, 19 October (morning) — the emulator pass: a buzz half the app never got
+
+With the phone away, the UI checks ran on the emulator (api36, build 250). It
+found one real wiring gap and put the night build's fixes on a device-side log.
+
+- **The wrong-word buzz was composed only by the Live screen.** The reader
+  records in place — the Recite button and the ayah sheet's "Practice from
+  here" both start a session without leaving the mushaf — so a recitation
+  begun in the reader never reached `WrongVerdictBuzz` and the "Vibrate on a
+  wrong word" toggle was a lies display for exactly that path. `ReaderScreen`
+  now composes it beside its other session effects. `pref_consumption` gained
+  the matching assertion: the toggle's consumer is composed on every surface
+  where a session can record, with comments stripped so prose cannot satisfy
+  it; fault-injected, deleting the reader call turns it red naming
+  `ReaderScreen`. Full gate after the fix: 0 failed, 0 skipped, 155 s.
+- **The library header pluralised badly.** One saved surah showed "1 surahs"
+  (and the delete-all title followed); it reads "1 surah" now.
+- **The no-timings note draws.** With Alafasy seated, a tap on "Listen from
+  this ayah" drew the full sentence naming Al-Husary and al-Minshawi, which
+  closes the gap in the night entry on the emulator. The phone is still owed
+  it, and the unsupported branch writes no `diag.log` line, so the pill is
+  the whole record there.
+- **A delete means the file is gone.** Deleting the one saved surah behind
+  its confirm drained `files/audio` on disk (`find` empty) and the screen
+  said "Nothing saved yet…". The save it removed was the earlier Alafasy
+  play (`audio saved s=1 reciter=alafasy bytes=839808`).
+- **The reader open logs only the jump.** `g1 jump → s=1:1 p=1`, no phantom
+  pair — the night fix, seen on build 250's own log.
+
+Still owed on a phone: the felt buzz (an emulator has no honest vibrator) and
+anything needing the mic — the emulator's data setup is missing 4 of 6 files,
+so no session runs there at all.
 
 ## What is open next
 

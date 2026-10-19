@@ -118,7 +118,8 @@ fun AudioLibraryScreen(
                 )
             } else {
                 Text(
-                    "${entries.size} surahs · ${fmtLibBytes(totalBytes)}",
+                    "${entries.size} surah${if (entries.size == 1) "" else "s"} · " +
+                        fmtLibBytes(totalBytes),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
@@ -229,7 +230,7 @@ fun AudioLibraryScreen(
     if (confirmDeleteAll) {
         AlertDialog(
             onDismissRequest = { confirmDeleteAll = false },
-            title = { Text("Delete all ${entries.size} saved surahs?") },
+            title = { Text("Delete all ${entries.size} saved surah${if (entries.size == 1) "" else "s"}?") },
             text = {
                 Text(
                     "${fmtLibBytes(totalBytes)} will be removed. A surah played " +
