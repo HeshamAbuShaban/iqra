@@ -151,6 +151,28 @@ check items only when the shipped code proves them.
     the place with per-WRONG cause panels; the phone seat is the smallest
     honest slice the user asked for.
 
+## The user's leads, recorded — 19 October
+
+The user's words (morning of 19 October): the reference apps carry "huge
+leads" for what this app wants — the audio side may reuse quran_android's
+logic outright ("completely fine to use their logic"), and for recognition
+and marking Tarteel "has it at best". Two Tarteel surfaces to mine by name:
+the free-trial onboarding card, which advertises its capabilities, and
+Settings, which carries tajweed letter colouring. "If you can get the needed
+value do it" — including through the REA MCP they referred to.
+
+State of that here: the REA MCP is NOT configured on this machine — the
+opencode MCP config names only `blender` and `godot`. Before it can be used
+it has to be located and configured (an opencode restart is likely). Until
+then, do not claim value from a tool nobody has run.
+
+Where each lead lands in the work already written down: the audio side rests
+on the reciter/timings work already shipped from quran_android's own data;
+the tajweed-colouring lead is the same gap as §8.1 of
+`docs/TAJWEED_AND_MEMORISATION.md` — the alignment and the advisory channel
+exist, the letter → class table does not (`tajweed_sites.py` carries the
+first rates; qalqalah marked sites charge at 2.60× baseline).
+
 ## The user's idea, documented — 17 October
 
 The user proposed, in their words: **(A)** a list capturing the words they
