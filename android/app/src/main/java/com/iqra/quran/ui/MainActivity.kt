@@ -2135,7 +2135,17 @@ private object PageImageCache {
     }
 }
 
-private data class WordDraw(val rect: RectF, val style: WordStyle)
+private data class WordDraw(val rect: RectF, val style: WordStyle, val mask: RectF = rect)
+
+/**
+ * A word's own box, and the marks the glyph DB split off from it.
+ *
+ * The DB stores a word as several rows when a letter does not fit one box:
+ * a stem, an ascender tip, a fragment of the previous word's tail. Those rows
+ * are too small to be word bodies, so the pairing drops them - and a mask
+ * built from the body alone leaves them standing.
+ */
+private data class WordMask(val body: RectF, val marks: List<RectF>)
 
 /**
  * U+06DE ARABIC START OF RUB EL HIZB (۞) and U+06E9 ARABIC PLACE OF SAJDAH
@@ -2232,7 +2242,11 @@ private fun pageSlots(texts: List<String>): List<PageSlot> {
  * The area-ranked tiebreak this replaces dropped a real word box on 193 ayat
  * (181 with a ۞, 12 with a ۩) and shifted 3,975 words.
  */
-private fun pairAyahBoxes(all: List<RectF>, slots: List<PageSlot>, words: Int): List<RectF?>? {
+private fun pairAyahBoxes(
+    rows: List<Pair<Int, RectF>>,
+    slots: List<PageSlot>,
+    words: Int,
+): List<WordMask?>? {
     // 2,190 of the DB's 88,246 rows store max_x < min_x, so the width comes
     // out negative and the size test threw the row away. Repair the box before
     // testing it. What the repair actually turns up is not lost words: 2,153
@@ -2241,16 +2255,28 @@ private fun pairAyahBoxes(all: List<RectF>, slots: List<PageSlot>, words: Int): 
     // they are diacritics. So the swap is what makes 37 marks newly eligible,
     // and [MIN_WORD_H] is what keeps them out - without it those 37 leave 37
     // ayat one box short.
-    val boxes = ArrayList<RectF>(all.size)
-    for (r in all) {
+    val boxes = ArrayList<RectF>(rows.size)
+    val boxLines = ArrayList<Int>(rows.size)
+    val marks = ArrayList<Pair<Int, RectF>>()
+    for ((line, r) in rows) {
         val x0 = min(r.left, r.right)
         val x1 = max(r.left, r.right)
         val y0 = min(r.top, r.bottom)
         val y1 = max(r.top, r.bottom)
-        if (x1 - x0 >= MIN_WORD_BOX && y1 - y0 >= MIN_WORD_H) boxes.add(RectF(x0, y0, x1, y1))
+        if (x1 - x0 >= MIN_WORD_BOX && y1 - y0 >= MIN_WORD_H) {
+            boxes.add(RectF(x0, y0, x1, y1))
+            boxLines.add(line)
+        } else {
+            // Too small to be a word body: a fragment the DB split off, an
+            // ascender tip, or a sign. 4,363 of them, and they overhang
+            // their word by up to 42px - far outside the mask's 3px outset,
+            // which is why a hidden word still showed specks of itself.
+            marks.add(line to RectF(x0, y0, x1, y1))
+        }
     }
     if (boxes.isEmpty()) return null
     val body = boxes.subList(0, boxes.size - 1)
+    val bodyLines = boxLines.subList(0, boxLines.size - 1)
     var tokens = 0
     var ornaments = 0
     var signs = 0
@@ -2272,10 +2298,12 @@ private fun pairAyahBoxes(all: List<RectF>, slots: List<PageSlot>, words: Int): 
     }
     if (seq.size != body.size) return null
     val out = arrayOfNulls<RectF>(words)
+    val bodyWord = IntArray(body.size) { -1 }
     for (i in seq.indices) {
         val s = seq[i]
         if (s.kind != SLOT_TOKEN || s.word >= words) continue
         val r = body[i]
+        bodyWord[i] = s.word
         val prev = out[s.word]
         out[s.word] = if (prev == null) {
             RectF(r)
@@ -2286,7 +2314,58 @@ private fun pairAyahBoxes(all: List<RectF>, slots: List<PageSlot>, words: Int): 
             )
         }
     }
-    return out.asList()
+    // Each mark belongs to the word it sits on: the same printed line, and
+    // the smallest horizontal gap to that word's body. Over the whole DB the
+    // gap never exceeds 15px and no mark lands on another line, so this is
+    // an attachment and not a guess.
+    val marksOf = Array(words) { mutableListOf<RectF>() }
+    for ((line, m) in marks) {
+        var best = -1
+        var bestGap = Float.MAX_VALUE
+        for (i in body.indices) {
+            if (bodyLines[i] != line) continue
+            val w = bodyWord[i]
+            if (w < 0) continue
+            val b = body[i]
+            val gap = when {
+                m.right < b.left -> b.left - m.right
+                m.left > b.right -> m.left - b.right
+                else -> 0f
+            }
+            if (gap < bestGap) {
+                bestGap = gap
+                best = w
+            }
+        }
+        if (best >= 0) marksOf[best].add(m)
+    }
+    val result = ArrayList<WordMask?>(words)
+    for (w in 0 until words) {
+        val b = out[w]
+        result.add(if (b == null) null else WordMask(b, marksOf[w]))
+    }
+    return result
+}
+
+/**
+ * The paper a hidden word is covered with: its own box, outset for the
+ * diacritics that overhang it, and every mark the DB split off from it.
+ *
+ * The outset alone left specks. Measured over all 88,246 rows of the glyph
+ * DB: 4,363 of them are too small to be word bodies, 96% of those overhang
+ * their word by more than the 3px outset, and the worst overhang is 42px.
+ * On page 4 the union of the two took the last 90px of mark ink off the
+ * page and hid nothing else - a single bigger outset would not do it, since
+ * covering 99% of the marks needs 42px, and at 42px the masks of 131,166
+ * word pairs reach into a neighbour's body.
+ */
+private fun maskRectOf(body: RectF, marks: List<RectF>): RectF {
+    val m = RectF(
+        body.left - HIDDEN_OUTSET_PX, body.top - HIDDEN_OUTSET_PX,
+        body.right + HIDDEN_OUTSET_PX, body.bottom + HIDDEN_OUTSET_PX,
+    )
+    for (k in marks) m.union(k)
+    return m
 }
 
 private data class WordStyle(
@@ -2775,7 +2854,7 @@ fun MushafPageView(
             // word lines are 0-based text ordinals while glyph lines are
             // printed line numbers, so line-equality paired every box with
             // the wrong ayah's words. Lines are ordering-only here.
-            val byAyah = LinkedHashMap<String, MutableList<RectF>>()
+            val byAyah = LinkedHashMap<String, MutableList<Pair<Int, RectF>>>()
             val orderedKeys = lineGroups.keys.mapNotNull { k ->
                 val pp = k.split(":")
                 if (pp.size != 3) null
@@ -2783,7 +2862,9 @@ fun MushafPageView(
             }.sortedWith(compareBy({ it.first.first }, { it.first.second }, { it.first.third }))
             for ((_, gk) in orderedKeys) {
                 val ak = gk.substringBeforeLast(":")
-                byAyah.getOrPut(ak) { mutableListOf() }.addAll(lineGroups[gk] ?: emptyList())
+                val line = gk.substringAfterLast(":").toIntOrNull() ?: 0
+                byAyah.getOrPut(ak) { mutableListOf() }
+                    .addAll((lineGroups[gk] ?: emptyList()).map { line to it })
             }
             val wordsByAyah = allWords.groupBy { "${it.surah}:${it.verse}" }
                 .mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
@@ -2794,14 +2875,15 @@ fun MushafPageView(
                 // because the layout says they are not words, never because
                 // they looked small. Returns exactly words.size rects, or null
                 // when the counts cannot be reconciled - see pairAyahBoxes.
-                val rects = pairAyahBoxes(rectsAll, slotsByAyah[ak] ?: emptyList(), words.size)
+                val masks = pairAyahBoxes(rectsAll, slotsByAyah[ak] ?: emptyList(), words.size)
                     ?: continue
                 for (i in words.indices) {
                     // Null only if a word ended up with no token at all, which
                     // the count branches rule out; keep the guard so an
                     // unboxed word leaks rather than being drawn with a
                     // neighbour's box.
-                    val rect = rects[i] ?: continue
+                    val wm = masks[i] ?: continue
+                    val rect = wm.body
                     val w = words[i]
                     val key = "${w.surah}:${w.verse}:${w.wordInVerse}"
                     // The live map first, the reader's own record only to fill
@@ -2830,7 +2912,7 @@ val st = statusMap[key] ?: earned[key]
                         advisoryCue = !hide && ReaderPrefs.advisoryDisplay(ctx) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
                         judgedAyah = st == null && !hide && inScope && judgedAyahs[w.verse].judged(),
                     )
-                    add(WordDraw(rect, style))
+                    add(WordDraw(rect, style, maskRectOf(rect, wm.marks)))
                 }
             }
         }
@@ -2974,27 +3056,22 @@ val st = statusMap[key] ?: earned[key]
                         // Modifier's drawBehind laid down (the 1dp fold line and
                         // the border stroke) lives in the page margins and has
                         // to stay visible.
-                        // A word's diacritics can overhang its own DB box by a
-                        // few px, and clipping the rect verbatim leaves those
-                        // strokes behind: visible specks of a word the user is
-                        // trying to memorise. Outset by HIDDEN_OUTSET_PX in the
-                        // DB's 1024-wide page space - far smaller than the gap
-                        // between adjacent word bodies, so no neighbour is
-                        // touched. The fill and the clip must outset identically,
-                        // or the fill no longer matches its own hole.
+                        // The mask is the word's own box OUTSET by
+                        // HIDDEN_OUTSET_PX, together with every mark the DB
+                        // split off from it (see maskRectOf). The outset alone
+                        // was not enough: over the whole DB, 96% of the marks
+                        // overhang their word by more than 3px and the worst
+                        // overhang is 42px, so a hidden word still showed the
+                        // strokes above it - the specks. The fill and the clip
+                        // must use the same rect, or the fill no longer matches
+                        // its own hole.
                         for (d in draws) {
                             if (!d.style.hidden) continue
-                            val r = d.rect
+                            val r = d.mask
                             drawRect(
                                 color = paper,
-                                topLeft = Offset(
-                                    (r.left - HIDDEN_OUTSET_PX) * sx,
-                                    (r.top - HIDDEN_OUTSET_PX) * sy,
-                                ),
-                                size = Size(
-                                    (r.width() + HIDDEN_OUTSET_PX * 2) * sx,
-                                    (r.height() + HIDDEN_OUTSET_PX * 2) * sy,
-                                ),
+                                topLeft = Offset(r.left * sx, r.top * sy),
+                                size = Size(r.width() * sx, r.height() * sy),
                             )
                         }
                         // Then the page itself, minus the holes, then overlays
@@ -3003,12 +3080,12 @@ val st = statusMap[key] ?: earned[key]
                         withTransform({
                             for (d in draws) {
                                 if (!d.style.hidden) continue
-                                val r = d.rect
+                                val r = d.mask
                                 clipRect(
-                                    (r.left - HIDDEN_OUTSET_PX) * sx,
-                                    (r.top - HIDDEN_OUTSET_PX) * sy,
-                                    (r.right + HIDDEN_OUTSET_PX) * sx,
-                                    (r.bottom + HIDDEN_OUTSET_PX) * sy,
+                                    r.left * sx,
+                                    r.top * sy,
+                                    r.right * sx,
+                                    r.bottom * sy,
                                     ClipOp.Difference,
                                 )
                             }

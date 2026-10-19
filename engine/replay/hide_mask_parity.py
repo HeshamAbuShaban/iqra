@@ -179,6 +179,36 @@ def main() -> int:
             bad.append("the live screen draws a marker over the current word while "
                        "hiding, which traces a hidden word's place")
 
+    # The mask itself: the word's box, the outset, and the marks the glyph DB
+    # split off the word. Without the marks a hidden word still showed specks
+    # of itself - measured on the phone, 90px of mark ink survived on one page
+    # alone, and 96% of the marks in the DB overhang their word by more than
+    # the outset.
+    if "private fun maskRectOf(" not in main_src:
+        bad.append("the mask is no longer built from the word's body and its marks, "
+                   "so a hidden word can still show specks of itself")
+    else:
+        mr = body_of(main_src, r"private fun maskRectOf\s*\(")
+        if "union(" not in mr:
+            bad.append("the mask does not union the word's marks, so the strokes the DB "
+                       "split off the word survive it")
+        if "HIDDEN_OUTSET_PX" not in mr:
+            bad.append("the mask drops the outset, so the diacritics that overhang the "
+                       "word's own box survive it")
+    # The fill and the clip must paint the SAME rect, or the paper does not
+    # match its own hole.
+    mask_uses = [m.start() for m in re.finditer(r"if \(!d\.style\.hidden\) continue", main_src)]
+    if len(mask_uses) < 2:
+        bad.append("the mask no longer has both a paper fill and a Difference clip")
+    for pos in mask_uses:
+        block = main_src[pos:pos + 400]
+        if "d.mask" not in block:
+            bad.append("a hide-mode mask block does not use the word's mask rect, so it "
+                       "masks the body alone and leaves that word's marks standing")
+    if "marksOf" not in main_src:
+        bad.append("the marks the DB split off a word are no longer collected, so the "
+                   "mask cannot cover them")
+
     if bad:
         for x in bad:
             print("FAIL:", x)
