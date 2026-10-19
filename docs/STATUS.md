@@ -311,7 +311,7 @@ long to confirm. Not yet explained.
 ## How anything gets verified now
 
 ```
-engine/.venv-replay/bin/python engine/replay/run_checks.py        # 41 checks, ~160 s
+engine/.venv-replay/bin/python engine/replay/run_checks.py        # 42 checks, ~160 s
 ```
 
 Thirty-three run anywhere in CI, in ~50 s. The seven that need the model
@@ -1587,6 +1587,104 @@ found one real wiring gap and put the night build's fixes on a device-side log.
 Still owed on a phone: the felt buzz (an emulator has no honest vibrator) and
 anything needing the mic — the emulator's data setup is missing 4 of 6 files,
 so no session runs there at all.
+
+## Shipped and measured, 19 October (evening) — the phone's three sessions, REA, and a hide mode that tells no lies
+
+The phone came back with three sessions recorded this morning on build #249.
+They were pulled (`adb exec-out run-as … tar`, the phone's own data, nothing
+entered git), and they are the freshest evidence this project has: 545 words
+of a real voice, on the phone, on the build the user was actually using.
+
+- **REA is the reverse-engineering tool the user meant, and it is now
+  registered.** `rea-agents` 6.7.0 (npm), the "reverse-engineer-anything"
+  skill, and an OpenCode MCP registration
+  (`npx -y rea-agents@6.7.0 mcp`) written into
+  `~/.config/opencode/opencode.jsonc` with a backup; `doctor` reports the
+  registration aligned and the skill installed (v42, 207 tools). The MCP tools
+  themselves come alive on the next opencode restart; the CLI works now and
+  was used for the study below. REA's static-JS path refused Tarteel's
+  bundle — it takes a directory or an `.asar`, and the bundle is not plain JS
+  (see below) — so the bundle was disassembled with `hermes-dec` 0.1.8
+  instead, into `re/hbc/listing.hasm` (182 MB, `re/` is gitignored).
+- **Tarteel's client half of the recognition protocol is now written down**
+  (`docs/REVERSE_ENGINEERING.md` §8, 259 lines, 135 evidence pointers into
+  the disassembly): the `{event, data}` JSON envelope over
+  `wss://voice-v2.tarteel.io`; the init config (auth token, target range,
+  `isDiacritized`, `isMemorization`, `mistakeReportingTimeLag`,
+  `shouldCollectAudio`…); 16 kHz / mono / 16-bit / 512-sample frames; the
+  five-kind mistake taxonomy (wrong, missed, extra, **wrong tashkeel**,
+  **peeked**); peeks recorded as mistakes and drawn in *no* colour; the
+  hidden verses rule (memorisation mode, or any `TEST` experience);
+  session audio living on the server behind a signed URL; FSRS-5.0 with a
+  mistake-threshold-to-rubric map; and the "Preview Models" ⇄ "Detect
+  mistakes" coupling. The cloud model, the server's thresholds and the
+  native `MicStream` stay hidden, and the document says so.
+- **Hide mode was leaking the words it exists to withhold.** Five paths
+  printed a hidden word: the standing word (the word the reciter has *not*
+  said yet) was painted blue, the play-head and already-played words were
+  painted gold, the selected ayah was painted in the fallback renderer, the
+  recite bar's expected-words line printed the standing ayah in full outside
+  the page, and the live screen printed the focus ayah and never read the
+  preference at all. A sixth leak was the amber outline on the active ayah,
+  which traced the box of every hidden word. All six are closed: in hide
+  mode only a word's own verdict opens a mask, and nothing else paints
+  over it. New check `hide_mask_parity` (gate is 42 checks) proves it can
+  fail — four injections, each red and each reverted: unmasking the standing
+  word, restoring the recite bar's text, un-gating the live screen, and
+  putting the outline back.
+- **Three of the phone's WRONG verdicts are NOT unsupported — our own replay
+  tool was.** `device_blame.py` builds a judged window from the record's
+  *final* arrivals and spans, which is 123 symbols past the audio the app
+  actually judged, and re-aligns it with a DP that costs substitutions by
+  raw string equality instead of the app's interned canonical ids. Re-run
+  with the app's own algorithm over the app's own window at the instant of
+  each verdict, **18 of 18** recorded WRONG verdicts reproduce, with the
+  same blame positions, and the final arrival and span maps reproduce
+  exactly. The three "unsupported" words were the tool's window, not the
+  app's. (Harness finding, device data.)
+- **A real false-accusation channel is behind that, and its remedy was
+  measured and rejected.** The first-word guard re-judges an ayah against
+  the *untrimmed* window when the span-end trim leaves its opening word
+  unmatched — and that window reaches back into the previous ayah's own
+  audio. In Al-Imran the wide window for 3:118 was 136 symbols of which
+  **80 (58.8%) were 3:117's audio**, 40 of them charged to 3:118's words
+  0–9, and **4 of that session's 16 WRONG verdicts were pure borrow
+  charges**. A whole-window borrow test was written and measured: it fired
+  in **621 of 621** guard firings (the guard can only fire when the trim
+  moved the edge, which is exactly when the wide window reaches back), so
+  it turned the fallback off, removing 4–6 accusations and **costing 25
+  sound CORRECT verdicts** across the three sessions. Rejected, and the
+  comment that used to deny the fallback could invent an accusation now
+  states the measurement. The next shape is the borrow test *per word*.
+- **`wu` is binary, and the tool that buckets it mislabels it.** The
+  app's `wrongStartFrac` divides by the units counted *up to* the charged
+  unit, so `wu` is only ever 0 or 1000: 1000 means "the first contradiction
+  is at the word's second or later unit", not "at the last unit", which is
+  how `device_blame.py` prints it.
+- **Al-Baqarah's first ayah can never be judged.** The lock started on
+  2:1, and the record says why: `unjudgeableKeys: ["2:1"]` — the phoneme
+  table has three words for 2:1 and the mushaf has one, so the ayah yields
+  UNKNOWN, always.
+- **The reader bounced in all three sessions.** Every record contains a
+  page publish that reverses direction (66→65→66, 1→2→1, 3→2→3,
+  4→3→4): the app published the reader forward, then pulled it back to the
+  lock's page, then forward again. That is the page-turn fight the user
+  has reported, visible in the device's own log.
+- **The Al-Fatiha record opens with a foreign fence row.** Its first
+  `diagTail` line is a previous session's end row — `ran=no durMs=0` — that
+  carries *this* session's counters and is stamped 2 h 27 min earlier than
+  the session's own frames.
+- **One check could not fire on this data.** `page_scope_escape` reported
+  "no escape" for all three records, and that is vacuous: each record's
+  standing page holds exactly one surah, so there were no sibling columns
+  to test. The sibling-escape question is still open, not answered.
+
+Still open from this evening's work, in the order it should be done: the
+borrow test per word (engine, needs the user in the loop); the
+`device_blame` window fix (harness, ours to make honest); the harakat and
+sukun precision work in the matcher; and the session sound capture into the
+replay screen, with the recorder now on by default and an indicator, as the
+user asked.
 
 ## What is open next
 

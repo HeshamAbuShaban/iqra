@@ -107,12 +107,17 @@ fun LiveModeScreen(
     val ctx = LocalContext.current
     val prefTick by ReaderPrefs.tick.collectAsStateWithLifecycle()
     val rtl = remember(ctx, prefTick) { ReaderPrefs.rightToLeft(ctx) }
+    // Hide mode is a reader preference, and this screen prints the focus
+    // ayah's words - the words the reciter has not said yet. It never read
+    // the preference, so a reciter who turned hiding on in the reader still
+    // read the ayah off this screen.
+    val hide = remember(ctx, prefTick) { ReaderPrefs.hideVerse(ctx) }
     // Wraps the whole screen, top bar included: a mirrored title beside an
     // unmirrored word list would be the same mismatch in a smaller place.
     CompositionLocalProvider(
         LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
     ) {
-        LiveModeContent(vm, data, surah, startAyah, ayahCount, onRequestMic, onExit, onFinished)
+        LiveModeContent(vm, data, surah, startAyah, ayahCount, onRequestMic, onExit, onFinished, hide)
     }
 }
 
@@ -126,6 +131,7 @@ private fun LiveModeContent(
     onRequestMic: () -> Unit,
     onExit: () -> Unit,
     onFinished: () -> Unit,
+    hide: Boolean,
 ) {
     val ctx = LocalContext.current
     val lcG = LocalIqraColors.current
@@ -577,6 +583,7 @@ private fun LiveModeContent(
                                         w,
                                         statusMap[key],
                                         key == currentKey,
+                                        hide = hide,
                                     )
                                 }
                             }
@@ -904,7 +911,7 @@ private fun HorizonWave(
 
 
 @Composable
-private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean) {
+private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean, hide: Boolean) {
     val reveal = remember { Animatable(0f) }
     val tick = LocalHapticFeedback.current
 
@@ -931,12 +938,18 @@ private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean) {
     val t = reveal.value
     val c = LocalIqraColors.current
 
-    val fg = when (status) {
-        null -> c.ink.copy(alpha = 0f)          // unheard: absent, not a whisper
-        WordStatus.CORRECT -> c.wordGood
-        WordStatus.WRONG -> c.wordBad
-        WordStatus.SKIPPED -> c.wordUnknown.copy(alpha = 0.45f)
-        else -> c.wordUnknown
+    val fg = when {
+        // Hide mode: only a verdict may be legible here. UNKNOWN and SKIPPED
+        // are the absence of one, and the word being recited now is the one
+        // the reciter has not said yet.
+        hide && status != WordStatus.CORRECT && status != WordStatus.WRONG -> c.ink.copy(alpha = 0f)
+        else -> when (status) {
+            null -> c.ink.copy(alpha = 0f)          // unheard: absent, not a whisper
+            WordStatus.CORRECT -> c.wordGood
+            WordStatus.WRONG -> c.wordBad
+            WordStatus.SKIPPED -> c.wordUnknown.copy(alpha = 0.45f)
+            else -> c.wordUnknown
+        }
     }
     Text(
         text,
@@ -952,7 +965,7 @@ private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean) {
                 alpha = t
             }
             .then(
-                if (isCurrent && status != null) {
+                if (isCurrent && status != null && !hide) {
                     Modifier.drawBehind {
                         drawRoundRect(
                             color = c.gold.copy(alpha = 0.16f * t),

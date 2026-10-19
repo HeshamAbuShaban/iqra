@@ -118,6 +118,9 @@ CHECKS = [
      "long-press selects then extends a range, order kept, tap or chrome ends it"),
     ("paint_scope_parity", "none",
      "a verdict is permanent for the session, and hide reveals on the verdict"),
+    ("hide_mask_parity", "none",
+     "hide mode prints only a word's own verdict: no position, outline or side "
+     "row opens a mask"),
     ("session_epoch_parity", "none",
      "the reader drops its verdicts exactly where the engine drops its own"),
     ("live_scope_inherit_parity", "none",

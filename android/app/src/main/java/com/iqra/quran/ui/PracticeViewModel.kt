@@ -3524,14 +3524,40 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                 // it, the fallback fires only where trimmed-out audio exists to
                 // recover.
                 //
-                // This can only ever RESTORE audio, never remove it, so it can
-                // un-blame a word the trim starved and cannot invent a new
-                // accusation. The handoff (`lastAyahObsCoverage`) keeps the
-                // trimmed window: the lock policy does not move on this change.
-                // The fallback belongs to VISITED ayat only. For the ahead
-                // ayah the wide window IS the flash - it reaches back into
-                // the audio of the ayah being recited - so an unseated
-                // opening there stays unseated and the word stays UNKNOWN.
+                // The wide window reaches back into the PREVIOUS ayah's own
+                // audio, and the DP will seat this ayah's opening words there
+                // when they fit better than the truth. The comment here used to
+                // deny that this could invent an accusation; the phone's own
+                // sessions of 19 October showed it does.
+                //
+                // Measured over the three build-#249 sessions, with the app's own
+                // alignment re-run over each record (545 recorded verdicts
+                // reproduced, the arrival and span maps reproduced exactly):
+                // in Al-Imran the wide window for 3:118 was 136 symbols of
+                // which 80 (58.8%) were 3:117's own audio, and 40 of those
+                // were charged to 3:118's words 0-9. Four of that session's 16
+                // WRONG verdicts were pure borrow charges.
+                //
+                // A whole-window borrow test was written and measured, and it
+                // was REJECTED: it fired in 621 of 621 guard firings - the
+                // guard can only fire when the trim moved the left edge, which
+                // is exactly when the wide window reaches back - so it turned
+                // the fallback off, and it removed 4 to 6 accusations while
+                // costing 25 sound CORRECT verdicts across the three sessions.
+                //
+                // The wide window therefore stays as it is, and the next shape
+                // to try is the borrow test PER WORD: does the emission
+                // charged to THIS word lie before the previous ayah's recorded
+                // span end? That would keep the 300 opening words the wide
+                // window rescues and drop only the words charged on somebody
+                // else's audio.
+                //
+                // The handoff (`lastAyahObsCoverage`) keeps the trimmed
+                // window: the lock policy does not move on this change. The
+                // fallback belongs to VISITED ayat only. For the ahead ayah
+                // the wide window IS the flash - it reaches back into the
+                // audio of the ayah being recited - so an unseated opening
+                // there stays unseated and the word stays UNKNOWN.
                 // An honest gap beats a borrowed match.
                 if (al != null && ayahArrival["$activeSurah:$a"] != null &&
                     al.wordCoverage.getOrElse(0) { 0f } <= 0f

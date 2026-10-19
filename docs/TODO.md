@@ -161,17 +161,62 @@ the free-trial onboarding card, which advertises its capabilities, and
 Settings, which carries tajweed letter colouring. "If you can get the needed
 value do it" — including through the REA MCP they referred to.
 
-State of that here: the REA MCP is NOT configured on this machine — the
-opencode MCP config names only `blender` and `godot`. Before it can be used
-it has to be located and configured (an opencode restart is likely). Until
-then, do not claim value from a tool nobody has run.
+State of that here: the REA MCP is now configured and used — `rea-agents` 6.7.0
+registered for opencode (`~/.config/opencode/opencode.jsonc`, backup kept), the
+"reverse-engineer-anything" skill installed, `doctor` reporting the
+registration aligned. The MCP tools come alive on the next opencode restart;
+the CLI was used in the meantime, and Tarteel's client protocol is written
+down in `docs/REVERSE_ENGINEERING.md` §8 (135 evidence pointers into a
+Hermes v96 disassembly of the shipped bundle). The two named Tarteel
+surfaces are still to be read in that disassembly: the free-trial onboarding
+card's capability list, and the tajweed letter colouring (which the bundle
+shows as a settings slice driving a 53-rule regex engine, not mistake
+detection — Tarteel says so itself).
 
-Where each lead lands in the work already written down: the audio side rests
-on the reciter/timings work already shipped from quran_android's own data;
-the tajweed-colouring lead is the same gap as §8.1 of
-`docs/TAJWEED_AND_MEMORISATION.md` — the alignment and the advisory channel
-exist, the letter → class table does not (`tajweed_sites.py` carries the
-first rates; qalqalah marked sites charge at 2.60× baseline).
+## The evening of 19 October — what the phone's three sessions put on the table
+
+Pulled from the phone (build #249, three sessions, 545 words, nothing entered
+git) and measured with the app's own alignment. Details in `docs/STATUS.md`,
+"19 October (evening)".
+
+1. **The borrow test, per word (engine; the user should weigh in).** The
+   first-word guard's wide window reaches back into the previous ayah's own
+   audio, and four of Al-Imran's sixteen WRONG verdicts were charged there.
+   A whole-window test was measured and rejected (621/621 firings, 25 sound
+   CORRECT verdicts lost). The shape to try next: does the emission charged
+   to THIS word lie before the previous ayah's recorded span end?
+2. **`device_blame.py` builds the wrong window (harness; ours to fix).** It
+   uses the record's final arrivals and spans, 123 symbols past the audio the
+   app judged, and a DP that costs by raw string equality. That is what made
+   three sound accusations look unsupported. It must judge at the verdict
+   instant, from `wt` and `emMs`.
+3. **`wu` is binary.** 0 or 1000, never in between: 1000 means "the first
+   contradiction is at the word's second or later unit", not "at the last
+   unit" as the tool prints it.
+4. **The reader bounces (UI defect, seen in all three records).** Every
+   session contains a page publish that reverses direction: forward, then back
+   to the lock's page, then forward again. The user has reported page-turn
+   fights; the device's own log now shows the shape of it.
+5. **2:1 can never be judged.** The phoneme table has three words for
+   Al-Baqarah's first ayah and the mushaf has one, so the lock started on an
+   unjudgeable ayah and the record says so in `unjudgeableKeys`.
+6. **The Al-Fatiha record opens with a foreign fence row** — a previous
+   session's end row, `ran=no durMs=0`, carrying this session's counters and
+   stamped 2 h 27 min earlier than the session's own frames.
+7. **Hide mode is closed and guarded** (`hide_mask_parity`, 42 checks): the
+   standing word, the play-head, the selection, the recite bar's
+   expected-words line and the live screen no longer print a hidden word.
+   The phone still owes the visual check.
+8. **Session sound capture is still to be built**, on by default with a
+   visible indicator as the user asked, with the recorder's own audio tee, a
+   first-sample clock anchor in the record, retention that deletes the audio
+   with its record, and playback in the desktop replay and the phone
+   observer.
+9. **The harakat and sukun precision work** in the matcher stands: the
+   shipped Kotlin collapses short vowels on nineteen letters anywhere in a
+   word, while the harness's rule is position-aware — the app is more
+   permissive than its own spec, which is the other side of the same
+   "the engine can see harakat" question the user raised.
 
 ## The user's idea, documented — 17 October
 

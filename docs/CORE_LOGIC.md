@@ -316,6 +316,22 @@ the ahead ayah the wide window IS the flash. A WRONG claim is still only made
 for the ayah the lock holds: red ahead of the lock arrives the normal way,
 when the lock does. Gated by `ahead_window_parity.py` (six injections red).
 
+The wide window carries its own risk, and the risk is measured now. It
+reaches back into the previous ayah's own audio, and the DP will seat this
+ayah's opening words there when they fit better than the truth. Over the
+phone's three sessions of 19 October, re-judged with the app's own alignment
+(545 recorded verdicts reproduced, the arrival and span maps reproduced
+exactly), the wide window for 3:118 was 136 symbols of which 80 were 3:117's
+own audio, 40 of them charged to 3:118's words 0-9, and four of that
+session's sixteen WRONG verdicts were pure borrow charges. A whole-window
+borrow test was written, measured and REJECTED: it fired in 621 of 621 guard
+firings — the guard can only fire when the trim moved the edge, which is
+exactly when the wide window reaches back — so it turned the fallback off,
+removing 4 to 6 accusations and costing 25 sound CORRECT verdicts. The wide
+window is therefore unchanged, and the borrow test PER WORD — does the
+emission charged to this word lie before the previous ayah's recorded span
+end — is the next shape to try.
+
 The reader drops its copy exactly where the engine clears its retained
 verdicts — a new surah, a jump, an anchor, a new recitation — which the engine
 publishes as a session epoch. Teardown is deliberately not one of those: it
@@ -528,7 +544,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 41 checks. Every check must be shown able to fail. Break the thing that
+It runs 42 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -559,6 +575,7 @@ nothing.
 | `final_vowel_parity` | A word-final consonant deciding a verdict, or the rule leaking inside a word |
 | `selection_parity` | A long-press range that cannot open, or a reversed one |
 | `paint_scope_parity` | A verdict that dies when the lock moves on, or hide revealing on the layer |
+| `hide_mask_parity` | Hide mode printing a hidden word: the standing word, the play-head, the selection, the recite bar's expected-words line, or the live screen |
 | `session_epoch_parity` | The reader dropping verdicts at teardown, or keeping them across a session change |
 | `live_scope_inherit_parity` | A LiveTest that ends before it began, by inheriting the previous session's scope |
 | `honest_numbers` | Two meanings of zero |

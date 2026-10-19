@@ -283,7 +283,6 @@ private const val HIDDEN_OUTSET_PX = 3f
 private const val MIN_WORD_H = 24f
 internal val wrongColor = Color(0xFFE0625A)
 internal val goldColor = Color(0xFFD9B36B)
-private val reciteBlue = Color(0xFF4A9EFF)
 private val PAGE_MASK = Color(0xFFF3ECD9) // parchment, used to hide words on light page images
 private object Chrome {
     val Bar = Color(0xFF1F1F26).copy(alpha = 0.96f)
@@ -490,7 +489,12 @@ private fun ExpectedWordsLine(
     playHead: Int,
     modifier: Modifier = Modifier,
     advisories: Map<String, Advisory> = emptyMap(),
+    hide: Boolean,
 ) {
+    // Hide mode: this bar printed the standing ayah's words in full, and it
+    // is the one place in the reader where a hidden verse's text was drawn
+    // outside the page, so the page's mask could not cover it.
+    if (hide) return
     if (words.isEmpty()) return
     // Mushaf text the app draws itself scales with the user's text-size setting.
     // The page image does not and cannot: it is the printed bitmap, and scaling
@@ -1746,7 +1750,7 @@ fun ReaderScreen(
                     if (recording && standWords.isNotEmpty()) {
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead, Modifier.fillMaxWidth(), advisories = advisoryMap)
+                            ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead, Modifier.fillMaxWidth(), advisories = advisoryMap, hide = hide)
                             // How far through the surah the recitation has come.
                             // Shown in hide mode so a memoriser sees the same
                             // progress they would with the words revealed.
@@ -2475,17 +2479,26 @@ private fun resolveWordStyle(
                 return WordStyle(wrongColor, Color.Transparent, wrongColor, 0.6f, true, false)
             else -> Unit
         }
+        // Every layer below is a POSITION, not a verdict: where the lock is,
+        // where the play-head is, what the reader selected, which ayah is
+        // active. A position must never open a mask. The standing word is the
+        // very word the reciter has NOT said yet, so painting it in blue
+        // printed the answer the mode exists to withhold; the play-head and
+        // the selection did the same for whichever word they sat on.
+        //
+        // The amber outline on RECITATION_AYAH went with them: it traced the
+        // box of every hidden word, so the mask was invisible but the word
+        // boundaries were not - the shape of the answer, if not its letters.
         return when (layer) {
-            HighlightLayer.AUDIO_WORD -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
-            HighlightLayer.AUDIO -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.55f, false, false)
-            HighlightLayer.RECITATION_WORD -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.9f, true, false)
+            // A verdict, so a reveal. The WordStatus arms above return first,
+            // so this is unreachable today; it is kept so that a future layer
+            // cannot make a wrong word vanish.
             HighlightLayer.WRONG -> WordStyle(wrongColor, Color.Transparent, wrongColor, 0.6f, true, false)
-            HighlightLayer.SELECTION -> WordStyle(reciteBlue, Color.Transparent, reciteBlue, 0.7f, true, false)
-            // An advisory is a masked word the engine had a note about. Revealing
-            // it would leak which word the app noticed, which is the same failure
-            // the advisory-cue suppression already guards against.
-            HighlightLayer.RECITATION_AYAH ->
-                WordStyle(amberColor, Color.Transparent, amberColor, 1f, false, false, hidden = true, outline = true)
+            HighlightLayer.AUDIO_WORD,
+            HighlightLayer.AUDIO,
+            HighlightLayer.RECITATION_WORD,
+            HighlightLayer.SELECTION,
+            HighlightLayer.RECITATION_AYAH,
             HighlightLayer.NONE,
             HighlightLayer.UNSTARTED,
             -> WordStyle(background, Color.Transparent, Color.Transparent, 0f, false, false, hidden = true)
