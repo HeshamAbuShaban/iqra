@@ -86,9 +86,16 @@ private val SHORT_VOWELS = charArrayOf('َ', 'ُ', 'ِ', 'ْ')
 /**
  * The id for a word-FINAL consonant, ignoring the case vowel on it.
  *
- * Only applied to the final unit of a word, which is why [canonicalId] cannot do
- * it: the same token can legitimately be mid-word, where its vowel matters.
- * 'ن' inside 'مِن' is a different sound from the 'ن' that ends 'مِنْ'.
+ * [canonicalId] applies this to EVERY unit, not only the last one, so the
+ * shipped matcher is the GLOBAL-collapse variant: 'نَ' mid-word and bare 'ن'
+ * share an id, and a mid-word short vowel can never decide a verdict. 'ن'
+ * inside 'مِن' is a different sound from the 'ن' that ends 'مِنْ', which is
+ * why the harness rule is position-aware instead - and the two rules were
+ * measured to disagree on 187 words: the app accuses 489, the harness 566,
+ * and making the app position-aware would add 81 accusations on the
+ * reference reciter (all marginal, all false on reference audio). See
+ * docs/STATUS.md, 20 October. Do not "fix" [canonicalId] without
+ * re-measuring that sweep.
  */
 private fun finalVowelId(u: String): String? {
     if (u.isEmpty()) return null
@@ -120,10 +127,12 @@ private fun canonicalId(u: String): String {
 /**
  * The same equivalence, for a unit known to be the LAST of its word.
  *
- * The expected side is canonicalised through [canonicalId], which cannot know
- * position, so the last unit of every word is rewritten here before interning.
- * Without this the DP compares the table's bare `ن` against the reciter's `نَ`
- * and calls it a mistake.
+ * This is a NO-OP in the shipped default: [canonicalId] already applies
+ * [finalVowelId] to every unit, so the last unit was rewritten before it got
+ * here, and the non-final branch at the call site means exactly the same
+ * thing. It is kept because the call site documents the intent, and because
+ * a position-aware [canonicalId] - the harness rule, measured but not
+ * shipped (docs/STATUS.md, 20 October) - would make it load-bearing again.
  */
 internal fun finalUnitId(u: String): String = finalVowelId(u) ?: canonicalId(u)
 

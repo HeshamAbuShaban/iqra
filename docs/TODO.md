@@ -78,6 +78,10 @@ check items only when the shipped code proves them.
    The other 497 sit mid-word and stay verdicts. Full list
    `/tmp/opencode/of_shipped_full.log`; the old engine's list at
    `/tmp/opencode/optional_final_full.txt` is superseded.
+   **Correction 20 October:** 566 is the HARNESS rule (position-aware). The
+   app's `canonicalId` collapses the final-vowel relaxation on every unit, so
+   the phone's own rule gives **489 WRONG / 16 guarded** on the same windows.
+   The 566 was never the app's number; see STATUS, 20 October, and item 17.
 7. **The `-هُمْ` / `-كُمْ` / `-تُمْ` endings** — ANSWERED 18 October
    (night), the 41 re-read to its letters: 17 distinct endings, ب7 ه6 ا4 م3
    ل3 ى3 ط2 ن2 ء2 ج2 + seven singles (ك د ض ر ف ظ ق) (not 18; the earlier
@@ -150,6 +154,26 @@ check items only when the shipped code proves them.
     on device against #238 and two older writers. The desktop replay stays
     the place with per-WRONG cause panels; the phone seat is the smallest
     honest slice the user asked for.
+17. **Position-aware matcher (deferred on a measured cost).** The app's
+    `canonicalId` applies the final-vowel relaxation to every unit; the
+    harness applies it only at a word's last unit. Measured 20 October over
+    the 114 dumps: harness 566 WRONG / 28 guarded, app 489 / 16, and making
+    the app position-aware adds **81 accusations** (4 to UNKNOWN, 0 cleared),
+    all false on the reference reciter, all at coverage 0.80-0.89; net +77
+    (+65 after the guard). The benefit (mid-word short-vowel detection) is
+    exactly the class the reference reciter realises differently from the
+    table, so only a labelled device A/B can price it. The minimal correct
+    change is a two-id DP, not a one-line edit; re-scoring the existing
+    traceback is worse (601). Do not ship without that A/B.
+18. **Sound capture is not built yet.** The user asked for it (19 Oct): the
+    session audio is discarded today, so the replay screen and the phone
+    observer cannot play the recitation back, and the hifz loop's "listen to
+    yourself" step is missing. Design agreed: ON by default with a visible
+    indicator; a WAV per session in `filesDir`; `audioFile`/`audioStartMs`/
+    `audioSamples` on the record; the record prune deletes the audio too;
+    known retention limits documented; never uploaded; a playback control on
+    the desktop replay and the phone observer. Needs the phone back (mic +
+    device verification).
 
 ## The user's leads, recorded — 19 October
 

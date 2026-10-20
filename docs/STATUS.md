@@ -1185,6 +1185,33 @@ reference audio. The other 497 sit mid-word and stay verdicts. Full list
 preceding numbers masqueraded as measurements of what the phone does: none
 of the guard rules were built against them.
 
+Correction, 20 October: the 566 is the harness's number, not the phone's.
+`optional_final.py` runs the harness rule, which is position-aware - the
+final-vowel relaxation fires only at a word's last unit. The app's
+`canonicalId` applies the same relaxation to EVERY unit (its own comment
+said "only applied to the final unit"; the code has not been that for a long
+time). Over the same 114 dumps and the same tight windows, **the rule the
+phone ships accuses 489 words, not 566, and its optional-final guard removes
+16, not 28** - 187 word statuses differ. So the corpus has been publishing a
+number 77 accusations away from the app, and every corpus figure in this
+repository inherits that gap. What the gap is worth: making the app
+position-aware turns **81** words from CORRECT to WRONG (and 4 to UNKNOWN;
+it can never turn a WRONG back to CORRECT, because the global rule's match
+relation is a strict superset of the position-aware one). All 81 are false
+accusations on the reference reciter, and all sit at coverage 0.80-0.89
+(39 exactly at 0.80, 67 at or below 0.85): marginal charges just above the
+threshold, not confident ones. The 32 that are purely a mid-word short vowel
+are exactly the class position-awareness exists to catch, and the reference
+reciter realises all 32 differently from the table - so the cost is
+measured and the benefit is not. A labelled device A/B is the only thing
+that can price it; until then the app keeps the conservative rule. The
+smallest correct change is a two-id DP (plain ids for every unit, final ids
+matched only when the reference unit is final, both query ids carried into
+the DP); re-scoring the app's existing traceback instead is worse (601
+accusations), and deleting `finalVowelId` from `canonicalId` alone makes the
+rule inert. `final_vowel_parity` now pins the app's global collapse, so the
+divergence cannot change without the check saying so.
+
 Also shipped the same evening, all gated:
 - **Jump catch-up** (`rejudgeJumpedAyat`): a jumped-past ayah is re-judged
   against its own window, arrival stamped at the slice end the engine

@@ -510,7 +510,8 @@ is a fraction of.
 | What | Status |
 |---|---|
 | Legal stop detection | The app removes blame at a mark. It cannot detect the stop itself. |
-| The optional-final guard | Measured over the whole corpus: it removes **2%** of the reference reciter's false accusations (14 of 768). It is worth keeping, and it is not the answer. |
+| The optional-final guard | Measured over the whole corpus on the harness rule: it removes **5%** of the reference reciter's false accusations (28 of 566). On the rule the app actually ships it removes **3%** (16 of 489), because the app's matcher is the more permissive one - see the divergence row below. Worth keeping; not the answer. |
+| One matcher rule on both sides | The harness is position-aware (the final-vowel relaxation only at a word's last unit); the app applies it to every unit. Measured 20 October: 566 WRONG (harness) vs 489 (app); position-awareness would add 81 accusations on the reference reciter, all marginal - deferred to a labelled device A/B. `final_vowel_parity` pins the app's shape so the divergence cannot change silently. |
 | The unexplained accusation | **71% of the DEVICE class (108 of 152).** Plain mid-ayah words, no signature. Nothing textual separates them from correct words. |
 | The per-surah fold | Fixed in code. Not yet confirmed on a device. |
 | `noWindowWords` on long sessions | Back at 2,501 on the 1,428-second session. Open. |

@@ -116,6 +116,27 @@ def main() -> int:
         # The rule must not swallow the madd equivalence it sits beside.
         if not wv.unit_match_final("ۥۥ", "ۥۥۥ"):
             bad.append("the madd rule stopped working alongside the final-vowel rule")
+
+        # THE APP IS NOT THIS RULE, AND THE DIFFERENCE IS MEASURED, NOT DRIFT.
+        # `canonicalId` applies the final-vowel relaxation to EVERY unit, so
+        # the shipped matcher is the GLOBAL-collapse variant while this check
+        # and the harness are position-aware. Over the 114-dump corpus the app
+        # accuses 489 words where the harness accuses 566, and making the app
+        # position-aware would add 81 accusations on the reference reciter
+        # (all marginal, all false on reference audio - docs/STATUS.md, 20
+        # October). This pin exists so the divergence cannot change silently:
+        # if it fires, the app's numbers moved and the docs owe a re-measure.
+        canon = re.search(
+            r"private fun canonicalId\(u: String\): String \{(.*?)\n\}", kts, re.S)
+        if canon is None:
+            bad.append("canonicalId is gone, so the app's matching rule can no "
+                       "longer be read")
+        elif "finalVowelId(u)" not in canon.group(1):
+            bad.append("the app's canonicalId no longer collapses a short vowel "
+                       "on EVERY unit; the measured divergence from the "
+                       "position-aware harness rule has changed - re-measure "
+                       "the app's corpus numbers (489 WRONG, 16 guarded) and "
+                       "update docs/STATUS.md before moving this pin")
     finally:
         wv.FINAL_VOWEL_RULE[0] = was
 
