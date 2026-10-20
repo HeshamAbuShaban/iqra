@@ -2148,6 +2148,12 @@ private data class WordDraw(val rect: RectF, val style: WordStyle, val mask: Rec
 private data class WordMask(val body: RectF, val marks: List<RectF>)
 
 /**
+ * A word as the reader knows it before the mask is drawn: its box, the
+ * style it paints with, and the marks that belong to it.
+ */
+private data class MaskedWord(val rect: RectF, val style: WordStyle, val marks: List<RectF>)
+
+/**
  * U+06DE ARABIC START OF RUB EL HIZB (۞) and U+06E9 ARABIC PLACE OF SAJDAH
  * (۩): the only two signs the layout folds into a word's text that the glyph
  * DB also gives a full-size box of its own. 199 ayat carry a ۞ (always ahead
@@ -2358,14 +2364,154 @@ private fun pairAyahBoxes(
  * page and hid nothing else - a single bigger outset would not do it, since
  * covering 99% of the marks needs 42px, and at 42px the masks of 131,166
  * word pairs reach into a neighbour's body.
+ *
+ * [orphanInk] adds the ink the DB does not describe at all, and
+ * [revealed] keeps it away from the words the app is showing as recited.
  */
-private fun maskRectOf(body: RectF, marks: List<RectF>): RectF {
+private fun maskRectOf(
+    body: RectF,
+    marks: List<RectF>,
+    orphanInk: List<RectF> = emptyList(),
+    revealed: List<RectF> = emptyList(),
+): RectF {
     val m = RectF(
         body.left - HIDDEN_OUTSET_PX, body.top - HIDDEN_OUTSET_PX,
         body.right + HIDDEN_OUTSET_PX, body.bottom + HIDDEN_OUTSET_PX,
     )
     for (k in marks) m.union(k)
+    for (o in orphanInk) {
+        // Only the ink close to this word: the orphan ink of a far-away word
+        // is not this word's to hide.
+        if (o.left > body.right + ORPHAN_NEAR_PX || o.right < body.left - ORPHAN_NEAR_PX ||
+            o.top > body.bottom + ORPHAN_NEAR_PX || o.bottom < body.top - ORPHAN_NEAR_PX
+        ) continue
+        // And never the ink of a word the app is showing as recited: taking
+        // it would damage a word the reciter got right.
+        var claimed = false
+        for (rv in revealed) {
+            if (o.left <= rv.right + ORPHAN_REVEALED_GUARD_PX &&
+                o.right >= rv.left - ORPHAN_REVEALED_GUARD_PX &&
+                o.top <= rv.bottom + ORPHAN_REVEALED_GUARD_PX &&
+                o.bottom >= rv.top - ORPHAN_REVEALED_GUARD_PX
+            ) {
+                claimed = true
+                break
+            }
+        }
+        if (!claimed) m.union(o)
+    }
     return m
+}
+
+/**
+ * How far an orphan ink cluster may be from a word and still be that word's.
+ */
+private const val ORPHAN_NEAR_PX = 10f
+
+/**
+ * How close an orphan ink cluster may be to a REVEALED word before it is
+ * taken to be that word's own ink.
+ */
+private const val ORPHAN_REVEALED_GUARD_PX = 4f
+
+/**
+ * The largest orphan ink cluster a mask may swallow. A bigger one is
+ * furniture - a surah frame, its title, the basmala under a heading - and
+ * masking furniture would take a line of the Qur'an off the page.
+ */
+private const val ORPHAN_CAP_PX = 256
+
+/**
+ * The ink of a page that no glyph row describes, as small boxes.
+ *
+ * The DB boxes every word it knows and most of the strokes attached to it,
+ * but not every stroke of the print: 1,349px of ink on page 4 lies outside
+ * all 88,246 rows' boxes, in clusters of 1-21px, and those clusters are the
+ * specks a hidden word still showed. No rectangle reaches them: the only rect
+ * rule that does, a 12px outset, bites 17,450px out of 124 of 134 words.
+ *
+ * So the mask grows by the ink itself - the components of the ink no row
+ * describes, and only the small ones. Measured on the two pages checked, the
+ * rule leaves ZERO specks while the ink it erases from words the app shows
+ * as recited is exactly what the mask already erased before it.
+ *
+ * The fill walks only the ink outside every row box: 1,349px on page 4
+ * (0.08% of the page) and 38,321px on the page that carries a surah frame
+ * (2.3%), of which the frame itself is 89%.
+ */
+private fun pageOrphanInk(image: ImageBitmap, rows: List<RectF>): List<RectF> {
+    val bmp = image.asAndroidBitmap()
+    val w = bmp.width
+    val h = bmp.height
+    if (w <= 0 || h <= 0) return emptyList()
+    // 0 = no ink, 1 = ink inside a glyph row, 2 = ink no row describes,
+    // 3 = an orphan already visited.
+    val state = ByteArray(w * h)
+    val sx = w / 1024f
+    val sy = h / 1656f
+    for (r in rows) {
+        val x0 = (min(r.left, r.right) * sx).toInt().coerceIn(0, w - 1)
+        val x1 = (max(r.left, r.right) * sx).toInt().coerceIn(0, w - 1)
+        val y0 = (min(r.top, r.bottom) * sy).toInt().coerceIn(0, h - 1)
+        val y1 = (max(r.top, r.bottom) * sy).toInt().coerceIn(0, h - 1)
+        for (y in y0..y1) {
+            val base = y * w
+            for (x in x0..x1) state[base + x] = 1
+        }
+    }
+    val buf = IntArray(w)
+    for (y in 0 until h) {
+        bmp.getPixels(buf, 0, w, 0, y, w, 1)
+        val base = y * w
+        for (x in 0 until w) {
+            if (state[base + x] != 0.toByte()) continue
+            if ((buf[x] ushr 24) != 0) state[base + x] = 2
+        }
+    }
+    val out = ArrayList<RectF>()
+    var stack = IntArray(4096)
+    for (y in 0 until h) {
+        val base = y * w
+        for (x in 0 until w) {
+            if (state[base + x] != 2.toByte()) continue
+            var sp = 0
+            stack[sp++] = base + x
+            state[base + x] = 3
+            var pixels = 0
+            var l = x
+            var r = x
+            var t = y
+            var b = y
+            while (sp > 0) {
+                val p = stack[--sp]
+                val py = p / w
+                val px = p - py * w
+                pixels++
+                if (px < l) l = px
+                if (px > r) r = px
+                if (py < t) t = py
+                if (py > b) b = py
+                for (dy in -1..1) {
+                    val ny = py + dy
+                    if (ny < 0 || ny >= h) continue
+                    for (dx in -1..1) {
+                        if (dx == 0 && dy == 0) continue
+                        val nx = px + dx
+                        if (nx < 0 || nx >= w) continue
+                        val np = ny * w + nx
+                        if (state[np] != 2.toByte()) continue
+                        state[np] = 3
+                        if (sp == stack.size) stack = stack.copyOf(stack.size * 2)
+                        stack[sp++] = np
+                    }
+                }
+            }
+            if (pixels <= ORPHAN_CAP_PX) {
+                out.add(RectF(l / sx, t / sy, (r + 1) / sx, (b + 1) / sy))
+            }
+        }
+    }
+    return out
 }
 
 private data class WordStyle(
@@ -2842,8 +2988,13 @@ fun MushafPageView(
     val paper = remember(page.page, bmp, night, cs.background) {
         pagePaper(bmp, cs.background, night, ctx)
     }
+    // The ink no glyph row describes, per page: the last of the specks a
+    // hidden word showed. Computed only in hide mode, and only once a page.
+    val orphanInk = remember(page.page, hide, bmp) {
+        if (hide) pageOrphanInk(bmp, lineGroups.values.flatten()) else emptyList()
+    }
     val draws = remember(
-        page.page, statusMap, advisories, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, scopeSurah, slotsByAyah,
+        page.page, statusMap, advisories, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, scopeSurah, slotsByAyah, orphanInk,
         // earnedVersion rather than earned: the map is the same object for the
         // whole session and would compare equal to itself, so the draw list
         // would never rebuild when a new verdict arrives.
@@ -2868,6 +3019,7 @@ fun MushafPageView(
             }
             val wordsByAyah = allWords.groupBy { "${it.surah}:${it.verse}" }
                 .mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
+            val items = ArrayList<MaskedWord>()
             for ((ak, rectsAll) in byAyah) {
                 val words = wordsByAyah[ak] ?: continue
                 // One box per printed token, zipped against the layout's own
@@ -2912,8 +3064,15 @@ val st = statusMap[key] ?: earned[key]
                         advisoryCue = !hide && ReaderPrefs.advisoryDisplay(ctx) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
                         judgedAyah = st == null && !hide && inScope && judgedAyahs[w.verse].judged(),
                     )
-                    add(WordDraw(rect, style, maskRectOf(rect, wm.marks)))
+                    items.add(MaskedWord(rect, style, wm.marks))
                 }
+            }
+            // A word the app shows as recited keeps its ink: the orphan ink
+            // near it is not this word's, and taking it would damage a word
+            // the reciter got right.
+            val revealed = items.filter { !it.style.hidden }.map { it.rect }
+            for (it in items) {
+                add(WordDraw(it.rect, it.style, maskRectOf(it.rect, it.marks, orphanInk, revealed)))
             }
         }
     }

@@ -205,8 +205,12 @@ git) and measured with the app's own alignment. Details in `docs/STATUS.md`,
    stamped 2 h 27 min earlier than the session's own frames.
 7. **Hide mode is closed and guarded** (`hide_mask_parity`, 42 checks): the
    standing word, the play-head, the selection, the recite bar's
-   expected-words line and the live screen no longer print a hidden word.
-   The phone still owes the visual check.
+   expected-words line and the live screen no longer print a hidden word -
+   and the mask itself was measured down to ZERO specks on the phone (page
+   584: 17 clusters / 132px gone, a whole-page pixel diff showing nothing
+   else moved, the ayah numbers and the surah frame untouched). What the
+   check cannot see is the rule's arithmetic, so the arithmetic stays
+   measured.
 8. **Session sound capture is still to be built**, on by default with a
    visible indicator as the user asked, with the recorder's own audio tee, a
    first-sample clock anchor in the record, retention that deletes the audio

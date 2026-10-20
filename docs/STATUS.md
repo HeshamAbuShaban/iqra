@@ -1686,6 +1686,40 @@ sukun precision work in the matcher; and the session sound capture into the
 replay screen, with the recorder now on by default and an indicator, as the
 user asked.
 
+- **Hide mode, measured down to zero specks.** The mask now has three parts,
+  each measured: the word's own box; the marks the glyph DB split off the
+  word (96% of them overhang it by more than the 3px outset, the worst by
+  42px, and the union of the two took the last 90px of mark ink off one
+  page); and the ink **no glyph row describes at all** - read from the page's
+  own pixels, capped at 256px so furniture is never swallowed, kept 10px from
+  the word it belongs to and never within 4px of a word the app is showing
+  as recited. On mushaf page 584 that took the last **17 specks (132px) off
+  the page**, and a whole-page pixel diff shows **nothing else moved**: the
+  31 ayah numbers keep their digits, the surah frame with its title is the
+  identical 28,242px component, and the fold line and the page borders are
+  unchanged. On page 4 the visible specks went 18 → 12 with the union alone,
+  and the orphan rule takes the rest.
+  Two limits, written down: the largest orphan sat exactly 10px below its own
+  word body, so that margin has no slack on the direct path - it survives
+  only because a neighbour's mask rectangle happens to grow over it - and
+  the new check can see the rule's SHAPE but not its arithmetic, because a
+  comparison neutered to `false &&` leaves every literal in place. The
+  arithmetic is measured on the device instead; a green check here means
+  "the rule is present", not "the rule is right".
+- **Why Tarteel has no specks, and what that means here.** They do not use
+  a page image: their mushaf is drawn as text (per-word rects, `hashToWord`,
+  redaction bars over the hidden range), so their mask is exact by
+  construction. We own the geometry only through a DB that does not box
+  every stroke - 1,349px of ink on page 4 lies outside all 88,246 rows - so
+  we take the missing geometry from the ink itself. Same outcome, different
+  mechanism. The other option is the app's own text renderer (it exists, as
+  the fallback path for a page with no bitmap), which would make masking
+  exact by construction too, at the price of giving up the printed mushaf
+  page: a product decision, not a bug fix.
+- **Two pages of 604 keep specks on purpose.** They carry a basmala under a
+  surah heading, and masking that would take a line of the Qur'an off the
+  page.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

@@ -22,17 +22,23 @@ The amber outline on the active ayah was a sixth leak of a different kind: it
 traced the box of every hidden word, so the letters were gone but the shape of
 the answer was not.
 
-What must hold:
+The mask itself has three parts, and each was measured on the phone:
+the word's own box; the marks the glyph DB split off the word (96% of them
+overhang it by more than the 3px outset, the worst by 42px); and the ink no
+glyph row describes at all - read from the page's own pixels, capped at 256px
+so furniture is never swallowed, kept away from any word the app is showing
+as recited. On mushaf page 584 that took the last 17 specks off the page
+(132px) and a whole-page pixel diff showed nothing else moved: the 31 ayah
+numbers, the surah frame and the fold line are all identical.
 
-  1. in the hide branch, the two verdict arms come FIRST, so a CORRECT or
-     WRONG word is revealed by its own verdict;
-  2. every OTHER layer in that branch returns a masked style: `hidden = true`
-     and a zero tint, so no rectangle is painted over a hidden word;
-  3. no masked style carries an outline;
-  4. the expected-words line takes the preference and returns before it
-     appends a single word;
-  5. the live screen reads the preference and keeps every word that has no
-     verdict of its own invisible, and draws no marker over the current word.
+WHAT THIS CHECK CAN AND CANNOT SEE. It reads the source, so it can see that
+the rule's parts exist and that the size cap is a comparison on the pixel
+count - it goes red when the orphan pass is deleted, when the cap is
+dropped, or when the mask stops unioning the marks. It CANNOT see the rule's
+arithmetic: a comparison neutered to `false &&` leaves every literal in
+place, and this check stays green. The arithmetic is measured instead, on the
+device and in `docs/STATUS.md`; treat a green here as "the rule is present",
+not as "the rule is right".
 
 Run: python3 engine/replay/hide_mask_parity.py
 """
@@ -208,6 +214,29 @@ def main() -> int:
     if "marksOf" not in main_src:
         bad.append("the marks the DB split off a word are no longer collected, so the "
                    "mask cannot cover them")
+    # The orphan ink: the strokes the DB does not describe at all. They are
+    # the last specks, and the rule that takes them has three parts that each
+    # have to be there: a size cap (furniture is bigger), a distance (the ink
+    # must be this word's), and the guard that keeps it off a word the app is
+    # showing as recited.
+    if "private fun pageOrphanInk(" not in main_src:
+        bad.append("the ink no glyph row describes is no longer collected, so a hidden "
+                   "word still shows the strokes the DB never boxed")
+    else:
+        oi = body_of(main_src, r"private fun pageOrphanInk\s*\(")
+        if "pixels <= ORPHAN_CAP_PX" not in oi:
+            bad.append("the orphan ink has no size cap, so a surah frame or a basmala "
+                       "under a heading could be masked with a word")
+        if "getPixels" not in oi:
+            bad.append("the orphan ink is not read from the page's own pixels, so it "
+                       "cannot be the ink the reader sees")
+    mr = body_of(main_src, r"private fun maskRectOf\s*\(")
+    if "ORPHAN_REVEALED_GUARD_PX" not in mr:
+        bad.append("the orphan ink has no guard against a word the app is showing as "
+                   "recited, so a recited word could lose its own ink")
+    if "ORPHAN_NEAR_PX" not in mr:
+        bad.append("the orphan ink is not limited to the word it belongs to, so a word "
+                   "could mask another word's ink")
 
     if bad:
         for x in bad:
