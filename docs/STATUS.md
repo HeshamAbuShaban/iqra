@@ -569,7 +569,7 @@ units at which the contradiction begins, 0..1000.
 | Tool | What it does |
 |---|---|
 | `engine/replay/device_blame.py` | Reads `wu` from a session record and buckets it. |
-| `engine/replay/device_blame_parity.py` | Holds the writer, the reader and the buckets honest (7 injections red). |
+| `engine/replay/device_blame_parity.py` | Holds the writer, the reader and the buckets honest (11 injections red; four added 20 October). |
 
 Run it after the next device session:
 
@@ -1743,6 +1743,20 @@ user asked.
   the fallback path for a page with no bitmap), which would make masking
   exact by construction too, at the price of giving up the printed mushaf
   page: a product decision, not a bug fix.
+- **`device_blame.py` was reading windows the app never saw.** It rebuilt the
+  judged window from the record's FINAL `arrivals`/`spans` - which the session
+  rewrites as it runs - so a word decided seconds earlier was replayed
+  against **123 symbols of audio the app had not heard yet**, and its re-align
+  costed by raw string equality while the phone costed through `canonicalId`.
+  Both are fixed: the right edge is clamped at the verdict instant
+  (`bisect(emMs, wt)`), and the re-align canonicalises through the app's key
+  (madd, else the global final-vowel id). The verdict-lag figure keeps the
+  final window on purpose - it measures how early a decision is, not what the
+  app saw, and its negative sign is still the ahead rule working. Four new
+  injections go red (clamp, app_key, `wu` label, and the re-align CALL SITE -
+  the first test proved `app_key` worked while the tool still costed raw).
+  The device re-measure is pending: the pulled records were wiped from /tmp
+  and the phone is unplugged; re-pull next session.
 - **Two pages of 604 keep specks on purpose.** They carry a basmala under a
   surah heading, and masking that would take a line of the Qur'an off the
   page.

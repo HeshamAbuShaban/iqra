@@ -161,8 +161,13 @@ def main() -> int:
             if "WRONG words with a recorded blame position: 5" not in out:
                 bad.append("the tool does not count the WRONG words it was given")
             # 4. the buckets must not collapse
-            if "first unit" not in out or "middle" not in out or "last unit" not in out:
-                bad.append("first unit, middle and last unit collapse into one bucket")
+            if ("first unit" not in out or "middle" not in out
+                    or "second unit or later" not in out):
+                bad.append("the blame buckets collapse into one")
+            if "last unit" in out:
+                bad.append("the tool still calls wu=1000 the last unit; the "
+                           "writer records only 0 or 1000, and 1000 means "
+                           "'not the first unit'")
             if "no blame recorded" not in out:
                 bad.append("a WRONG word with no recorded position is not reported")
             if "Verdict latency" not in out or "median" not in out:
@@ -182,6 +187,7 @@ def main() -> int:
             # The stamps are 5000, 5000, 7900: the only positive gap is 2900.
             if "Feed cadence" not in out or "2900 ms" not in out:
                 bad.append("the tool does not report the feed cadence")
+
         # A record that predates the times must get the refusal, not a crash
         # and not a guessed split.
         rec_old = {k: v for k, v in rec.items() if k != "emMs"}
@@ -192,6 +198,53 @@ def main() -> int:
             bad.append("device_blame.py crashes on a record without emission times")
         elif "cannot be split into engine time and paint time" not in r2.stdout:
             bad.append("a record without `emMs` does not get the refusal it needs")
+
+    # The judged window must be the window at the VERDICT instant: the record's
+    # final arrivals are later than what the app had heard. Word 18:4:2 was
+    # decided at 6000 ms; only the symbols stamped 5000 had arrived then, so
+    # the judged window ends at 12, while the final window ends at 13.
+    sys.path.insert(0, str(HERE))
+    import device_blame as db  # noqa: E402
+    rec_d = rec
+    lo, hi, why = db.judged_span(rec_d, 18, 4, 6000)
+    if why is None and (lo, hi) != (11, 12):
+        bad.append("judged_span is not clamped at the verdict instant: got "
+                   "%s..%s, expected 11..12" % (lo, hi))
+    _lo2, hi2, _w2 = db.judged_span(rec_d, 18, 4)
+    if hi2 != 13:
+        bad.append("judged_span without a verdict time no longer reports the "
+                   "final window")
+
+    # The replay must cost an alignment the way the phone did. The harness
+    # refuses a bare/vowelled pair mid-word (position-aware); the app's
+    # canonicalId does not (global). Both facts are pinned, because the whole
+    # point of app_key is that it is the app's rule and not the harness's.
+    if db.wv.unit_match("ن", "نَ"):
+        bad.append("the harness now matches a bare/vowelled pair mid-word; it "
+                   "is supposed to be the position-aware rule")
+    if db.app_key("ن") != db.app_key("نَ"):
+        bad.append("app_key does not collapse a bare/vowelled pair; the replay "
+                   "would charge a word the phone matched")
+    if db.app_key("نَ") == db.app_key("مَ"):
+        bad.append("app_key collapses two different consonants")
+    m1, w1, *_ = db.wv.align(
+        [db.app_key("ن"), db.app_key("مَ")],
+        [db.app_key("نَ"), db.app_key("مَ")], [0, 0])
+    if not m1[0] or w1[0]:
+        bad.append("app_key did not make a mid-word bare/vowelled pair match; "
+                   "the re-align still costs it as a substitution")
+    m2, w2, *_ = db.wv.align(["ن", "مَ"], ["نَ", "مَ"], [0, 0])
+    if not w2[0]:
+        bad.append("the raw-cost DP no longer charges the pair, so the "
+                   "app_key test proves nothing")
+    # The helpers above are worth nothing unless the re-align CALLS them: the
+    # first version of this test proved app_key worked while the tool still
+    # costed by raw equality. Inspect the call site, not a mention of it.
+    tool_src = TOOL.read_text(encoding="utf-8")
+    if ("[app_key(e) for e in got]" not in tool_src
+            or "[app_key(u) for u in flat]" not in tool_src):
+        bad.append("the re-align does not cost through app_key; a raw-cost DP "
+                   "charges words the phone matched")
 
     if bad:
         for b in bad:

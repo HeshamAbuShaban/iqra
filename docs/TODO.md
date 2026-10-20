@@ -165,16 +165,6 @@ check items only when the shipped code proves them.
     table, so only a labelled device A/B can price it. The minimal correct
     change is a two-id DP, not a one-line edit; re-scoring the existing
     traceback is worse (601). Do not ship without that A/B.
-18. **Sound capture is not built yet.** The user asked for it (19 Oct): the
-    session audio is discarded today, so the replay screen and the phone
-    observer cannot play the recitation back, and the hifz loop's "listen to
-    yourself" step is missing. Design agreed: ON by default with a visible
-    indicator; a WAV per session in `filesDir`; `audioFile`/`audioStartMs`/
-    `audioSamples` on the record; the record prune deletes the audio too;
-    known retention limits documented; never uploaded; a playback control on
-    the desktop replay and the phone observer. Needs the phone back (mic +
-    device verification).
-
 ## The user's leads, recorded — 19 October
 
 The user's words (morning of 19 October): the reference apps carry "huge
@@ -209,14 +199,28 @@ git) and measured with the app's own alignment. Details in `docs/STATUS.md`,
    A whole-window test was measured and rejected (621/621 firings, 25 sound
    CORRECT verdicts lost). The shape to try next: does the emission charged
    to THIS word lie before the previous ayah's recorded span end?
-2. **`device_blame.py` builds the wrong window (harness; ours to fix).** It
-   uses the record's final arrivals and spans, 123 symbols past the audio the
-   app judged, and a DP that costs by raw string equality. That is what made
-   three sound accusations look unsupported. It must judge at the verdict
-   instant, from `wt` and `emMs`.
-3. **`wu` is binary.** 0 or 1000, never in between: 1000 means "the first
-   contradiction is at the word's second or later unit", not "at the last
-   unit" as the tool prints it.
+2. **DONE 20 October — `device_blame.py` built a window the app never saw.**
+   It used the record's final arrivals and spans (123 symbols past the judged
+   audio) and a DP that costed by raw string equality; that is what made
+   three sound accusations look unsupported. It now clamps the right edge at
+   the verdict instant (`wt` + `emMs`, bisect) and costs the re-align through
+   `app_key` - the app's `canonicalId` key (madd, else the GLOBAL final-vowel
+   id) - so a bare/vowelled pair the phone matched is not re-charged by the
+   replay. The lag metric deliberately keeps the FINAL window: it measures
+   how early a decision is, not what the app saw. Gated with four new
+   injections (clamp, app_key, wu label, and the call site itself - the first
+   version of the test proved app_key worked while the tool still costed raw).
+   **The device re-measure is pending:** the pulled records were wiped from
+   /tmp and the phone is unplugged. Re-pull next session and confirm
+   Al-Imran's 16 charges reproduce one for one.
+3. **`wu` is binary because the writer divides by the charge's own
+   position.** `wrongStartFrac[owner] = pos / (total - 1)`, where `total` is
+   the unit count up to the charge and `pos = total - 1` - so every
+   non-first-unit charge is exactly 1.0. It should divide by the word's FULL
+   unit count. The tool now says what the value means (0 = first unit;
+   1000 = "second unit or later", never "last"), and the fix needs a new
+   build plus one new record to verify real fractions; bump the record's `v`
+   when it lands.
 4. **The reader bounces (UI defect, seen in all three records).** Every
    session contains a page publish that reverses direction: forward, then back
    to the lock's page, then forward again. The user has reported page-turn

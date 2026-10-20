@@ -13,18 +13,24 @@ not a pronoun ending. Neither figure could say WHERE the mismatch sat. A boundar
 artefact and a wrong phoneme produce the same verdict and different blame
 positions.
 
-So `wu` was added to the session record: for each WRONG word, the fraction of the
-word's own units at which the contradiction begins. 0 is the first unit, 1000 is
-the last. This tool reads it and buckets it.
+So `wu` was added to the session record: the fraction of the word's own units at
+which the contradiction begins. The writer's normalisation is broken (it divides
+by the charge's own position, so the value is 0 or 1000 and nothing else - 1000
+means "the second unit or later", never "the last"), so this tool reports the
+value it has rather than pretending to a precision the record lacks.
 
 Run:  adb shell run-as com.iqra.quran cat files/sessions/<file>.json > /tmp/x.json
       python3 engine/replay/device_blame.py /tmp/x.json [more.json ...]
 """
 
+import bisect
 import json
 import sys
 from pathlib import Path
 from collections import Counter
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import word_verdicts as wv  # noqa: E402
 
 
 def bucket(fr):
@@ -34,7 +40,7 @@ def bucket(fr):
     if fr == 0:
         return "first unit"
     if fr >= 1000:
-        return "last unit"
+        return "second unit or later (the writer records no finer position)"
     if fr <= 200:
         return "near the start (0-20%)"
     if fr <= 400:
@@ -47,10 +53,19 @@ def bucket(fr):
 
 
 
-def judged_span(o, surah, ayah):
+def judged_span(o, surah, ayah, wt=None):
     """The emission window ayahObs() built for this ayah, or None.
 
-    **There is no window to report unless both neighbour arrivals survived.**
+    **The window is judged at the verdict instant, not at the record's final
+    state.** `arrivals` and `spans` are rewritten as the session runs, so the
+    values in the record are the LAST ones - and a word judged seconds earlier
+    was judged against a shorter log. Building the window from the final values
+    put 123 symbols of audio the app had not heard yet inside the window, which
+    is how three sound accusations came to look unsupported. When `wt` and
+    `emMs` are both present the right edge is clamped to the emissions that had
+    arrived by `wt`; without them the raw window is the honest bound.
+
+    **There is no window to report unless the ayah's own arrival survived.**
     The record's `arrivals` is pruned to lockedAyah +/- 3 while the session is
     running, so a word judged long before the lock has no neighbour entry. The
     first version of this tool filled those gaps - `ayah-1` defaulted to 0 and
@@ -70,12 +85,6 @@ def judged_span(o, surah, ayah):
     after = arr.get("%d:%d" % (surah, ayah + 1))
     if here is None:
         return None, None, "no arrival in the retained log"
-    if before is None or after is None:
-        # A missing neighbour is a judgment the record cannot reproduce. The
-        # app itself CLAMPS the window from the log's far end - see below - so
-        # importing the log start or the log end stands in for audio the window
-        # never held.
-        pass
     # The app's own bound: a long ayah cannot let the per-frame cost blow up.
     # The replay must apply the same clamp, or every width it prints is the
     # full session when the arrivals are sparse - which is how 10 of 26 false
@@ -94,7 +103,31 @@ def judged_span(o, surah, ayah):
     if prevEnd is not None and prevEnd > bounded:
         from_ = min(prevEnd, hi - 32)
         bounded = max(bounded, from_)
+    emms = o.get("emMs")
+    if wt is not None and emms:
+        # Absolute index one past the last emission that had arrived by `wt`.
+        arrived = base + bisect.bisect_right(emms, wt)
+        hi = min(hi, arrived)
+        if hi <= bounded:
+            return None, None, ("the verdict time precedes the judged window")
     return bounded, hi, None
+
+
+def app_key(u):
+    """The key the phone's DP costs against: madd class, else the GLOBAL
+    final-vowel id.
+
+    `wv._canon` is only the madd half. The app's `canonicalId` applies
+    `final_vowel_id` to EVERY unit, not only a word's last one - the measured
+    divergence from the harness rule (docs/STATUS.md, 20 October). The replay
+    must cost an alignment the way the phone costed it, or it invents
+    mismatches the phone never saw; `wv.align` alone costs by raw equality.
+    """
+    c = wv._canon(u)
+    if c != u:
+        return c
+    f = wv.final_vowel_id(u)
+    return f if f is not None else u
 
 
 def show_cause(o, path):
@@ -110,9 +143,6 @@ def show_cause(o, path):
               "the cause of each WRONG cannot be named. Re-recite on the build "
               "that writes it.")
         return
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import word_verdicts as wv
     # The app's own table: word_aligned_phonemes.json is what the runtime
     # ships, already tokenized, with the mushaf's word boundaries. The old
     # phrase-segmented table in the shootout weights is a different
@@ -149,7 +179,7 @@ def show_cause(o, path):
             continue
         flat = [u for wd in wlist for u in wd]
         uw2 = [j for j, wd in enumerate(wlist) for _ in wd]
-        lo, hi, why = judged_span(o, s_, a_)
+        lo, hi, why = judged_span(o, s_, a_, w.get("wt"))
         if why:
             print("  %-9s wu=%-5s window: NOT RECONSTRUCTABLE (%s). The record's"
                   " arrivals were pruned to the lock's vicinity, so the window this"
@@ -170,7 +200,8 @@ def show_cause(o, path):
             got = [e for e in span if e in unit_set]
             flat = [u for wd in wlist for u in wd]
             uw2 = [j for j, wd in enumerate(wlist) for _ in wd]
-            matched, wrong, _r2q, _e, _h, _nw = wv.align(got, flat, uw2)
+            matched, wrong, _r2q, _e, _h, _nw = wv.align(
+                [app_key(e) for e in got], [app_key(u) for u in flat], uw2)
             for k in range(len(flat)):
                 if uw2[k] != i_ - 1:
                     continue
@@ -190,9 +221,12 @@ def show_lag(o, path):
 
     `wt` says when a word was decided; `emMs` says when each emitted symbol
     arrived, on the same clock. The engine's delay is `wt` minus the arrival
-    of the LAST symbol in the judged window - after that symbol existed, any
-    delay is paint and poll cadence, not the engine. A record without `emMs`
-    cannot answer this, and the tool refuses rather than guesses.
+    of the last symbol in the ayah's FINAL window - a NEGATIVE value means the
+    word was decided before its ayah's audio finished, which is the ahead
+    rule working. This is deliberately NOT the judged window show_cause uses:
+    that one is clamped at `wt` (what the app could have seen), while this one
+    measures how early the decision came relative to the ayah's completion.
+    A record without `emMs` cannot answer this, and the tool refuses to guess.
     """
     words = [w for w in o.get("words", []) if "wt" in w]
     if not words:
@@ -313,12 +347,13 @@ def main():
         print("Blamed on the FIRST unit (%d):" % len(first_unit_words))
         print("  ", " ".join(first_unit_words[:24]))
     if last_unit_words:
-        print("Blamed on the LAST unit (%d):" % len(last_unit_words))
+        print("Charged at the second unit or later, wu=1000 (%d):"
+              % len(last_unit_words))
         print("  ", " ".join(last_unit_words[:24]))
     print()
-    print("A word blamed on its first unit at an ayah opening is the boundary")
-    print("artefact the harness already shows. A word blamed in the middle is a")
-    print("different fault, and the table or the pipeline is where it lives.")
+    print("The writer records only 0 or 1000, and 1000 means the first charge is")
+    print("not on the word's first unit - it does NOT say the charge is on the")
+    print("last one. Any finer reading of `wu` is a precision the record lacks.")
     return 0
 
 
