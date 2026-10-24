@@ -18,6 +18,9 @@ Four things, each with a fault that must turn it red:
   5. The record times each retained emission (`emMs`), the trim and the clear
      keep the times in lockstep with the log, and the tool splits the verdict
      lag with them - refusing, not guessing, when they are absent.
+  6. The fraction is real, not binary: the writer divides by the word's FULL
+     unit count and stamps the record "v":2, and every reader branches on that
+     stamp - a v1 1000 stays "the second unit or later", never "the last unit".
 
 Run: python3 engine/replay/device_blame_parity.py
 """
@@ -32,6 +35,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 VM = HERE.parent.parent / "android/app/src/main/java/com/iqra/quran/ui/PracticeViewModel.kt"
 MAP = HERE.parent.parent / "android/app/src/main/java/com/iqra/quran/ml/PhonemeMapper.kt"
+SR = HERE.parent.parent / "android/app/src/main/java/com/iqra/quran/ui/SessionReport.kt"
 TOOL = HERE / "device_blame.py"
 
 
@@ -48,6 +52,7 @@ def code(path):
 def main() -> int:
     vm = code(VM)
     mp = code(MAP)
+    sr = code(SR)
     bad = []
 
     raw = VM.read_text(encoding="utf-8")
@@ -129,6 +134,30 @@ def main() -> int:
          re.search(r"val wrongStartFrac: FloatArray", mp) is not None),
         ("the fraction is derived inside align, not guessed later",
          re.search(r"wrongStartFrac\[owner\]\s*=\s*pos", mp) is not None),
+        # v2: the fraction is of the word's FULL unit count. The v1 writer
+        # counted only the units up to the charged one, so the division was
+        # pos/pos and every `wu` came out 0 or 1000 - binary, unable to say
+        # where in a word the mismatch began (all ten device records through
+        # #258 measured exactly {0: 40, 1000: 71}). The stamp is what lets
+        # every reader branch instead of guessing which normalisation wrote
+        # the value it is holding.
+        ("the record stamps schema v2",
+         'sb.append("{\\"v\\":2,' in raw),
+        ("the fraction's denominator is the word's full unit count",
+         re.search(r"val wrongStartFrac[\s\S]{0,900}?for \(j in flat\.indices\) \{\s*"
+                   r"if \(wordOf\[j\] != owner\) continue", mp) is not None),
+        ("the old charge-position denominator is gone",
+         re.search(r"for \(j in 0\.\.k\)", mp) is None),
+        ("the tool branches on the record's version",
+         re.search(r'o\.get\("v", 1\) >= 2', TOOL.read_text(encoding="utf-8"))
+         is not None),
+        # SessionReport renders the bands on device; its v1 branch must say
+        # the record cannot place the charge rather than dress a binary 1000
+        # up as "the last letter" - the mislabel the 19 October pull caught.
+        ("the report admits a v1 record has no finer position",
+         re.search(r'"blamed past the first letter', sr) is not None),
+        ("the report's last-letter band is gated on v2",
+         re.search(r"r\.v < 2[\s\S]{0,200}?row\.wu >= 1000", sr) is not None),
     ]
     for name, ok in checks:
         if not ok:
@@ -198,6 +227,33 @@ def main() -> int:
             bad.append("device_blame.py crashes on a record without emission times")
         elif "cannot be split into engine time and paint time" not in r2.stdout:
             bad.append("a record without `emMs` does not get the refusal it needs")
+
+        # A v2 record: `wu` is now a true fraction of the word's own units.
+        # The tool must name the last unit exactly, place a mid-word fraction
+        # in its band, and never print the v1 binary caveat or the v1 bucket
+        # label for a record that does carry finer positions.
+        rec2 = dict(rec, v=2, words=[
+            {"key": "18:2:1", "st": "WRONG", "wu": 0},
+            {"key": "18:2:5", "st": "WRONG", "wu": 333},
+            {"key": "18:2:9", "st": "WRONG", "wu": 1000},
+        ])
+        p3 = Path(d) / "s_v2.json"
+        p3.write_text(json.dumps(rec2, ensure_ascii=False), encoding="utf-8")
+        r3 = subprocess.run([sys.executable, str(TOOL), str(p3)], capture_output=True, text=True)
+        out3 = r3.stdout
+        if r3.returncode != 0:
+            bad.append("device_blame.py failed on a v2 record: " + r3.stderr[-140:])
+        else:
+            if "WRONG words with a recorded blame position: 3" not in out3:
+                bad.append("the tool does not count a v2 record's WRONG words")
+            if "last unit" not in out3:
+                bad.append("a v2 wu=1000 is not named the word's last unit")
+            if "early (20-40%)" not in out3:
+                bad.append("a v2 mid-word fraction (333) does not land in its band")
+            if "no finer position" in out3 or "precision the" in out3:
+                bad.append("the v1 binary caveat is printed for a v2 record")
+            if "second unit or later" in out3:
+                bad.append("the v1 bucket label appears for a v2-only record")
 
     # The judged window must be the window at the VERDICT instant: the record's
     # final arrivals are later than what the app had heard. Word 18:4:2 was

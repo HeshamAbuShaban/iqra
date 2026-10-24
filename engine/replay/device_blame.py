@@ -14,10 +14,12 @@ artefact and a wrong phoneme produce the same verdict and different blame
 positions.
 
 So `wu` was added to the session record: the fraction of the word's own units at
-which the contradiction begins. The writer's normalisation is broken (it divides
-by the charge's own position, so the value is 0 or 1000 and nothing else - 1000
-means "the second unit or later", never "the last"), so this tool reports the
-value it has rather than pretending to a precision the record lacks.
+which the contradiction begins. Records stamped "v":2 (build 259 on) carry the
+true fraction - first unit 0, last unit 1000, positions between. v1 records
+were written with a broken normalisation (the denominator was the charge's own
+position, so the value is 0 or 1000 and nothing else - 1000 means "the second
+unit or later", never "the last"), so this tool reports the value each record's
+version can honestly give, never a precision the record lacks.
 
 Run:  adb shell run-as com.iqra.quran cat files/sessions/<file>.json > /tmp/x.json
       python3 engine/replay/device_blame.py /tmp/x.json [more.json ...]
@@ -33,14 +35,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import word_verdicts as wv  # noqa: E402
 
 
-def bucket(fr):
-    """Map a 0..1000 fraction to a position inside the word."""
+def bucket(fr, v2=False):
+    """Map a 0..1000 fraction to a position inside the word.
+
+    `v2` says which normalisation wrote the value: v2 fractions place the
+    charge exactly (1000 is the word's last unit), while a v1 1000 means only
+    "the second unit or later" and must not be dressed up as a position.
+    """
     if fr < 0:
         return "no blame recorded"
     if fr == 0:
         return "first unit"
     if fr >= 1000:
-        return "second unit or later (the writer records no finer position)"
+        return "last unit" if v2 else \
+            "second unit or later (v1 record: no finer position)"
     if fr <= 200:
         return "near the start (0-20%)"
     if fr <= 400:
@@ -286,6 +294,8 @@ def main():
     first_unit_words = []
     last_unit_words = []
     lats = []
+    saw_v1 = False
+    saw_v2 = False
     LAST_O = {}
     for path in sys.argv[1:]:
         try:
@@ -294,6 +304,9 @@ def main():
             print("skip %s: %s" % (path, e))
             continue
         LAST_O[path] = o
+        v2 = o.get("v", 1) >= 2
+        saw_v1 = saw_v1 or not v2
+        saw_v2 = saw_v2 or v2
         have_wu = any("wu" in w for w in o.get("words", []))
         have_wt = any("wt" in w for w in o.get("words", []))
         if not have_wu and not have_wt:
@@ -310,7 +323,7 @@ def main():
                 continue
             fr = w.get("wu", -1)
             total += 1
-            by_bucket[bucket(fr)] += 1
+            by_bucket[bucket(fr, v2)] += 1
             if fr == 0:
                 first_unit_words.append(w["key"])
             if fr >= 1000:
@@ -347,13 +360,22 @@ def main():
         print("Blamed on the FIRST unit (%d):" % len(first_unit_words))
         print("  ", " ".join(first_unit_words[:24]))
     if last_unit_words:
-        print("Charged at the second unit or later, wu=1000 (%d):"
-              % len(last_unit_words))
+        if saw_v2 and saw_v1:
+            print("wu=1000 (%d) - the last unit on a v2 record, 'the second "
+                  "unit or later' on a v1 one:" % len(last_unit_words))
+        elif saw_v2:
+            print("Charged at the word's last unit, wu=1000 (%d):"
+                  % len(last_unit_words))
+        else:
+            print("Charged at the second unit or later, wu=1000 (%d):"
+                  % len(last_unit_words))
         print("  ", " ".join(last_unit_words[:24]))
     print()
-    print("The writer records only 0 or 1000, and 1000 means the first charge is")
-    print("not on the word's first unit - it does NOT say the charge is on the")
-    print("last one. Any finer reading of `wu` is a precision the record lacks.")
+    if saw_v1:
+        print("v1 records carry only 0 or 1000: 1000 means the first charge is")
+        print("not on the word's first unit - it does NOT say the charge is on")
+        print("the last one. Any finer reading of a v1 `wu` is a precision the")
+        print("record lacks.")
     return 0
 
 

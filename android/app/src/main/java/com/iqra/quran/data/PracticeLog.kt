@@ -121,6 +121,14 @@ object PracticeLog {
      */
     data class Record(
         val name: String,
+        /**
+         * Record schema version. v2 writes `wu` as a true fraction of the
+         * word's own units (first unit 0, last 1000); v1's normalisation made
+         * the value binary, so a v1 `wu` of 1000 means only "past the first
+         * unit" - readers that care must branch here rather than trust the
+         * number. Absent from the oldest records, which are v1 by definition.
+         */
+        val v: Int = 1,
         val flushedAt: Long,
         val startedAt: Long,
         val lockAyah: Int,
@@ -193,6 +201,10 @@ object PracticeLog {
      * without it the record could say HOW MANY words were decided, never
      * WHICH word was decided when, and idea A ("a list of the recited words
      * against the actual words") could not exist on device.
+     *
+     * `wu` only carries its full meaning on v2 records (first unit 0, last
+     * 1000, fractions between); on v1 it was binary, and 1000 means only
+     * "past the first unit". See [Record.v].
      */
     data class WordRow(val key: String, val st: String, val wu: Int? = null, val wt: Int? = null)
         /**
@@ -721,6 +733,7 @@ object PracticeLog {
         }
         return Record(
             name = name,
+            v = o.optInt("v", 1),
             flushedAt = o.optLong("flushedAt", 0L),
             startedAt = o.optLong("startedAt", 0L),
             surahStart = o.optInt("surahStart", 0),

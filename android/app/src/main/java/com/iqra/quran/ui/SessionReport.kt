@@ -672,11 +672,15 @@ private fun RecitationLogCard(r: PracticeLog.Record, data: QuranData, c: IqraCol
                             )
                             // For a wrong word, where the mismatch began - the
                             // same bands device_blame uses, so the phone and the
-                            // read-back name the same place.
+                            // read-back name the same place. Only a v2 record
+                            // may claim the last letter or a half: v1's `wu` was
+                            // binary, and 1000 meant merely "past the first
+                            // unit" - rendering that as a position invented one.
                             if (row.st == "WRONG" && row.wu != null) {
                                 Text(
                                     when {
                                         row.wu == 0 -> "blamed at the word's first letter"
+                                        r.v < 2 -> "blamed past the first letter (older record: no finer position)"
                                         row.wu >= 1000 -> "blamed at the word's last letter"
                                         row.wu <= 500 -> "blamed in the word's first half"
                                         else -> "blamed in the word's second half"

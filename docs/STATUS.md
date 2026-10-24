@@ -1761,6 +1761,74 @@ user asked.
   surah heading, and masking that would take a line of the Qur'an off the
   page.
 
+## Shipped and measured, 24 October — the re-pull (18/18 blame positions, the borrow shape spreading) and `wu` made fractional (259)
+
+The ten device records (four #249, one #254, five #258 — 1,096,970 B, every
+size matching the phone's own listing) were pulled to `.iqra-records/258/`
+and read with the fixed `device_blame.py` (verdict-instant window, app-key
+costing) — the re-measure the 19 October entry owed after /tmp was wiped.
+
+- **The morning trio reproduces.** 545 words, 18 WRONG (Al-Imran 16,
+  Al-Baqarah 2, Al-Fatiha 0), the same blame positions, and the same two
+  named Baqarah charges (2:9:8 `ںںں`↔`ن`, 2:16:8 `هُ`↔`وَ`). 13 of the 18
+  charges name their pair inside the wt-clamped window; the 5 that cannot
+  are the borrow shape, next item.
+- **The borrow shape is bigger than 3:118.** All three 3:118 words print
+  window[219:275]: 50 of its 56 symbols are 3:117's audio (3:118's own
+  arrival is 269), so the charges the phone laid there cannot be evidenced
+  by the word's own window — the documented "pure borrow charges", seen
+  live. The same shape elsewhere: #249 surah 67 (67:9:4 and 67:19:7 with
+  every expected unit "(no symbol)"; 67:28:14 is the strongest case yet —
+  every unit MATCHED in the rebuilt window, yet the phone said WRONG),
+  #258's 2:19:10, and 16 of the first 40 detailed WRONG words in the
+  1,579-word surah-17 session. None of this is a new accusation against the
+  app: the trimmed, clamped window is an honest bound, and the first-word
+  guard's wide window is where those charges plausibly sit. It is the
+  per-word borrow test's opening dataset.
+- **Fresh #258, measured.** 111 WRONG across five records; the `wu`
+  histogram is exactly {0: 40, 1000: 71} — binary to the very last record
+  before the fix. Charges are heterogeneous single-unit mismatches, often
+  vowel/gemination class (`ضضَ`↔`ضَ` halved gemination, `يييَ`↔`يَ`, `ءَ`↔`اا`,
+  `ۥۥۥۥ`↔`ممممِ`); 2:21:11 had all five units charged. Verdict lag is
+  negative throughout — the engine decides during the recitation — with the
+  last values just touching +7/+32/+69 ms; feed cadence 311–567 ms. The
+  tool's 40-word detail cap left 60 of the surah-17 session's 100 WRONG
+  words unnamed; that is the cap, not an absence.
+- **The page-publish bounce is alive on #258.** Every publishing record
+  (4 of 5) reverses at least once; the surah-17 session reversed 8 times
+  across 20 publishes (294→293→294 … 304→305→304, the last pair both scoped
+  18:110, 1 s apart). The publish is carried by diagTail `page publish A →
+  B` rows, not by any frame field — the four #249 patterns (66→65→66,
+  1→2→1, 3→2→3, 4→3→4) were re-confirmed in the same pass.
+- **The pathological fence row did not reproduce.** One #258 record
+  (surah 112) opens with a foreign end row 57 s early, but it carries the
+  PREVIOUS session's own counters — a stale fence, not the #249 variant
+  that stamped this session's counters 2 h 27 min early (that one is still
+  in the #249 pulls, re-confirmed). Measured negative, recorded as such.
+- **`unjudgeableKeys` never regressed.** A top-level scan read `None` on all
+  ten records; the field lives at `counters.unjudgeableKeys` and fires
+  exactly when a session visits 2:1 — both such #258 sessions carry
+  `["2:1"]` with an arrival but no words for it, the #249 shape.
+- **A record with no end is a good record.** `s-1792489882625-1-#258.json`
+  (`ended=false`) is complete ~3 s past its last frame: the periodic-flush
+  guard wrote it where the 19 October failure mode once wiped one. Its 17
+  UNKNOWN words are consistent with a session left without a final pass.
+
+**Build 259 — `wu` made fractional.** `PhonemeMapper` divided the charge
+position by the units counted up to the charged unit, so every `wu` was 0 or
+1000. The denominator is now the word's FULL unit count: first unit 0, last
+unit 1000, fractions between, stamped `"v":2`. Readers branch on the stamp —
+`device_blame.py` names a v2 1000 "the last unit" and keeps the v1 reading
+("second unit or later") for old records; SessionReport no longer renders a
+v1 1000 as "the last letter" (the mislabel the 19 October pull caught) and
+says instead that the record has no finer position; PracticeLog carries the
+version on `Record.v`. `device_blame_parity` holds all of it: the v2 stamp,
+the full-count denominator, the `0..k` denominator gone, the tool's version
+branch and both report bands — each fault-injected red (stamp, denominator,
+tool branch, report gate, bucket label) — plus a v2 synthetic record that
+must land 333 in "early (20-40%)" and 1000 in "last unit" with no v1 caveat.
+Gate 42/42 green; device verification jointly with the session-sound build.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

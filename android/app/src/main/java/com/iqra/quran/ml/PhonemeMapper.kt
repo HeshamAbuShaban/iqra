@@ -576,6 +576,14 @@ object PhonemeMapper {
         // Where inside each word the contradiction begins, normalised. Built
         // here because `wrong` is local to align and the caller needs the value
         // per word, in the same pass that builds the flags above.
+        //
+        // The denominator is the word's FULL unit count: first unit 0, last
+        // unit 1, fractions between. It used to count only the units up to the
+        // charged one, so the division was pos/pos or 0/0 and every value came
+        // out 0 or 1000 - binary, unable to say where in the word the mismatch
+        // began (measured on all ten device records through #258: the `wu`
+        // histogram was exactly {0: 40, 1000: 71}). Record "v":2 carries the
+        // fraction; v1 readers keep the binary reading.
         val wrongStartFrac = FloatArray(m) { -1f }
         for (k in flat.indices) {
             val owner = wordOf[k]
@@ -584,7 +592,7 @@ object PhonemeMapper {
             var total = 0
             var pos = 0
             var found = false
-            for (j in 0..k) {
+            for (j in flat.indices) {
                 if (wordOf[j] != owner) continue
                 total++
                 if (j == k) { pos = total - 1; found = true }

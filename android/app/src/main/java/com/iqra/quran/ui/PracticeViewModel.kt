@@ -728,7 +728,11 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val f = File(dir, currentSessionName())
         val tmp = File(dir, currentSessionName() + ".tmp")
         val sb = StringBuilder(FRAME_RING * 96 + 4096)
-        sb.append("{\"v\":1,\"build\":\"").append(buildTag).append('"')
+        // "v":2 - `wu` is a fraction of the word's own units (first unit 0,
+        // last 1000). The v1 writer's denominator was the charge's own
+        // position, so its `wu` was only ever 0 or 1000; readers branch on
+        // this field rather than guessing which normalisation wrote a value.
+        sb.append("{\"v\":2,\"build\":\"").append(buildTag).append('"')
             .append(",\"startedAt\":").append(sessionStartedAtMs)
             .append(",\"flushedAt\":").append(System.currentTimeMillis())
             .append(",\"ended\":").append(ended)
@@ -885,7 +889,8 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             if (!first) sb.append(',')
             first = false
             // WRONG words carry WHERE in the word the mismatch began, as a
-            // 0..1000 fraction of its own units. A whole-corpus sweep and the
+            // 0..1000 fraction of its own units: 0 the first unit, 1000 the
+            // last, fractions between ("v":2). A whole-corpus sweep and the
             // device disagreed about which words are accused - the first word of
             // an ayah, 42% in the harness and 10% on the phone - and neither
             // figure could say where the mismatch sat. `wu` answers that from
