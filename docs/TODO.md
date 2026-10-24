@@ -197,8 +197,20 @@ git) and measured with the app's own alignment. Details in `docs/STATUS.md`,
    first-word guard's wide window reaches back into the previous ayah's own
    audio, and four of Al-Imran's sixteen WRONG verdicts were charged there.
    A whole-window test was measured and rejected (621/621 firings, 25 sound
-   CORRECT verdicts lost). The shape to try next: does the emission charged
-   to THIS word lie before the previous ayah's recorded span end?
+   CORRECT verdicts lost). **The per-word rule is now projected
+   (`borrow_projection.py`, 24/25 Oct): of 46 reproduced charges across
+   eight pulled sessions it would drop 18 and flip 13 accusations clean;
+   15 sit 6+ symbols before their ayah's arrival, 2 within poll noise —
+   implement MARGIN-GATED (excuse only beyond ~5 symbols), since a lagging
+   arrival stamp must not excuse a real mistake.** Implementation sketch:
+   PhonemeMapper.align already yields per-charge query indices; thread the
+   absolute emission index of each heard symbol alongside, and where a
+   charge lands before the ayah's own arrival index (the same map
+   `ayahArrival` the record carries), do not count it toward the word's
+   `bad` — it cannot cost a CORRECT verdict, since only already-WRONG
+   words lose charges. Verify on the harness corpus before/after and on
+   the eight pulled records via the projection's expected counts, then
+   device-verify with the user before install.
 2. **DONE 20 October — `device_blame.py` built a window the app never saw.**
    It used the record's final arrivals and spans (123 symbols past the judged
    audio) and a DP that costed by raw string equality; that is what made
