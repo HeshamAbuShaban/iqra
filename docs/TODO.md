@@ -210,7 +210,18 @@ git) and measured with the app's own alignment. Details in `docs/STATUS.md`,
    `bad` — it cannot cost a CORRECT verdict, since only already-WRONG
    words lose charges. Verify on the harness corpus before/after and on
    the eight pulled records via the projection's expected counts, then
-   device-verify with the user before install.
+   device-verify with the user before install. THE THREADING, traced 26
+   Oct: `align(emitted, expected, probs)` gains `ownStart: Int =
+   Int.MIN_VALUE`; the caller passes the window's absolute start (the
+   `trimmed` ayahObs already computes, :1730 records it for the locked
+   ayah) and the ayah's own arrival (`ayahArrival["$surah:$ayah"]`);
+   after `refToQuery`, a charge at absolute index `< ownArrival - 5` is
+   not counted in `bad` (the unit becomes unheard — the verdict then
+   falls to SKIPPED/UNKNOWN, never an accusation). The coverage probes
+   (:3162/:3221/:3266/:3382/:3403) are UNTOUCHED: dropping charges never
+   moves `unitsMatched`, so the lock policy cannot drift. Mirror the rule
+   in word_verdicts.align for the harness, add a fault-injected parity
+   check, and bump the doc check counts.
 2. **DONE 20 October — `device_blame.py` built a window the app never saw.**
    It used the record's final arrivals and spans (123 symbols past the judged
    audio) and a DP that costed by raw string equality; that is what made
