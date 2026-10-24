@@ -1288,6 +1288,7 @@ fun ReaderScreen(
     val data = vm.data.collectAsStateWithLifecycle().value
     val hide by vm.hideVerse.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
+    var showPlaySheet by remember { mutableStateOf(false) }
     val statusMap by vm.statusMap.collectAsStateWithLifecycle()
     val sessionEpoch by vm.sessionEpoch.collectAsStateWithLifecycle()
     val advisoryMap by vm.advisoryMap.collectAsStateWithLifecycle()
@@ -1607,13 +1608,23 @@ fun ReaderScreen(
                 playing = playingSurah == surah,
                 loading = playLoading && playingSurah != surah,
                 bookmarked = bookmarkPages.contains(shownPage),
-                onPlayToggle = { vm.togglePlaySurah(surah) },
+                // The play affordance opens the pre-play sheet - reciter, start
+                // ayah and speed are checked BEFORE anything sounds, per call.
+                // One-tap play survives in the ayah sheet's "Listen from this
+                // ayah" and in the audio library's rows.
+                onPlayToggle = { showPlaySheet = true },
                 onToggleBookmark = { vm.toggleBookmark(shownPage) },
                 onBack = onBack,
                 onToggleNight = { night = !night; ReaderPrefs.setNightMode(ctx, night) },
                 night = night,
                 offset = chromeOffset,
             )
+            if (showPlaySheet) {
+                ReferencePlaySheet(
+                    vm, surah,
+                    ayahCount = surahInfo?.ayahCount ?: 1,
+                ) { showPlaySheet = false }
+            }
             // A failed reference-audio start used to stop silently, and an ayah
             // seek on a reciter without timings would too. The pill names which
             // it was; it dismisses itself or on tap.
@@ -1994,6 +2005,143 @@ private fun SheetAction(icon: ImageVector, label: String, onClick: () -> Unit) {
         Icon(icon, null, tint = accentColor)
         Spacer(Modifier.width(14.dp))
         Text(label, fontSize = 16.sp)
+    }
+}
+
+/**
+ * The pre-play sheet: who recites, where it starts, how fast - checked before
+ * anything sounds, per call. The header's play button used to stream the
+ * Settings reciter from the first ayah with no chance to look; the sheet is
+ * the "specify and check" step, with one-tap play still available from the
+ * ayah sheet and the library. Playing this surah already turns the primary
+ * action into Stop, so the sheet is also the honest way to see what is
+ * sounding and stop it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReferencePlaySheet(
+    vm: PracticeViewModel,
+    surah: Int,
+    ayahCount: Int,
+    onDismiss: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
+    var reciterId by remember { mutableStateOf(AudioPrefs.reciter(ctx)) }
+    var ayah by remember { mutableIntStateOf(1) }
+    var speed by remember { mutableIntStateOf(AudioPrefs.speedPercent(ctx)) }
+    val seekable = remember(reciterId) { AyahTimings.isSupported(reciterId) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Text("Listen to the recitation", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Reference recitation of surah $surah - a reciter's voice, not yours. " +
+                    "Nothing you play here is judged as your recitation.",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(14.dp))
+
+            Text("Reciter", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Reciters.ALL.forEach { r ->
+                    val on = r.id == reciterId
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                if (on) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable { reciterId = r.id }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text(
+                            r.name,
+                            fontSize = 12.sp,
+                            color = if (on) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Start from ayah", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (ayah == 1) "the beginning" else "ayah $ayah",
+                        fontSize = 15.sp,
+                    )
+                }
+                OutlinedIconButton(onClick = { ayah = (ayah - 1).coerceIn(1, ayahCount) }) {
+                    Icon(Icons.Filled.Remove, "Earlier ayah")
+                }
+                Spacer(Modifier.width(10.dp))
+                OutlinedIconButton(onClick = { ayah = (ayah + 1).coerceIn(1, ayahCount) }) {
+                    Icon(Icons.Filled.Add, "Later ayah")
+                }
+            }
+            Text(
+                if (seekable) "This reciter has per-ayah timings, so playback starts at the chosen ayah."
+                else "This reciter has no per-ayah timings, so playback starts at the surah's beginning.",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(14.dp))
+
+            Text("Speed", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(75, 100, 125, 150).forEach { pct ->
+                    val on = pct == speed
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                if (on) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable { speed = pct }
+                            .padding(horizontal = 14.dp, vertical = 7.dp)
+                    ) {
+                        Text(
+                            if (pct % 100 == 0) "${pct / 100}×" else "${pct / 100.0}×",
+                            fontSize = 12.sp,
+                            color = if (on) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+
+            val isPlayingThis = playingSurah == surah
+            Button(
+                onClick = {
+                    AudioPrefs.setReciter(ctx, reciterId)
+                    AudioPrefs.setSpeedPercent(ctx, speed)
+                    when {
+                        isPlayingThis -> vm.togglePlaySurah(surah)
+                        ayah == 1 -> vm.togglePlaySurah(surah)
+                        else -> vm.playFromAyah(surah, ayah)
+                    }
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    if (isPlayingThis) "Stop the recitation"
+                    else if (ayah == 1) "Play surah $surah from the beginning"
+                    else "Play surah $surah from ayah $ayah",
+                )
+            }
+        }
     }
 }
 

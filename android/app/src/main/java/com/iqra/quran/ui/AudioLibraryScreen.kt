@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.iqra.quran.data.AudioPrefs
 import com.iqra.quran.data.AudioStore
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.Reciters
@@ -74,6 +75,7 @@ fun AudioLibraryScreen(
     var sort by remember { mutableStateOf(AudioSort.Surah) }
     var confirmDeleteEntry by remember { mutableStateOf<AudioStore.Entry?>(null) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
+    var confirmKeepReciter by remember { mutableStateOf<String?>(null) }
     val entries by produceState(emptyList<AudioStore.Entry>(), refresh) {
         value = withContext(Dispatchers.IO) { AudioStore.list(ctx) }
     }
@@ -89,6 +91,14 @@ fun AudioLibraryScreen(
         }
     }
     val totalBytes = entries.sumOf { it.bytes }
+    // Per-reciter totals: switching reciters used to strand the old reciter's
+    // files silently - the screen showed one blended total, so the cost of a
+    // reciter you no longer listen to was invisible.
+    val byReciter = remember(entries) {
+        entries.groupBy { it.reciterId }
+            .map { (id, es) -> Triple(id, es.size, es.sumOf { it.bytes }) }
+            .sortedByDescending { it.third }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -154,6 +164,31 @@ fun AudioLibraryScreen(
                             .clip(RoundedCornerShape(16.dp))
                             .clickable { confirmDeleteAll = true }
                             .padding(horizontal = 12.dp, vertical = 7.dp),
+                    )
+                    if (byReciter.size > 1) {
+                        val currentReciter = AudioPrefs.reciter(ctx)
+                        val others = byReciter.filter { it.first != currentReciter }
+                        if (others.isNotEmpty()) {
+                            Text(
+                                "Delete other reciters",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable { confirmKeepReciter = currentReciter }
+                                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                // The blended total split by whose voice it is.
+                byReciter.forEach { (id, count, bytes) ->
+                    Text(
+                        "${Reciters.byId(id).name}: $count surah${if (count == 1) "" else "s"} · " +
+                            fmtLibBytes(bytes),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                     )
                 }
                 Spacer(Modifier.height(6.dp))
@@ -224,6 +259,33 @@ fun AudioLibraryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmDeleteEntry = null }) { Text("Keep") }
+            },
+        )
+    }
+    if (confirmKeepReciter != null) {
+        val keep = confirmKeepReciter!!
+        val doomed = entries.filter { it.reciterId != keep }
+        val doomedBytes = doomed.sumOf { it.bytes }
+        AlertDialog(
+            onDismissRequest = { confirmKeepReciter = null },
+            title = { Text("Keep only ${Reciters.byId(keep).name}?") },
+            text = {
+                Text(
+                    "${doomed.size} surah${if (doomed.size == 1) "" else "s"} by other reciters " +
+                        "(${fmtLibBytes(doomedBytes)}) will be removed. They stream " +
+                        "again if played later.",
+                    fontSize = 13.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    doomed.forEach { AudioStore.delete(ctx, it) }
+                    confirmKeepReciter = null
+                    refresh++
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmKeepReciter = null }) { Text("Keep") }
             },
         )
     }
