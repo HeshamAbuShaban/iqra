@@ -1863,6 +1863,38 @@ silence). Desktop replay export copies the WAV beside the page and states a
 missing one rather than showing a silent bar. Device verification is the
 joint recitation, next.
 
+## Measured on the device, 24 October — the joint recitation passed (three sessions on 260)
+
+The user recited three sessions on build 260; all three pulled with their
+WAVs (15–55 KB records, 1.6–5 MB audio; the phone's prune has since dropped
+the oldest #249 files, which are safe in `.iqra-records/258/`).
+
+- **`wu` is fractional on real recitation.** The surah-76 session's seven
+  WRONG words carry [0, 166, 200, 400, 600, 800, 833] — six distinct
+  fractions where v1 could only have said 0 or 1000; the surah-74 session
+  carries [400, 1000, 1000]. `device_blame.py` reads v2 records with the
+  exact buckets: "near the start", "middle", "late", "last unit" all appear,
+  and no v1 caveat prints. The accusation can finally say where in the word
+  it sits.
+- **Every WAV agrees with its record.** `session_wav_parity --verify` passes
+  on all three pairs: RIFF/fmt/data sizes patched, mono 16 kHz 16-bit, frame
+  count equal to `audioSamples`, `audioStartMs` present.
+- **The clock anchor is honest.** Audio starts 2.5 s, 2.6 s and 0.2 s into
+  its session (the mic opens after the session does — the first-write stamp
+  working), and every verdict's `wt` maps inside its WAV's duration
+  (0.2–105.6 s of 49.5/106.6/154.9 s files).
+- **The report can now be heard (261).** PracticeLog parses the audio triple;
+  the report gains a "Session audio" card (play the whole recitation; states
+  when a named file is gone rather than offering a dead button) and, on every
+  WRONG row with a decision time, "hear it" — the 2.5 s before the verdict,
+  the audio the judged window was built from. One MediaPlayer per screen;
+  old records render exactly as before. Four more faults injected red
+  (parser triple, clock anchor, WRONG-only gating, missing-file wording).
+- **Back returns where you came from.** The report's back button hard-coded
+  "progress": finishing a recitation and pressing back dropped the reciter
+  into the history list. The report now records its origin (progress list or
+  just-finished session) and returns there.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

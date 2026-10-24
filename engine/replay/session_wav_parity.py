@@ -40,6 +40,8 @@ VM = ROOT / "android/app/src/main/java/com/iqra/quran/ui/PracticeViewModel.kt"
 REC = ROOT / "android/app/src/main/java/com/iqra/quran/audio/AudioRecorder.kt"
 WAV = ROOT / "android/app/src/main/java/com/iqra/quran/audio/SessionWavWriter.kt"
 MAIN = ROOT / "android/app/src/main/java/com/iqra/quran/ui/MainActivity.kt"
+PL = ROOT / "android/app/src/main/java/com/iqra/quran/data/PracticeLog.kt"
+SR = ROOT / "android/app/src/main/java/com/iqra/quran/ui/SessionReport.kt"
 EXPORT = HERE / "replay_export.py"
 
 
@@ -140,6 +142,8 @@ def main() -> int:
     rec_src = code(REC)
     wav_src = code(WAV)
     main_src = code(MAIN)
+    pl_src = code(PL)
+    sr = code(SR)
     raw_vm = VM.read_text(encoding="utf-8")
     export_src = EXPORT.read_text(encoding="utf-8")
     bad = []
@@ -186,6 +190,20 @@ def main() -> int:
         # the indicator tells the reciter the mic is being KEPT
         ("the listening row marks capture when the tee is live",
          'if (sessionSound) " · REC"' in MAIN.read_text(encoding="utf-8")),
+        # the report can hear it: the reader parses the triple, playback is
+        # anchored on the record's clock, the per-row affordance is limited to
+        # WRONG rows with a decision time, and a named-but-missing file is
+        # STATED rather than offered as a button that does nothing.
+        ("the reader parses the audio triple",
+         all(s in pl_src for s in
+             ('optString("audioFile"', 'optLong("audioStartMs"', 'optLong("audioSamples"'))),
+        ("the report anchors playback on the record's clock",
+         "r.audioStartMs - r.startedAt" in sr),
+        ("per-row playback is limited to wrong words with a decision time",
+         re.search(r'audioAvailable && row\.st == "WRONG" && row\.wt != null', sr)
+         is not None),
+        ("a named-but-missing WAV is stated, not played",
+         "no longer on this device" in sr),
         # the exporter copies the WAV when present and says so when not
         ("the replay exporter carries the WAV beside the record",
          "shutil.copy(wav_src, out_dir / \"session.wav\")" in export_src),

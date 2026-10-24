@@ -26,10 +26,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,7 +53,10 @@ import com.iqra.quran.ui.theme.CompareBars
 import com.iqra.quran.ui.theme.IqraColors
 import com.iqra.quran.ui.theme.LocalIqraColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * One session, in full.
@@ -96,6 +101,48 @@ fun SessionReportScreen(
         rec = withContext(Dispatchers.IO) { PracticeLog.record(ctx, recordName) }
         loaded = true
     }
+
+    // The session's own audio, when the record names it and the WAV is still
+    // on this device. One player for the whole screen - two rows sounding at
+    // once would be noise, not review. `hear` plays a window of the WAV whose
+    // position is computed from the record's own clock: the WAV's first
+    // sample sits at `audioStartMs`, so record-time t sounds at
+    // t - (audioStartMs - startedAt) into the file.
+    val wavFile = remember(rec) {
+        val f = rec?.audioFile?.let { File(ctx.filesDir, "sessions/$it") }
+        if (f != null && f.isFile) f else null
+    }
+    val player = remember { android.media.MediaPlayer() }
+    var playingKey by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val hear: (String, Int, Int) -> Unit = hear@{ key, startMs, durMs ->
+        if (playingKey == key) {
+            runCatching { player.stop() }
+            playingKey = null
+            return@hear
+        }
+        val f = wavFile ?: return@hear
+        val maxMs = ((rec?.audioSamples ?: 0L) / 16L).toInt()
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                player.reset()
+                player.setDataSource(f.absolutePath)
+                player.prepare()
+                player.seekTo(startMs.coerceIn(0, maxMs.coerceAtLeast(0)))
+                player.start()
+            }.onSuccess {
+                playingKey = key
+                delay(durMs.toLong())
+                if (playingKey == key) {
+                    runCatching { player.stop() }
+                    playingKey = null
+                }
+            }.onFailure {
+                playingKey = null
+            }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { player.release() } }
 
     Scaffold(
         containerColor = c.ground,
@@ -152,10 +199,13 @@ fun SessionReportScreen(
                 if (r.frames > 0 || r.wordRows.any { it.wt != null }) {
                     item { ObserverCard(c, onOpenObserver) }
                 }
+                if (r.audioFile != null) {
+                    item { SessionAudioCard(r, c, wavFile, playingKey, hear) }
+                }
                 if (r.perAyah.isNotEmpty()) item { AyahCard(r, c) }
                 item { BreakdownCard(r, c) }
                 item { MissesCard(r, data, c) }
-                if (r.wordRows.isNotEmpty()) item { RecitationLogCard(r, data, c) }
+                if (r.wordRows.isNotEmpty()) item { RecitationLogCard(r, data, c, wavFile != null, playingKey, hear) }
                 item {
                     Panel(c) {
                         TextButton(onClick = {
@@ -594,6 +644,54 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
 
 
 /**
+ * The session's own audio, kept on this device only. Play the whole
+ * recitation, or - on any wrong word in the log below - the 2.5 s before its
+ * verdict, which is the audio the engine judged that word against. A record
+ * that predates the capture shows no card at all; a record that names audio
+ * whose file is gone says so rather than offering a button that does nothing.
+ */
+@Composable
+private fun SessionAudioCard(
+    r: PracticeLog.Record,
+    c: IqraColors,
+    wavFile: File?,
+    playingKey: String?,
+    hear: (String, Int, Int) -> Unit,
+) {
+    Panel(c) {
+        Text("Session audio", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+        Spacer(Modifier.height(4.dp))
+        if (wavFile == null) {
+            Text(
+                "This record names audio (\"${r.audioFile}\"), but the file is no longer on this device.",
+                fontSize = 11.sp, color = c.inkFaint,
+            )
+            return@Panel
+        }
+        val durSec = r.audioSamples / 16000L
+        Text(
+            "Your recitation was kept on this device for this session - never uploaded.",
+            fontSize = 11.sp, color = c.inkFaint,
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { hear("session", 0, (r.audioSamples / 16L).toInt() + 500) }) {
+                Text(
+                    if (playingKey == "session") "■ stop" else "▶ play session",
+                    fontSize = 13.sp, color = c.accent,
+                )
+            }
+            Text(
+                "%d:%02d · words below can be heard 2.5 s around their verdict"
+                    .format(durSec / 60, durSec % 60),
+                fontSize = 10.sp, color = c.inkFaint,
+            )
+        }
+    }
+}
+
+
+/**
  * The recitation log — the words as the engine saw them, in the order it
  * decided them.
  *
@@ -613,7 +711,14 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
  * actually heard, sound by sound) are the desktop replay's cause panel.
  */
 @Composable
-private fun RecitationLogCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
+private fun RecitationLogCard(
+    r: PracticeLog.Record,
+    data: QuranData,
+    c: IqraColors,
+    audioAvailable: Boolean,
+    playingKey: String?,
+    hear: (String, Int, Int) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     val timed = r.wordRows.filter { it.wt != null }.sortedBy { it.wt }
     val untimed = r.wordRows.filter { it.wt == null }
@@ -687,6 +792,21 @@ private fun RecitationLogCard(r: PracticeLog.Record, data: QuranData, c: IqraCol
                                     },
                                     fontSize = 10.sp, color = c.inkFaint,
                                 )
+                            }
+                            // Hear what the model heard: the 2.5 s of room
+                            // audio before this verdict - the audio the judged
+                            // window was built from. WRONG rows only; the
+                            // session card above plays the whole recitation.
+                            if (audioAvailable && row.st == "WRONG" && row.wt != null) {
+                                val key = "w:" + row.key
+                                val into = ((row.wt - 2500) - (r.audioStartMs - r.startedAt))
+                                    .toInt().coerceAtLeast(0)
+                                TextButton(onClick = { hear(key, into, 2600) }) {
+                                    Text(
+                                        if (playingKey == key) "■ stop" else "▶ hear it",
+                                        fontSize = 10.sp, color = c.accent,
+                                    )
+                                }
                             }
                             if (row.wt == null) {
                                 Text("no decision time in this record", fontSize = 10.sp, color = c.inkFaint)

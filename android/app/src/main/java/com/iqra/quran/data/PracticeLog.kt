@@ -185,6 +185,18 @@ object PracticeLog {
         val perAyah: Map<String, IntArray>,
         /** "surah:ayah:word" -> [times missed, session startedAt]. Misses ONLY - see parseRecord. */
         val hardWords: Map<String, LongArray>,
+        /**
+         * The session's own audio, when the record names it (build 260 on): a
+         * WAV beside the record in filesDir/sessions/. `audioStartMs` is the
+         * wall time of the WAV's FIRST sample on the record's clock, so a
+         * verdict at `wt` is heard at `wt - (audioStartMs - startedAt)` into
+         * the file; `audioSamples` at 16 kHz gives the duration. Null/0 on
+         * older records - no audio was kept, and readers must say that rather
+         * than show a silent player.
+         */
+        val audioFile: String? = null,
+        val audioStartMs: Long = 0L,
+        val audioSamples: Long = 0L,
         /** Engine advisories from this session - things the engine noticed but would not decide. */
         val advisories: List<AdvisoryNote> = emptyList(),
         /** Every word row in written order, including SKIPPED/UNKNOWN (the population, not the score). */
@@ -752,6 +764,9 @@ object PracticeLog {
             correct = correct, wrong = wrong, skipped = skipped, unknown = unknown,
             judgedWords = c.optInt("judgedWords", 0),
             perSurah = per, perAyah = perAyah, hardWords = hard,
+            audioFile = o.optString("audioFile", "").ifEmpty { null },
+            audioStartMs = o.optLong("audioStartMs", 0L),
+            audioSamples = o.optLong("audioSamples", 0L),
             wordRows = rows,
             advisories = run {
                 val arr = o.optJSONArray("advisories") ?: org.json.JSONArray()

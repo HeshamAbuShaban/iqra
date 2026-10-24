@@ -623,6 +623,11 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
     var screenCount by rememberSaveable { mutableStateOf(7) }
     // Session record file name for the single-session report route.
     var screenReport by rememberSaveable { mutableStateOf("") }
+    // Where the report was opened from, so its back button returns there. It
+    // used to hard-code "progress": finishing a recitation (the report opens
+    // straight from Live) and pressing back dumped the reciter into the
+    // history list, two contexts away from where they stood.
+    var reportFrom by rememberSaveable { mutableStateOf("progress") }
     // Captured once, because the screen-dispatch lambdas below are plain lambdas
     // and cannot read a composition local.
     val appCtx = LocalContext.current
@@ -681,8 +686,8 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             PracticeScreen(
                 data = d,
                 onOpen = { s, p -> goReader(s, p, null) },
-                onOpenSession = { name -> screenReport = name; screenName = "report" },
-            ) { screenName = "picker" }
+                onOpenSession = { name -> screenReport = name; reportFrom = "progress"; screenName = "report" },
+            ) { reportFrom = "progress"; screenName = "picker" }
         }
         is Screen.Choose -> data?.let { d ->
             ChooseScreen(
@@ -699,7 +704,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             SessionReportScreen(
                 d, screenReport,
                 onOpenObserver = { screenName = "observer" },
-            ) { screenName = "progress" }
+            ) { screenName = reportFrom }
         }
         // The observer reads the same record file as the report, back into it.
         is Screen.Observer -> data?.let { d ->
@@ -745,7 +750,11 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                 // of 114 surahs instead is how a report screen goes unused.
                 onFinished = {
                     val name = PracticeLog.latestRecordName(appCtx)
-                    if (name != null) { screenReport = name; screenName = "report" }
+                    if (name != null) {
+                        // Opened from a session that just ended, so back goes
+                        // home - returning "live" would re-enter a dead screen.
+                        screenReport = name; reportFrom = "picker"; screenName = "report"
+                    }
                     else screenName = "progress"
                 },
             )
