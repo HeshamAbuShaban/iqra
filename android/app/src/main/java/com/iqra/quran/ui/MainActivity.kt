@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.pager.HorizontalPager
@@ -119,11 +120,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.data.AudioPrefs
 import com.iqra.quran.data.AyahBookmarks
+import com.iqra.quran.data.AyahTimings
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
 import com.iqra.quran.data.HighlightLayer
 import com.iqra.quran.data.PracticeLog
+import com.iqra.quran.data.Reciters
 import com.iqra.quran.data.WordStatus
 import com.iqra.quran.data.GlyphCoords
 import androidx.compose.runtime.CompositionLocalProvider
@@ -2110,11 +2113,11 @@ private fun ReferencePlaySheet(
                     )
                 }
                 OutlinedIconButton(onClick = { ayah = (ayah - 1).coerceIn(1, ayahCount) }) {
-                    Icon(Icons.Filled.Remove, "Earlier ayah")
+                    Text("−", fontSize = 20.sp)
                 }
                 Spacer(Modifier.width(10.dp))
                 OutlinedIconButton(onClick = { ayah = (ayah + 1).coerceIn(1, ayahCount) }) {
-                    Icon(Icons.Filled.Add, "Later ayah")
+                    Text("+", fontSize = 20.sp)
                 }
             }
             Text(
