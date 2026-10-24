@@ -1,7 +1,9 @@
 package com.iqra.quran.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +42,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextDirection
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -54,6 +59,7 @@ import com.iqra.quran.ui.theme.IqraColors
 import com.iqra.quran.ui.theme.LocalIqraColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -143,6 +149,27 @@ fun SessionReportScreen(
         }
     }
     DisposableEffect(Unit) { onDispose { player.release() } }
+    // The dashboard's live position, polled only while the whole session
+    // plays. A clip ("hear it") does not move the session scrubber: it is a
+    // window into the middle of the recording, not the transport.
+    var sessionPosMs by remember { mutableStateOf(0) }
+    LaunchedEffect(playingKey) {
+        if (playingKey == "session") {
+            while (isActive) {
+                sessionPosMs = runCatching { player.currentPosition }.getOrDefault(0)
+                delay(200)
+            }
+        } else {
+            sessionPosMs = 0
+        }
+    }
+    val sessionDurMs = ((rec?.audioSamples ?: 0L) / 16L).toInt()
+    // Scrub from the dashboard: seek the running transport, or start one from
+    // the chosen moment - a control that does nothing when stopped is a lie.
+    val seekSession: (Int) -> Unit = { ms ->
+        if (playingKey == "session") runCatching { player.seekTo(ms) }
+        else hear("session", ms, (sessionDurMs - ms).coerceAtLeast(0) + 500)
+    }
 
     Scaffold(
         containerColor = c.ground,
@@ -192,15 +219,19 @@ fun SessionReportScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item { VerdictCard(r, c) }
-                // The observer replays the record's timed walk. A record with
-                // no timed walk (an old writer, or a session that never let
-                // the engine look at a window) has nothing to replay, and the
-                // door is hidden rather than opening on an empty room.
+                // The sound dashboard sits directly under the verdicts: the
+                // user's first question after the score is "play me my
+                // recitation", and the ticks show where the mistakes live in
+                // the recording.
+                if (r.audioFile != null) {
+                    item {
+                        SessionAudioCard(
+                            r, c, wavFile, playingKey, hear, sessionPosMs, sessionDurMs, seekSession,
+                        )
+                    }
+                }
                 if (r.frames > 0 || r.wordRows.any { it.wt != null }) {
                     item { ObserverCard(c, onOpenObserver) }
-                }
-                if (r.audioFile != null) {
-                    item { SessionAudioCard(r, c, wavFile, playingKey, hear) }
                 }
                 if (r.perAyah.isNotEmpty()) item { AyahCard(r, c) }
                 item { BreakdownCard(r, c) }
@@ -647,11 +678,14 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
 
 
 /**
- * The session's own audio, kept on this device only. Play the whole
- * recitation, or - on any wrong word in the log below - the 2.5 s before its
- * verdict, which is the audio the engine judged that word against. A record
- * that predates the capture shows no card at all; a record that names audio
- * whose file is gone says so rather than offering a button that does nothing.
+ * The sound dashboard: the session's own audio, kept on this device only,
+ * with the transport the report was missing. The tick strip plots every
+ * wrong verdict at the moment it was decided, so the shape of a recitation's
+ * mistakes is visible before a single second plays; tapping the strip or
+ * dragging the slider starts or moves the transport there, and every wrong
+ * word in the log below offers its own 2.5 s window. A record that predates
+ * the capture shows no card at all; a record that names audio whose file is
+ * gone says so rather than offering a button that does nothing.
  */
 @Composable
 private fun SessionAudioCard(
@@ -660,6 +694,9 @@ private fun SessionAudioCard(
     wavFile: File?,
     playingKey: String?,
     hear: (String, Int, Int) -> Unit,
+    posMs: Int,
+    durMs: Int,
+    onSeek: (Int) -> Unit,
 ) {
     Panel(c) {
         Text("Session audio", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
@@ -671,23 +708,61 @@ private fun SessionAudioCard(
             )
             return@Panel
         }
-        val durSec = r.audioSamples / 16000L
         Text(
-            "Your recitation was kept on this device for this session - never uploaded.",
+            "Your recitation was kept on this device for this session - never uploaded. " +
+                "Red ticks are wrong verdicts, placed when they were decided.",
             fontSize = 11.sp, color = c.inkFaint,
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { hear("session", 0, (r.audioSamples / 16L).toInt() + 500) }) {
+            TextButton(onClick = { hear("session", 0, durMs + 500) }) {
                 Text(
                     if (playingKey == "session") "■ stop" else "▶ play session",
                     fontSize = 13.sp, color = c.accent,
                 )
             }
             Text(
-                "%d:%02d · words below can be heard 2.5 s around their verdict"
-                    .format(durSec / 60, durSec % 60),
-                fontSize = 10.sp, color = c.inkFaint,
+                "%d:%02d / %d:%02d".format(
+                    posMs / 60000, posMs / 1000 % 60,
+                    durMs / 60000, durMs / 1000 % 60,
+                ),
+                fontSize = 11.sp, color = c.inkFaint, fontFamily = FontFamily.Monospace,
+            )
+        }
+        if (durMs > 0) {
+            // The mistake map: one tick per wrong verdict, at the instant the
+            // engine decided it, on the audio's own clock. Tap to play from
+            // there.
+            val anchor = r.audioStartMs - r.startedAt
+            val wrongs = r.wordRows.filter { it.st == "WRONG" && it.wt != null }
+                .map { (it.wt!!.toLong() - anchor).coerceIn(0, durMs.toLong()).toInt() }
+            Canvas(
+                Modifier
+                    .fillMaxWidth()
+                    .height(14.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(c.inkFaint.copy(alpha = 0.12f))
+                    .pointerInput(durMs) {
+                        detectTapGestures { offset ->
+                            onSeek((offset.x / size.width.toFloat() * durMs).toInt())
+                        }
+                    },
+            ) {
+                for (t in wrongs) {
+                    val x = t / durMs.toFloat() * size.width
+                    drawRect(
+                        c.wordBad,
+                        topLeft = androidx.compose.ui.geometry.Offset(x - size.width * 0.004f, 0f),
+                        size = androidx.compose.ui.geometry.Size(size.width * 0.008f, size.height),
+                    )
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Slider(
+                value = posMs.toFloat().coerceIn(0f, durMs.toFloat()),
+                onValueChange = { onSeek((it).toInt()) },
+                valueRange = 0f..durMs.toFloat(),
+                enabled = true,
             )
         }
     }
@@ -866,7 +941,11 @@ private fun RecitationLogCard(
                             // transcript, the phoneme symbols in the 2.5 s
                             // before the decision, the same window the
                             // "hear it" clip plays. Absent on records that
-                            // predate the emission capture.
+                            // predate the emission capture. Label and
+                            // symbols are separate texts: mixing Latin and
+                            // Arabic in one run scrambles the bidi order,
+                            // and the symbols are the content here, so they
+                            // set in the Qur'an face, RTL, at readable size.
                             if (row.st == "WRONG" && row.wt != null && r.emMs.isNotEmpty()) {
                                 val heard = ArrayList<String>()
                                 for (i in r.emMs.indices) {
@@ -877,11 +956,22 @@ private fun RecitationLogCard(
                                     }
                                 }
                                 if (heard.isNotEmpty()) {
-                                    Text(
-                                        "heard: " + heard.take(14).joinToString(" ") +
-                                            if (heard.size > 14) " …" else "",
-                                        fontSize = 12.sp, color = c.inkFaint, fontFamily = quranFont,
-                                    )
+                                    Row(Modifier.padding(top = 2.dp)) {
+                                        Text(
+                                            "heard ",
+                                            fontSize = 10.sp, color = c.inkFaint,
+                                            modifier = Modifier.padding(top = 3.dp),
+                                        )
+                                        Text(
+                                            heard.take(12).joinToString(" ") +
+                                                if (heard.size > 12) " …" else "",
+                                            fontSize = 15.sp, color = c.inkMuted,
+                                            fontFamily = quranFont,
+                                            style = androidx.compose.ui.text.TextStyle(
+                                                textDirection = TextDirection.Rtl,
+                                            ),
+                                        )
+                                    }
                                 }
                             }
                             // Hear what the model heard: the 2.5 s of room

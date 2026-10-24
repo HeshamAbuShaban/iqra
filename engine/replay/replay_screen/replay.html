@@ -38,6 +38,14 @@
   #t { color: #a89f8c; font-variant-numeric: tabular-nums; min-width: 92px; }
   #speed { min-width: 56px; }
   #slider { flex: 1; min-width: 240px; accent-color: var(--accent); }
+  /* The verdict timeline: a full-width strip under the bar, one tick per
+     wrong verdict at its decision time. Click anywhere to jump. */
+  #timeline { position: relative; height: 14px; margin: 0 16px 4px;
+              background: #2b2a26; border: 1px solid #413f38; border-radius: 4px; }
+  #timeline .wt { position: absolute; top: 1px; width: 3px; height: 10px;
+                  background: var(--wrong); border-radius: 1px; }
+  #timeline .wu { position: absolute; top: -14px; width: 3px; height: 4px;
+                  background: var(--gold); border-radius: 1px; }
   #stage { display: flex; gap: 14px; padding: 0 16px 16px; align-items: flex-start; flex-wrap: wrap; }
   #pageWrap { position: relative; flex: 0 1 auto; }
   #lock { padding: 6px 12px; border-radius: 8px; background: #2b2a26; border: 1px solid #413f38;
@@ -84,6 +92,7 @@
        it, anchored to the record's clock (wt) via audio.startMs. -->
   <audio id="sessionAudio" controls preload="auto" style="height:30px;display:none"></audio>
 </div>
+<div id="timeline" title="red ticks: wrong verdicts, when they were decided - click to jump"></div>
 <div class="legend">
   <span><b>Painted as the record states:</b></span>
   <span><span class="sw" style="background:var(--wrong)"></span>WRONG</span>

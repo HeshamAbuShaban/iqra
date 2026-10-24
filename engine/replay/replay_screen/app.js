@@ -68,6 +68,34 @@
   // The cause panel's button reaches this through the inline onclick.
   window.__hearVerdict = function (wt) { playFromRecordMs(wt - 2500, 2600); };
 
+  /* ---- verdict timeline ----------------------------------------------
+   * One tick per wrong verdict, placed at its recorded decision time, on a
+   * full-width strip under the transport bar. A whole recitation's mistake
+   * shape is then visible at a glance - clusters, gaps, backtracks - before
+   * anything plays. Clicking anywhere on the strip jumps there. A gold cap
+   * marks wrong words blamed at the word's first letter (wu == 0): the
+   * possible borrow shape. */
+  var timeline = document.getElementById('timeline');
+  if (timeline && lastT > 0) {
+    R.words.forEach(function (w) {
+      if (w.st !== 'WRONG' || typeof w.wt !== 'number') return;
+      var t = document.createElement('div');
+      t.className = 'wt';
+      t.style.left = (w.wt / lastT * 100) + '%';
+      if (w.wu === 0) {
+        var cap = document.createElement('div');
+        cap.className = 'wu';
+        cap.style.left = (w.wt / lastT * 100) + '%';
+        timeline.appendChild(cap);
+      }
+      timeline.appendChild(t);
+    });
+    timeline.onclick = function (ev) {
+      var r = timeline.getBoundingClientRect();
+      setT((ev.clientX - r.left) / r.width * lastT);
+    };
+  }
+
   /* ---- timeline items ------------------------------------------------ */
   // Verdicts, sorted by their recorded decision time: this is the timeline
   // the record actually holds, and the feed replays it in that order.
