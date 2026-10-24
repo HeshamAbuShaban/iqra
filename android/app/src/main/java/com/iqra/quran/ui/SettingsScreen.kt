@@ -377,14 +377,28 @@ fun SettingsScreen(
                     checked = remember(audioTick) { AudioPrefs.keepOffline(ctx) },
                     onChange = { AudioPrefs.setKeepOffline(ctx, it); audioTick++ },
                 )
-                SettingDivider()
-                SwitchRow(
-                    title = "Save only on Wi-Fi",
-                    subtitle = "Playback always streams regardless; this only " +
-                        "holds back the saved copy while on mobile data.",
-                    checked = remember(audioTick) { AudioPrefs.wifiOnly(ctx) },
-                    onChange = { AudioPrefs.setWifiOnly(ctx, it); audioTick++ },
-                )
+                // Dependent rows say why they are inert rather than sitting
+                // there as dead switches: with saving off, a Wi-Fi rule has
+                // nothing to govern, and a control that does nothing is a lie
+                // about the app's state.
+                if (remember(audioTick) { AudioPrefs.keepOffline(ctx) }) {
+                    SettingDivider()
+                    SwitchRow(
+                        title = "Save only on Wi-Fi",
+                        subtitle = "Playback always streams regardless; this only " +
+                            "holds back the saved copy while on mobile data.",
+                        checked = remember(audioTick) { AudioPrefs.wifiOnly(ctx) },
+                        onChange = { AudioPrefs.setWifiOnly(ctx, it); audioTick++ },
+                    )
+                } else {
+                    Text(
+                        "Saving is off, so the Wi-Fi rule has nothing to apply to. " +
+                            "Turn on \"Keep a copy for replay\" to save downloads.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
                 SettingDivider()
                 val speedOptions = listOf(75, 100, 125, 150)
                 ChoiceRow(
@@ -485,6 +499,65 @@ fun SettingsScreen(
                         }
                     }
                 }
+
+                SettingDivider()
+
+                // The retention cap was invisible: the engine silently kept the
+                // last 10 records and deleted everything older, and the only way
+                // to learn it was to lose a session. The count is now a choice,
+                // and the deletion rule is stated where the choice is made.
+                val dataTick = remember { mutableIntStateOf(0) }
+                val sessionsPrefs = remember { ctx.getSharedPreferences("iqra_sessions", 0) }
+                val keepChoices = listOf(5, 10, 25, 50, 100)
+                ChoiceRow(
+                    label = "Sessions kept on this device",
+                    options = keepChoices.map { "$it" },
+                    selected = remember(dataTick.intValue) {
+                        val k = sessionsPrefs.getInt("keep", 10)
+                        keepChoices.firstOrNull { it == k }?.toString() ?: "10"
+                    },
+                    onSelect = { label ->
+                        sessionsPrefs.edit()
+                            .putInt("keep", label.toIntOrNull() ?: 10)
+                            .apply()
+                        dataTick.intValue++
+                    },
+                )
+                Text(
+                    "When the count is passed, the oldest sessions and their " +
+                        "audio are deleted for good. Statistics built from " +
+                        "them stay forever.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                SwitchRow(
+                    title = "Keep the audio of each session",
+                    subtitle = "While you recite, the session's own sound is " +
+                        "written next to its record, so the report can play " +
+                        "what the model heard. It never leaves this device " +
+                        "and is deleted with its session. Turn off to keep " +
+                        "records without audio.",
+                    checked = remember(dataTick.intValue) { sessionsPrefs.getBoolean("capture", true) },
+                    onChange = {
+                        sessionsPrefs.edit().putBoolean("capture", it).apply()
+                        dataTick.intValue++
+                    },
+                )
+                val wavStats = remember(dataTick.intValue) {
+                    val dir = java.io.File(ctx.filesDir, "sessions")
+                    val wavs = dir.listFiles { _, n -> n.endsWith(".wav") }
+                    (wavs?.size ?: 0) to (wavs?.sumOf { it.length() } ?: 0L)
+                }
+                Text(
+                    if (wavStats.first == 0) "No session audio on disk."
+                    else "Session audio on disk: ${fmtMb(wavStats.second)} across " +
+                        "${wavStats.first} recording${if (wavStats.first == 1) "" else "s"}.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
 
             SettingsSection("About") {
