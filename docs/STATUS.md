@@ -1970,13 +1970,28 @@ cross-word rules (idgham/ikhfa/iqlab) — studied, not adopted blindly.
 **4. The per-word borrow test** — the engine-side fix for the borrow charges
 (18/18 reproduced; the shape now seen on 3:118, surah 67, 2:19:10 and ~40%
 of the surah-17 sample). The fresh fractional records are its dataset.
-**5. Decision models: rejected for now, measured later.** All four proposed
-models exist (verified on HF: JEV-27B-VL 27.8B VL, clef-flash 9.4B,
-GLiNER2.5-Decide 486M English text, kev-4b 4B) — none takes audio, Arabic,
-or a 250 ms on-device loop; three are server-class. The measured failure
-classes are window attribution and unit granularity, not judgment. If a
-labeled residual of genuinely two-plausible-readings ever emerges, it gets a
-kB-scale classifier over unit posteriors, not an LLM.
+**5. Decision models: rejected for the live loop; the referee pilot is
+built (24/25 October).** The user pushed back, and the deeper study
+justifies the category if not these four instances: the decide contract
+(`state` + `question` + `options` → one prefill pass → calibrated
+probability per option, no generation, no parsing) is exactly the right
+primitive for second-guessing a charge — better than a chat LLM. The
+blockers are precise, not vibes: kev-4b is explicitly English-only
+(non-English out of scope), JEV and clef-flash are English-validated
+(Qwen bases are multilingual underneath — unvalidated here), and the
+discriminating symbols in our problem are Arabic unit glyphs; and this
+machine (2 GB GPU, 15 GB RAM) hosts none of them (kev-4b wants 24 GB,
+clef 18.8 GB BF16). `engine/replay/decision_referee.py` turns the
+proposal into a measurable experiment: 126 cases extracted from the
+pulled sessions (76 supported / 50 unsupported by our own re-align — the
+ground truth any model must agree with), each formatted into the decide
+contract with tajweed-rule option descriptions; `--endpoint --api
+jev|clef` against any served model reports agreement. High agreement
+unblocks two things: an offline referee that labels the residual class
+(the borrow test and harakat weighting both need it), and — if the
+category gains a multilingual member — a small on-device advisory layer
+for the never-accuse rule family. Near-chance agreement on these 126
+kills it with a number instead of an opinion.
 
 ## Ownership
 
