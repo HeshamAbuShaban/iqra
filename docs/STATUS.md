@@ -2036,6 +2036,23 @@ the next engine change, projected at 18 dropped charges / 13 flipped
 accusations with a margin gate, implementation to be device-verified with
 the user.
 
+
+## Second measured negative, 26 Oct — the borrow test has nothing to do
+
+"Go for it" on the borrow test began with re-examining the projection, and
+the re-examination refuted it. The 18-charge projection measured charges
+against ARRIVAL(N) — but arrival stamps LATE (the lock advances at 60%
+coverage, so the ayah's own first words were spoken before its arrival; the
+5.3%-red-wall measurement exists because of exactly that). Pre-arrival
+audio is mostly the ayah's OWN early words. Re-projected against the
+honest boundary — the PREVIOUS ayah's recorded span end, the same boundary
+the span-end trim uses — across every pulled session: 221 charges, ZERO
+borrowed. The trim already does the per-word job. An arrival-based rule
+would have excused real first-word mistakes; it is not built, and the
+negative is written down where the plan was. The remaining engine item is
+the app rule's scope (nineteen-letter collapse anywhere → word-final
+only), corpus-gated.
+
 ## What is open next
 
 

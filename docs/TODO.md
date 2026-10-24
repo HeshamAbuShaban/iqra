@@ -193,7 +193,8 @@ Pulled from the phone (build #249, three sessions, 545 words, nothing entered
 git) and measured with the app's own alignment. Details in `docs/STATUS.md`,
 "19 October (evening)".
 
-1. **The borrow test, per word (engine; the user should weigh in).** The
+1. **CLOSED 26 Oct by measurement at the honest boundary — was: the borrow test, per word.** Re-projected against the PREVIOUS ayah's recorded SPAN END (where its own alignment said its speech ended) instead of arrival(N): **221 charges across every pulled session, zero dropped** — the span-end trim already does the per-word job, and no charge lies on another ayah's matched speech. The earlier 18-charge projection measured against ARRIVAL, which stamps late by design (the lock arrives at 60% coverage), so pre-arrival audio is mostly the ayah's OWN early words — an arrival-based rule would have excused real first-word mistakes and rebuilt the 5.3% red wall. The guard's untrimmed path remains live-only (the record cannot rebuild it); revisit only if device data ever shows a charge inside a previous ayah's span. The engine item that remains is 9 below (the app rule's scope).
+   HISTORICAL: the
    first-word guard's wide window reaches back into the previous ayah's own
    audio, and four of Al-Imran's sixteen WRONG verdicts were charged there.
    A whole-window test was measured and rejected (621/621 firings, 25 sound
