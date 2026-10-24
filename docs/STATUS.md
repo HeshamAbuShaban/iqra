@@ -1908,7 +1908,7 @@ the oldest #249 files, which are safe in `.iqra-records/258/`).
   reading, not by gfxinfo — the user's own next hide session is the
   instrument.
 
-## Shipped overnight, 24/25 October — the review round, additive throughout (263)
+## Shipped overnight, 24/25 October — the review round, additive throughout (build 267)
 
 The user's five asks, each additive (nothing wiped), each gated where a
 gate could hold it:
