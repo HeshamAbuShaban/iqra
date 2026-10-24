@@ -158,6 +158,16 @@ def main() -> int:
          re.search(r'"blamed past the first letter', sr) is not None),
         ("the report's last-letter band is gated on v2",
          re.search(r"r\.v < 2[\s\S]{0,200}?row\.wu >= 1000", sr) is not None),
+        # The report as a testing surface: what was heard near a wrong
+        # verdict comes from the record's own emission stream, and the
+        # blame-bands card must refuse to claim fractions from a v1 record,
+        # whose wu has no finer position than first/past-first.
+        ("the report says what was heard near a wrong verdict",
+         re.search(r'row\.st == "WRONG" && row\.wt != null && r\.emMs\.isNotEmpty\(\)', sr)
+         is not None),
+        ("the blame-bands card is gated on v2 records",
+         re.search(r"r\.v >= 2 && r\.wordRows\.any \{ it\.st == \"WRONG\" && it\.wu != null \}", sr)
+         is not None),
     ]
     for name, ok in checks:
         if not ok:

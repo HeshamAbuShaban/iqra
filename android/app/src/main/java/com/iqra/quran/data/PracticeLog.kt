@@ -197,6 +197,15 @@ object PracticeLog {
         val audioFile: String? = null,
         val audioStartMs: Long = 0L,
         val audioSamples: Long = 0L,
+        /**
+         * The retained phoneme stream and, on the same clock as [WordRow.wt],
+         * when each symbol arrived. Present on records since the emission
+         * capture; empty on older ones. This is what lets the report say WHAT
+         * the model heard around a verdict - the record's own words array
+         * never carries it.
+         */
+        val emissions: List<String> = emptyList(),
+        val emMs: List<Long> = emptyList(),
         /** Engine advisories from this session - things the engine noticed but would not decide. */
         val advisories: List<AdvisoryNote> = emptyList(),
         /** Every word row in written order, including SKIPPED/UNKNOWN (the population, not the score). */
@@ -767,6 +776,14 @@ object PracticeLog {
             audioFile = o.optString("audioFile", "").ifEmpty { null },
             audioStartMs = o.optLong("audioStartMs", 0L),
             audioSamples = o.optLong("audioSamples", 0L),
+            emissions = run {
+                val arr = o.optJSONArray("emissions") ?: org.json.JSONArray()
+                List(arr.length()) { i -> arr.optString(i) }
+            },
+            emMs = run {
+                val arr = o.optJSONArray("emMs") ?: org.json.JSONArray()
+                List(arr.length()) { i -> arr.optLong(i) }
+            },
             wordRows = rows,
             advisories = run {
                 val arr = o.optJSONArray("advisories") ?: org.json.JSONArray()

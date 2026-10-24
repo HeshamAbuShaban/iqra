@@ -205,6 +205,9 @@ fun SessionReportScreen(
                 if (r.perAyah.isNotEmpty()) item { AyahCard(r, c) }
                 item { BreakdownCard(r, c) }
                 item { MissesCard(r, data, c) }
+                if (r.v >= 2 && r.wordRows.any { it.st == "WRONG" && it.wu != null }) {
+                    item { BlameBandsCard(r, c) }
+                }
                 if (r.wordRows.isNotEmpty()) item { RecitationLogCard(r, data, c, wavFile != null, playingKey, hear) }
                 item {
                     Panel(c) {
@@ -692,6 +695,62 @@ private fun SessionAudioCard(
 
 
 /**
+ * Where in their words the blame landed, on a v2 record - the card the
+ * binary writer made impossible. A charge on the first letter reads
+ * differently from one at the last: the first is "wrong word or wrong
+ * start", the last is "finished the word, then slipped" - and the
+ * fractions between say how deep into the word the recitation diverged.
+ * v1 records carry no finer position than first/past-first, so they get
+ * no card here: the per-row labels in the log are the honest v1 view.
+ */
+@Composable
+private fun BlameBandsCard(r: PracticeLog.Record, c: IqraColors) {
+    val fr = r.wordRows.mapNotNull { if (it.st == "WRONG") it.wu else null }
+    val bands = listOf(
+        "first letter" to fr.count { it == 0 },
+        "near the start" to fr.count { it in 1..200 },
+        "early" to fr.count { it in 201..400 },
+        "middle" to fr.count { it in 401..600 },
+        "late" to fr.count { it in 601..800 },
+        "near the end" to fr.count { it in 801..999 },
+        "last letter" to fr.count { it >= 1000 },
+    ).filter { it.second > 0 }
+    if (bands.isEmpty()) return
+    Panel(c) {
+        Text("Where blame lands", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+        Spacer(Modifier.height(6.dp))
+        Row(
+            Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+        ) {
+            bands.forEach { (_, n) ->
+                Box(
+                    Modifier
+                        .weight(n.toFloat())
+                        .fillMaxSize()
+                        .background(c.wordBad.copy(alpha = 0.45f)),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        bands.forEach { (label, n) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+                Text("$label", fontSize = 12.sp, color = c.ink, modifier = Modifier.weight(1f))
+                Text(
+                    "$n ${if (n == 1) "word" else "words"}",
+                    fontSize = 12.sp, color = c.inkFaint, fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${fr.size} wrong words judged at their own blame position.",
+            fontSize = 10.sp, color = c.inkFaint,
+        )
+    }
+}
+
+
+/**
  * The recitation log — the words as the engine saw them, in the order it
  * decided them.
  *
@@ -720,8 +779,14 @@ private fun RecitationLogCard(
     hear: (String, Int, Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val timed = r.wordRows.filter { it.wt != null }.sortedBy { it.wt }
-    val untimed = r.wordRows.filter { it.wt == null }
+    // The log's control: a review pass usually wants the misses; the full
+    // walk stays one tap away. Off by default, so the card opens exactly as
+    // it always did.
+    var wrongOnly by remember { mutableStateOf(false) }
+    val timedAll = r.wordRows.filter { it.wt != null }.sortedBy { it.wt }
+    val untimedAll = r.wordRows.filter { it.wt == null }
+    val timed = if (wrongOnly) timedAll.filter { it.st == "WRONG" } else timedAll
+    val untimed = if (wrongOnly) untimedAll.filter { it.st == "WRONG" } else untimedAll
     val rows = if (expanded) timed + untimed else (timed.take(24) + untimed.take(6))
 
     Panel(c) {
@@ -737,6 +802,9 @@ private fun RecitationLogCard(
                 TextButton(onClick = { expanded = !expanded }) {
                     Text(if (expanded) "show first" else "show all", fontSize = 11.sp, color = c.accent)
                 }
+            }
+            TextButton(onClick = { wrongOnly = !wrongOnly }) {
+                Text(if (wrongOnly) "all words" else "wrong only", fontSize = 11.sp, color = c.accent)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -792,6 +860,29 @@ private fun RecitationLogCard(
                                     },
                                     fontSize = 10.sp, color = c.inkFaint,
                                 )
+                            }
+                            // WHAT the model heard around this verdict, from
+                            // the record's own emission stream - not a
+                            // transcript, the phoneme symbols in the 2.5 s
+                            // before the decision, the same window the
+                            // "hear it" clip plays. Absent on records that
+                            // predate the emission capture.
+                            if (row.st == "WRONG" && row.wt != null && r.emMs.isNotEmpty()) {
+                                val heard = ArrayList<String>()
+                                for (i in r.emMs.indices) {
+                                    if (r.emMs[i] >= row.wt - 2500 && r.emMs[i] <= row.wt + 250
+                                        && i < r.emissions.size
+                                    ) {
+                                        heard.add(r.emissions[i])
+                                    }
+                                }
+                                if (heard.isNotEmpty()) {
+                                    Text(
+                                        "heard: " + heard.take(14).joinToString(" ") +
+                                            if (heard.size > 14) " …" else "",
+                                        fontSize = 12.sp, color = c.inkFaint, fontFamily = quranFont,
+                                    )
+                                }
                             }
                             // Hear what the model heard: the 2.5 s of room
                             // audio before this verdict - the audio the judged
