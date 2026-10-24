@@ -246,6 +246,28 @@ def build(one, mushaf, glyphdb, pages_dir, out_root):
     when = ""
     if isinstance(started, (int, float)) and started > 0:
         when = time.strftime("%d %b %H:%M", time.localtime(started / 1000))
+
+    # The session's own audio, when the record names it and the WAV sits
+    # beside the record (pulled together). The clock anchor is the record's:
+    # audioStartMs is the wall time of the WAV's first sample, so a verdict
+    # at `wt` is heard at wt - (audioStartMs - startedAt) into the file. A
+    # record that predates the capture has no audioFile and gets no player -
+    # absence is stated, not papered over with a silent bar.
+    audio = None
+    wav_name = rd.get("audioFile")
+    if wav_name:
+        wav_src = Path(one).parent / wav_name
+        if wav_src.exists():
+            shutil.copy(wav_src, out_dir / "session.wav")
+            audio = {
+                "file": "session.wav",
+                "startMs": (rd.get("audioStartMs") or 0) - (started or 0),
+                "samples": rd.get("audioSamples") or 0,
+                "rate": 16000,
+            }
+        else:
+            audio = {"missing": wav_name}
+
     data = {
         "name": name,
         "meta": "%s · %s · surah %s→%s lock %s · moves %s · decided %s of %s · pollSec %s" % (
@@ -263,6 +285,7 @@ def build(one, mushaf, glyphdb, pages_dir, out_root):
         "arrivals": rd.get("arrivals", {}),
         "spans": rd.get("spans", {}),
         "causes": causes_for(rd),
+        "audio": audio,
         "pages": pages_obj,
     }
     shutil.copy(TEMPLATE / "replay.html", out_dir / "replay.html")

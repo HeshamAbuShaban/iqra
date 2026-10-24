@@ -1294,6 +1294,7 @@ fun ReaderScreen(
     val cacheProgress by vm.cacheProgress.collectAsStateWithLifecycle()
     val cacheNote by vm.cacheNote.collectAsStateWithLifecycle()
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
+    val sessionSound by vm.sessionSound.collectAsStateWithLifecycle()
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val activeWindow by vm.activeWindow.collectAsStateWithLifecycle()
@@ -1707,7 +1708,12 @@ fun ReaderScreen(
                         // long enough to wrap, which grew the bar's height and
                         // squashed the Recite button into a vertical block.
                         PulseDot(
+                            // REC says the session's audio is being KEPT (on
+                            // this device only) - not just heard. The engine
+                            // label stays diagnostic; the dot row is the one
+                            // place a reciter can see the mic is recording.
                             label = "Listening" +
+                                (if (sessionSound) " · REC" else "") +
                                 if (engineLabel.isNotEmpty()) ", $engineLabel" else "",
                         )
                         Spacer(Modifier.width(6.dp))

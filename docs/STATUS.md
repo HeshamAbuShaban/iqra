@@ -1829,6 +1829,40 @@ tool branch, report gate, bucket label) — plus a v2 synthetic record that
 must land 333 in "early (20-40%)" and 1000 in "last unit" with no v1 caveat.
 Gate 42/42 green; device verification jointly with the session-sound build.
 
+## Shipped, 24 October (evening) — session sound: the record can now be heard (260)
+
+The session's own audio is kept, on the device, beside its record: a WAV in
+`filesDir/sessions/` mirroring the record's basename, mono 16 kHz 16-bit,
+written continuously by a tee in `AudioRecorder.append` — outside the ring
+lock (file I/O must not stall a recogniser poll), capturing what the ring
+discards after 30 s. The record names it with a strictly-additive triple:
+`audioFile`, `audioStartMs` (wall time of the WAV's FIRST sample — stamped at
+the first write, not at open, because the mic starts after the session does),
+and `audioSamples`. The WAV closes BEFORE the final flush, so the count in
+the record equals the WAV's frames exactly; the replay player anchors sample
+n at `audioStartMs` and offers "hear the 2.5 s before this verdict" on any
+word with a `wt`. On by default with the capture gate; the recite bar's
+Listening dot says REC while the tee is live. Lifecycle: prune deletes a
+record's WAV with the record; a session-start sweep removes crash leftovers —
+a WAV whose record never landed — and never touches a WAV whose record still
+exists; a process death mid-session leaves a WAV whose header under-reports
+while the record's count stays honest.
+
+Privacy: the audio never leaves the device. The README's old "analysed in
+memory and discarded" line is replaced with what the app now does, because a
+claim like that must not survive the feature that changes it.
+
+`session_wav_parity` (gate 43) holds the chain: the tee's lock discipline,
+open-before-crash-flush / close-before-final-flush ordering, prune and sweep,
+the first-write stamp, both header patches, the REC gating, the exporter's
+carry-or-state-missing, and a `wav_check` that cross-reads a real WAV against
+its record — self-tested against a one-frame disagreement, an unpatched
+crash header, and a rate change, with seven source faults injected red (lock
+order, flush order, prune, sweep guard, REC gate, header patch, exporter
+silence). Desktop replay export copies the WAV beside the page and states a
+missing one rather than showing a silent bar. Device verification is the
+joint recitation, next.
+
 ## What is open next
 
 **1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481

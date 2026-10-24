@@ -32,9 +32,12 @@ against what you meant.
 Two things make it possible to offer that honestly:
 
 - **It runs entirely on the device.** No account, no subscription, no network at
-  runtime, no recording uploaded anywhere. The audio is analysed in memory and
-  discarded. A tool that listens to your recitation is not a tool that should
-  phone home.
+  runtime, nothing uploaded anywhere. While you recite, the app keeps a session
+  log — and, so a mistake can be replayed and argued with, the session's own
+  audio — in the app's private storage on this phone. It is deleted with the
+  session, never leaves the device, and the REC marker in the recite bar shows
+  when audio is being kept. A tool that listens to your recitation is not a
+  tool that should phone home.
 - **It is free, and it stays free.** Nothing here is metered, gated, or waiting
   on a subscription.
 

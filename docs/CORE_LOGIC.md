@@ -369,6 +369,7 @@ The record holds:
 | `frames` | The policy state at each poll |
 | `emissions`, `arrivals`, `spans` | The retained phoneme stream, each ayah's absolute arrival index, and the span end each ayah's own alignment placed. Arrivals rebuild the raw window; spans rebuild the trimmed one — the two together let a replay reproduce the exact window every verdict was judged against, the evidence the read-back needs to name a charge. |
 | `emMs` | When each retained emission arrived, poll-granular, on `wt`'s clock. With `wt` it splits a late colour into engine time (symbols arriving late) and paint time (decided in time, drawn late) — the ambiguity behind the 2.65s floor. One entry per retained emission, trimmed and cleared in lockstep with the stream. |
+| `audioFile`, `audioStartMs`, `audioSamples` | The session's own audio (build 260 on): a WAV beside the record, mono 16 kHz 16-bit, continuous where the recogniser's ring keeps only 30 s. `audioStartMs` is the wall time of the WAV's FIRST sample on the record's clock, so sample n sits at `audioStartMs - startedAt + n/rate` and any verdict can be heard. Local only, never uploaded; deleted with its record. Absent on older records — no audio was kept. |
 | `diagTail` | Lock moves, handoffs, and engine notes |
 | `thresholds` | The thresholds that were in force |
 | `pollSec`, `declaredPollSec` | The rate the loop delivered, and the rate it asked for |
@@ -545,7 +546,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 42 checks. Every check must be shown able to fail. Break the thing that
+It runs 43 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -567,6 +568,7 @@ nothing.
 | `unused_imports` | An import that names a component that is not used |
 | `word_alignment_parity` | Ayat that get no word verdict, so the count cannot get worse |
 | `device_blame_parity` | A WRONG word with no recorded blame position, buckets that collapse, or emission times falling out of lockstep with the log |
+| `session_wav_parity` | The session WAV: a tee write inside the ring lock, a WAV opened after the crash-window flush or closed after the final one, a record's WAV that outlives its record, an orphan sweep that takes audio a record still names, and a lying WAV header, frame disagreement, or rate change that `wav_check` fails to catch |
 | `arrival_retention_parity` | Arrivals pruned tighter than the emission log they index, or a reader that invents a window |
 | `window_anchor_parity` | A window's leading edge trimmed by a default rather than by the alignment |
 | `ahead_window_parity` | The ahead ayah judged against audio that belongs to the one being recited, or a dead poll erasing a retained verdict |

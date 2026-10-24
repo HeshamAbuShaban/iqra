@@ -38,6 +38,36 @@
     speedBtn.textContent = speed + '\u00d7';
   };
 
+  /* ---- session audio -------------------------------------------------
+   * The WAV the phone kept beside the record, when the record names one.
+   * Anchored to the record's clock: audio.startMs is where the WAV's first
+   * sample sits on the same timeline as wt, so a verdict decided at wt is
+   * heard at wt - startMs into the file. No audio triple, no player - a
+   * silent bar would claim audio the record does not have. */
+  var audioEl = document.getElementById('sessionAudio');
+  var audio = R.audio || null;
+  if (audio && audio.file) {
+    audioEl.src = audio.file;
+    audioEl.style.display = '';
+  } else if (audio && audio.missing) {
+    var miss = document.createElement('span');
+    miss.style.cssText = 'color:#e09112;font-size:11px';
+    miss.textContent = 'record names audio (' + audio.missing + ') but the WAV was not pulled';
+    audioEl.parentNode.insertBefore(miss, audioEl);
+  }
+  var audioPauseTimer = null;
+  function playFromRecordMs(ms, durMs) {
+    if (!audio || !audio.file) return;
+    var into = (ms - audio.startMs) / 1000;
+    if (into < 0) into = 0;
+    audioEl.currentTime = into;
+    audioEl.play();
+    if (audioPauseTimer) clearTimeout(audioPauseTimer);
+    if (durMs) audioPauseTimer = setTimeout(function () { audioEl.pause(); }, durMs);
+  }
+  // The cause panel's button reaches this through the inline onclick.
+  window.__hearVerdict = function (wt) { playFromRecordMs(wt - 2500, 2600); };
+
   /* ---- timeline items ------------------------------------------------ */
   // Verdicts, sorted by their recorded decision time: this is the timeline
   // the record actually holds, and the feed replays it in that order.
@@ -258,7 +288,14 @@
     var w = R.words.find(function (x) { return x.key === key; });
     var c = (R.causes || {})[key];
     var html = '<div>' + key + ' &nbsp; ' + (w ? w.st : 'no row') + '</div>';
-    if (w && typeof w.wt === 'number') html += '<div class="window">decided at ' + (w.wt / 1000).toFixed(1) + ' s</div>';
+    if (w && typeof w.wt === 'number') {
+      html += '<div class="window">decided at ' + (w.wt / 1000).toFixed(1) + ' s</div>';
+      // Hear the moment the engine judged: the 2.5 s of room audio before
+      // the verdict, which is the audio the judged window was built from.
+      if (audio && audio.file) {
+        html += '<div><button onclick="window.__hearVerdict(' + w.wt + ')">&#9654; hear the 2.5s before this verdict</button></div>';
+      }
+    }
     var advs = (R.advisories || []).filter(function (a) { return a.key === key; });
     if (advs.length) html += '<div class="window">notes: ' + advs.map(function (a) { return a.kind + (a.count > 1 ? '\u00d7' + a.count : ''); }).join(', ') + '</div>';
     if (!c) { html += '<div class="window">no reconstruction in this record for this word.</div>'; causeEl.innerHTML = html; return; }

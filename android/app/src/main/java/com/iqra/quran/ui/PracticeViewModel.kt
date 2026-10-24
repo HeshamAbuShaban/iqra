@@ -62,6 +62,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _recording = MutableStateFlow(false)
     val recording: StateFlow<Boolean> = _recording
 
+    /** True while the session's own audio is being written to disk. The
+     *  capture is on by default and local only - the indicator is how the
+     *  reciter knows the mic is being kept, not just heard. */
+    private val _sessionSound = MutableStateFlow(false)
+    val sessionSound: StateFlow<Boolean> = _sessionSound
+
 
     private val _preparing = MutableStateFlow(false)
     val preparing: StateFlow<Boolean> = _preparing
@@ -659,6 +665,15 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private var startSurahToFile = 0
     private var pollsSinceFlush = 0
 
+    // The session's own sound, written continuously beside the record
+    // (filesDir/sessions/<record>.wav). `sessionTeeName` is null until the tee
+    // opens and the flush omits the audio fields then; the frozen pair below
+    // carries the closed counts into the final flush, which runs after
+    // stopSessionTee() so `audioSamples` equals the WAV's frames exactly.
+    private var sessionTeeName: String? = null
+    private var sessionAudioStartMs = 0L
+    private var sessionAudioSamples = 0L
+
     /** True between startRecite and stopRecite; gates the periodic flush. */
     private var sessionActive = false
 
@@ -883,6 +898,18 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             sb.append('"').append(k).append("\":").append(v)
         }
         sb.append("}")
+        // The session's own audio: a WAV beside this record, continuous (the
+        // ring the recogniser reads keeps only the last 30 s), aligned to the
+        // record's clock by the wall time of its FIRST sample. Strictly
+        // additive: readers treat the absence of `audioFile` as "no audio
+        // kept", which is every record before this build.
+        if (sessionTeeName != null) {
+            val live = recorder.teeWriter()
+            sb.append(",\"audioFile\":\"").append(sessionTeeName).append('"')
+                .append(",\"audioStartMs\":")
+                .append(if (live != null && live.firstSampleAtMs > 0L) live.firstSampleAtMs else sessionAudioStartMs)
+                .append(",\"audioSamples\":").append(live?.samples ?: sessionAudioSamples)
+        }
         sb.append(",\"words\":[")
         var first = true
         for ((k, v) in sessionArchive) {
@@ -1005,7 +1032,60 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (files.size <= keep) return
         files.sortedBy { it.lastModified() }
             .take(files.size - keep)
-            .forEach { runCatching { it.delete() } }
+            .forEach { f ->
+                runCatching { f.delete() }
+                // The session's audio goes with its record: a WAV that
+                // outlives the record it belongs to is evidence nobody can
+                // align or delete from the UI.
+                runCatching {
+                    File(f.parentFile, f.name.removeSuffix(".json") + ".wav").delete()
+                }
+            }
+    }
+
+    /**
+     * Open the session's WAV and sweep the orphans a crash leaves behind: a
+     * WAV whose record never landed (process death before the first flush) is
+     * evidence of nothing and must not accumulate beside real sessions. A WAV
+     * whose record EXISTS is never touched here - deleting audio a record
+     * still names would make `audioSamples` a lie.
+     */
+    private fun startSessionTee() {
+        sessionTeeName = null
+        sessionAudioStartMs = 0L
+        sessionAudioSamples = 0L
+        _sessionSound.value = false
+        if (!sessionCaptureEnabled()) return
+        val dir = sessionsDir()
+        val wavName = currentSessionName().removeSuffix(".json") + ".wav"
+        val wavs = dir.listFiles { _, n -> n.endsWith(".wav") } ?: return
+        for (w in wavs) {
+            if (w.name == wavName) continue
+            if (File(dir, w.name.removeSuffix(".wav") + ".json").exists()) continue
+            runCatching { w.delete() }
+        }
+        runCatching {
+            recorder.startTee(File(dir, wavName))
+            sessionTeeName = wavName
+        }
+        _sessionSound.value = sessionTeeName != null
+        diag(if (sessionTeeName != null) "session sound → $wavName (kept on this device only)"
+             else "session sound: WAV open failed - record will carry no audio")
+    }
+
+    /**
+     * Close the session WAV and freeze the counts the final flush will name.
+     * Must run BEFORE that flush: samples can still land between the flush and
+     * `recorder.stop()`, and the record's `audioSamples` must equal the WAV's
+     * frames exactly.
+     */
+    private fun stopSessionTee() {
+        val closed = runCatching { recorder.stopTee() }.getOrNull()
+        if (closed != null) {
+            sessionAudioSamples = closed.samples
+            if (closed.firstSampleAtMs > 0L) sessionAudioStartMs = closed.firstSampleAtMs
+        }
+        _sessionSound.value = false
     }
 
     fun frameRingDump(): String {
@@ -2666,6 +2746,9 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         lastLockMoveMs = System.currentTimeMillis()
         sessionStartedAtMs = System.currentTimeMillis()
         startSurahToFile = s
+        // The WAV opens before the crash-window header flush below, so even a
+        // record written one tick later already names its audio.
+        startSessionTee()
         pollsSinceFlush = 0
         sessionEvaluations = 0
         unjudgeableKeys.clear()
@@ -3957,6 +4040,10 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         // sessions and one zero-identity file, which the session list then
         // counted as a session. A preparing-cancelled session (nothing recorded
         // yet) was the same case under a real name.
+        // Close the WAV BEFORE the final flush: a few more samples can land
+        // between the flush and `recorder.stop()` below, and the record's
+        // `audioSamples` must equal the WAV's frames exactly.
+        stopSessionTee()
         if (sessionRan) runCatching { flushSessionRecord(ended = true, reason = reason) }
         sessionActive = false
         cancelRepeat()

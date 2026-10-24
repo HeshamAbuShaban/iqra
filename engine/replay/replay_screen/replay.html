@@ -80,6 +80,9 @@
   <button id="nextBtn" title="next verdict (w)">(w)</button>
   <input id="slider" type="range" min="0" max="1000" value="0">
   <span id="t">0.0 s</span>
+  <!-- The session's own audio, filled in by app.js only when the record names
+       it, anchored to the record's clock (wt) via audio.startMs. -->
+  <audio id="sessionAudio" controls preload="auto" style="height:30px;display:none"></audio>
 </div>
 <div class="legend">
   <span><b>Painted as the record states:</b></span>

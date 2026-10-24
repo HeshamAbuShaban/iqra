@@ -99,6 +99,9 @@ CHECKS = [
      "no import names a component that is not used - the residue of deleted features"),
     ("device_blame_parity", "none",
      "the record says WHERE a word was blamed, and the reader buckets it"),
+    ("session_wav_parity", "none",
+     "the session WAV is written outside the lock, named by the record, aligned "
+     "to its clock, and dies with its record"),
     ("arrival_retention_parity", "none",
      "the arrival retention spans every ayah still in the emission log"),
     ("window_anchor_parity", "none",

@@ -4,6 +4,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
+import java.io.File
 
 /**
  * Captures mono 16 kHz 16-bit PCM from the microphone and exposes it as a
@@ -44,6 +45,37 @@ class AudioRecorder(private val sampleRate: Int = 16000) {
      *  between resets, so it is the cursor a consumer tracks. */
     private var total = 0L
 
+    /**
+     * The session tee: every captured sample also lands in this WAV, in
+     * capture order, unbounced by the ring. The ring discards audio older
+     * than 30 s; the record's `audioSamples` needs all of it. Null when no
+     * session WAV is open. Only the capture thread calls [append], so the
+     * reference may be volatile rather than locked.
+     */
+    @Volatile
+    private var tee: SessionWavWriter? = null
+
+    /** Begin the session WAV. Every sample captured from now on is kept. */
+    fun startTee(file: File) {
+        stopTee()
+        tee = SessionWavWriter.open(file, sampleRate)
+    }
+
+    /**
+     * Close the session WAV (header patched, sizes final). Returns the CLOSED
+     * writer so the caller can read its final sample count and first-sample
+     * stamp, or null when no tee was open.
+     */
+    fun stopTee(): SessionWavWriter? = synchronized(this) {
+        val t = tee ?: return null
+        tee = null
+        t.close()
+        t
+    }
+
+    /** The live tee, for the record's `audioSamples`/`audioStartMs` fields. */
+    fun teeWriter(): SessionWavWriter? = tee
+
     fun start() {
         if (running) return
         val minBuf = AudioRecord.getMinBufferSize(
@@ -73,14 +105,19 @@ class AudioRecorder(private val sampleRate: Int = 16000) {
         }.also { it.start() }
     }
 
-    /** Append [n] converted samples, overwriting the oldest on overflow. */
-    private fun append(src: ShortArray, n: Int) = synchronized(lock) {
-        for (i in 0 until n) {
-            buf[write] = src[i] / 32768.0f
-            write = (write + 1) % cap
+    /** Append [n] converted samples, overwriting the oldest on overflow. The
+     *  tee write runs OUTSIDE the ring lock: it is file I/O and must never
+     *  stall a recogniser poll, and only the capture thread ever gets here. */
+    private fun append(src: ShortArray, n: Int) {
+        tee?.write(src, n)
+        synchronized(lock) {
+            for (i in 0 until n) {
+                buf[write] = src[i] / 32768.0f
+                write = (write + 1) % cap
+            }
+            if (filled < cap) filled = minOf(cap, filled + n)
+            total += n
         }
-        if (filled < cap) filled = minOf(cap, filled + n)
-        total += n
     }
 
     fun stop() {
