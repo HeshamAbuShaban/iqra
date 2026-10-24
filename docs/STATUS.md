@@ -1978,7 +1978,29 @@ above (262) and these screens in the hand.
   table; only boundaries shift - the vowel change is the first change to
   UNITS and must be measured on the corpus before and after).
 
+
+## Shipped, 25 October (night) — the dashboard meets the house standard (274)
+
+The user held the first dashboard to the project's own bar and it failed:
+Unicode glyphs for buttons, a bare slider, a canvas without semantics. A
+design-system inventory (Panel/PanelTitle, the observer's playhead
+transport, the reference bar's scrub-caching slider, Charts conventions,
+AGENTS honesty rules, the rtl()/latin() discipline) is now the reference
+for every widget that follows. Rebuilt in vocabulary: 48.dp IconButton
+with PlayArrow/Pause in the single accent tint and real content
+descriptions; a 15.sp Monospace clock; the mistake map on c.hairline with
+wordBad ticks, gold caps on first-letter blames, and a playhead that
+appears only while the whole session plays; the slider caches its drag;
+per-row hear-it is a 36.dp IconButton. Gate 43/43.
+
+The user's newest session (surah 67 on 272, 333 words, 10.9 MB WAV)
+verifies end to end and feeds the datasets: 4 WRONG ([0, 0, 0, 1000]),
+WAV parity pass, 3 of 3 reproduced charges sit 6+ symbols before their
+ayah's arrival — the borrow projection now reads 18 dropped / 13 flipped
+clean across 8 sessions, and the referee pilot holds 130 labelled cases.
+
 ## What is open next
+
 
 **1. The review/UX round, in the order the user ranked it.** (a) Report as
 the testing surface: metrics upgrades, per-word "what the model heard" text
