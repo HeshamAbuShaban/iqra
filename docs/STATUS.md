@@ -1908,6 +1908,43 @@ the oldest #249 files, which are safe in `.iqra-records/258/`).
   reading, not by gfxinfo — the user's own next hide session is the
   instrument.
 
+## Shipped overnight, 24/25 October — the review round, additive throughout (263)
+
+The user's five asks, each additive (nothing wiped), each gated where a
+gate could hold it:
+
+- **The report as a testing surface.** Every wrong row with a decision time
+  prints WHAT the model heard — the phoneme symbols the record's own
+  emission stream carries in the 2.5 s before the verdict, the same window
+  its "hear it" clip plays (PracticeLog now parses `emissions`/`emMs`). A
+  "Where blame lands" card buckets the v2 `wu` fractions (first letter …
+  last letter) — the view the binary writer made impossible, refused for v1
+  records whose per-row labels stay the honest view. The log gains a
+  "wrong only" filter, off by default.
+- **Settings in the user's hands.** "Your data" now names its own rules:
+  how many sessions are kept (the cap was invisible — the only way to learn
+  it was to lose a session), whether each session's audio is kept at all
+  (the capture pref existed with no UI), and the session audio actually on
+  disk, named in MB. "Save only on Wi-Fi" shows only when a copy is being
+  saved and says why it is inert otherwise — a control that does nothing is
+  a lie about the app's state.
+- **Reference recitation, specified before it sounds.** The reader's play
+  button opens a sheet: reciter, start ayah (with per-ayah timings honestly
+  named available or not), speed — and Stop when that surah is already
+  playing. One-tap play survives in the ayah sheet and the library. The
+  audio library splits its blended total by reciter — switching reciters
+  used to strand the old reciter's files invisibly — and offers "delete
+  other reciters" behind a confirm naming count and bytes.
+- **Routing.** System back now mirrors each child screen's own back
+  (report→origin, observer→report, library→settings, the rest→home)
+  instead of leaving the app; and no exit may leave a hot microphone: back
+  out of the reader or the live screen stops a running session first — the
+  reader's own back button now follows the same rule, closing a latent
+  silent-mic path.
+
+Gate 43/43. Still open for the user's sessions to verify: the hide-lag fix
+above (262) and these screens in the hand.
+
 ## What is open next
 
 **1. The review/UX round, in the order the user ranked it.** (a) Report as

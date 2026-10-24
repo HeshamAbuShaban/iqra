@@ -8,6 +8,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -661,6 +662,27 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         screenName = "reader"
     }
 
+    // System back mirrors the screen's own back affordance instead of leaving
+    // the app from a child screen. Leaving the reader or the live screen while
+    // the mic is up stops the session first: a back press must never leave a
+    // hot microphone behind a screen the user can no longer see.
+    BackHandler(enabled = screenName != "picker") {
+        when (screenName) {
+            "reader" -> {
+                if (vm.recording.value) vm.stopRecite("back out of reader")
+                screenName = "picker"
+            }
+            "live" -> {
+                if (vm.recording.value) vm.stopRecite("live exit")
+                screenName = "picker"
+            }
+            "report" -> screenName = reportFrom
+            "observer" -> screenName = "report"
+            "library" -> screenName = "settings"
+            else -> screenName = "picker"
+        }
+    }
+
     when (screen) {
         Screen.Data -> DataSetupScreen { screenName = "picker" }
         Screen.Settings -> SettingsScreen(
@@ -770,7 +792,14 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                     surah = screenSurah,
                     startPage = screenPage.takeIf { it > 0 },
                     initialAnchorAyah = screenAnchor.takeIf { it > 0 },
-                    onBack = { screenName = "picker" },
+                    // Leaving the reader ends a running session - the same
+                    // rule system back follows below. The recite bar's Stop
+                    // is still the way to finish deliberately (its record and
+                    // report follow), but no exit may leave the mic hot.
+                    onBack = {
+                        if (vm.recording.value) vm.stopRecite("back out of reader")
+                        screenName = "picker"
+                    },
                     onRequestMic = onRequestMic,
                 )
             }
