@@ -3,7 +3,6 @@ package com.iqra.quran.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,12 +15,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -39,10 +41,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDirection
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.text.AnnotatedString
@@ -678,14 +683,16 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
 
 
 /**
- * The sound dashboard: the session's own audio, kept on this device only,
- * with the transport the report was missing. The tick strip plots every
- * wrong verdict at the moment it was decided, so the shape of a recitation's
- * mistakes is visible before a single second plays; tapping the strip or
- * dragging the slider starts or moves the transport there, and every wrong
- * word in the log below offers its own 2.5 s window. A record that predates
- * the capture shows no card at all; a record that names audio whose file is
- * gone says so rather than offering a button that does nothing.
+ * The sound dashboard: the session's own audio, kept on this device only.
+ * The transport follows the observer's playhead card (48.dp icon button, one
+ * accent tint, a Monospace clock), the scrubber caches its drag like the
+ * reference bar's, and above them the mistake map: one tick per wrong
+ * verdict at the instant it was decided, gold-capped when the blame sat on
+ * the word's first letter - the shape the borrow charges take. The playhead
+ * is drawn only while the whole session plays: a marker that marks nothing
+ * reads as "nothing is current". A record that predates the capture shows
+ * no card at all; a record that names audio whose file is gone says so
+ * rather than offering a button that does nothing.
  */
 @Composable
 private fun SessionAudioCard(
@@ -700,7 +707,7 @@ private fun SessionAudioCard(
 ) {
     Panel(c) {
         Text("Session audio", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
         if (wavFile == null) {
             Text(
                 "This record names audio (\"${r.audioFile}\"), but the file is no longer on this device.",
@@ -708,59 +715,90 @@ private fun SessionAudioCard(
             )
             return@Panel
         }
-        Text(
-            "Your recitation was kept on this device for this session - never uploaded. " +
-                "Red ticks are wrong verdicts, placed when they were decided.",
-            fontSize = 11.sp, color = c.inkFaint,
-        )
-        Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { hear("session", 0, durMs + 500) }) {
-                Text(
-                    if (playingKey == "session") "■ stop" else "▶ play session",
-                    fontSize = 13.sp, color = c.accent,
+            IconButton(
+                onClick = { hear("session", 0, durMs + 500) },
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    if (playingKey == "session") Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    if (playingKey == "session") "Pause" else "Play the recitation",
+                    tint = c.accent,
+                    modifier = Modifier.size(30.dp),
                 )
             }
-            Text(
-                "%d:%02d / %d:%02d".format(
-                    posMs / 60000, posMs / 1000 % 60,
-                    durMs / 60000, durMs / 1000 % 60,
-                ),
-                fontSize = 11.sp, color = c.inkFaint, fontFamily = FontFamily.Monospace,
-            )
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    "%.1f s / %.0f s".format(posMs / 1000f, durMs / 1000f),
+                    fontSize = 15.sp, color = c.ink, fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                    "kept on this device, never uploaded · red ticks are wrong verdicts",
+                    fontSize = 10.sp, color = c.inkFaint,
+                )
+            }
         }
         if (durMs > 0) {
-            // The mistake map: one tick per wrong verdict, at the instant the
-            // engine decided it, on the audio's own clock. Tap to play from
-            // there.
             val anchor = r.audioStartMs - r.startedAt
             val wrongs = r.wordRows.filter { it.st == "WRONG" && it.wt != null }
-                .map { (it.wt!!.toLong() - anchor).coerceIn(0, durMs.toLong()).toInt() }
+                .map {
+                    Triple(
+                        (it.wt!!.toLong() - anchor).coerceIn(0, durMs.toLong()).toInt(),
+                        it.wu == 0,
+                        it.key,
+                    )
+                }
+            // The mistake map. A display element, like ScopeProgressStrip:
+            // scrubbing belongs to the slider below, which carries the 48.dp
+            // target this strip should not duplicate.
+            val playing = playingKey == "session"
             Canvas(
                 Modifier
                     .fillMaxWidth()
                     .height(14.dp)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(c.inkFaint.copy(alpha = 0.12f))
-                    .pointerInput(durMs) {
-                        detectTapGestures { offset ->
-                            onSeek((offset.x / size.width.toFloat() * durMs).toInt())
-                        }
+                    .background(c.hairline)
+                    .semantics {
+                        contentDescription =
+                            "Mistake map: ${wrongs.size} wrong verdicts across ${durMs / 1000} seconds"
                     },
             ) {
-                for (t in wrongs) {
+                for ((t, firstLetter, _) in wrongs) {
                     val x = t / durMs.toFloat() * size.width
                     drawRect(
                         c.wordBad,
-                        topLeft = androidx.compose.ui.geometry.Offset(x - size.width * 0.004f, 0f),
-                        size = androidx.compose.ui.geometry.Size(size.width * 0.008f, size.height),
+                        topLeft = Offset(x - 1.5.dp.toPx(), 0f),
+                        size = Size(3.dp.toPx(), size.height),
+                    )
+                    if (firstLetter) {
+                        // Gold caps the first-letter blames: the borrow shape
+                        // the desktop replay marks the same way.
+                        drawRect(
+                            c.gold,
+                            topLeft = Offset(x - 1.5.dp.toPx(), 0f),
+                            size = Size(3.dp.toPx(), 3.dp.toPx()),
+                        )
+                    }
+                }
+                if (playing) {
+                    val x = posMs.coerceIn(0, durMs) / durMs.toFloat() * size.width
+                    drawRect(
+                        c.accent,
+                        topLeft = Offset(x - 1.dp.toPx(), 0f),
+                        size = Size(2.dp.toPx(), size.height),
                     )
                 }
             }
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(4.dp))
+            var scrub by remember { mutableStateOf<Float?>(null) }
             Slider(
-                value = posMs.toFloat().coerceIn(0f, durMs.toFloat()),
-                onValueChange = { onSeek((it).toInt()) },
+                value = (scrub ?: posMs.toFloat()).coerceIn(0f, durMs.toFloat()),
+                onValueChange = { scrub = it },
+                onValueChangeFinished = {
+                    scrub?.let { onSeek(it.toInt()) }
+                    scrub = null
+                },
                 valueRange = 0f..durMs.toFloat(),
                 enabled = true,
             )
@@ -977,15 +1015,22 @@ private fun RecitationLogCard(
                             // Hear what the model heard: the 2.5 s of room
                             // audio before this verdict - the audio the judged
                             // window was built from. WRONG rows only; the
-                            // session card above plays the whole recitation.
+                            // dashboard above plays the whole recitation.
                             if (audioAvailable && row.st == "WRONG" && row.wt != null) {
                                 val key = "w:" + row.key
                                 val into = ((row.wt - 2500) - (r.audioStartMs - r.startedAt))
                                     .toInt().coerceAtLeast(0)
-                                TextButton(onClick = { hear(key, into, 2600) }) {
-                                    Text(
-                                        if (playingKey == key) "■ stop" else "▶ hear it",
-                                        fontSize = 10.sp, color = c.accent,
+                                IconButton(
+                                    onClick = { hear(key, into, 2600) },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(
+                                        if (playingKey == key) Icons.Filled.Pause
+                                        else Icons.Filled.PlayArrow,
+                                        if (playingKey == key) "Stop the clip"
+                                        else "Hear the audio before this verdict",
+                                        tint = c.accent,
+                                        modifier = Modifier.size(20.dp),
                                     )
                                 }
                             }
