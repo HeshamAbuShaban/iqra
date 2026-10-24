@@ -3008,33 +3008,28 @@ fun MushafPageView(
     val orphanInk = remember(page.page, hide, bmp) {
         if (hide) pageOrphanInk(bmp, lineGroups.values.flatten()) else emptyList()
     }
-    val draws = remember(
-        page.page, statusMap, advisories, currentKey, playOrder, playHead, activeVerse, hide, allWords, lineGroups, selectedAyah, activeWindow, scopeSurah, slotsByAyah, orphanInk,
-        // earnedVersion rather than earned: the map is the same object for the
-        // whole session and would compare equal to itself, so the draw list
-        // would never rebuild when a new verdict arrives.
-        earned, earnedVersion, judgedAyahs,
-    ) {
-        buildList {
-            // Join on (sura, ayah, position) — NEVER on line numbers. Mushaf
-            // word lines are 0-based text ordinals while glyph lines are
-            // printed line numbers, so line-equality paired every box with
-            // the wrong ayah's words. Lines are ordering-only here.
-            val byAyah = LinkedHashMap<String, MutableList<Pair<Int, RectF>>>()
-            val orderedKeys = lineGroups.keys.mapNotNull { k ->
-                val pp = k.split(":")
-                if (pp.size != 3) null
-                else Triple(pp[0].toInt(), pp[1].toInt(), pp[2].toInt()) to k
-            }.sortedWith(compareBy({ it.first.first }, { it.first.second }, { it.first.third }))
-            for ((_, gk) in orderedKeys) {
-                val ak = gk.substringBeforeLast(":")
-                val line = gk.substringAfterLast(":").toIntOrNull() ?: 0
-                byAyah.getOrPut(ak) { mutableListOf() }
-                    .addAll((lineGroups[gk] ?: emptyList()).map { line to it })
-            }
-            val wordsByAyah = allWords.groupBy { "${it.surah}:${it.verse}" }
-                .mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
-            val items = ArrayList<MaskedWord>()
+    // Page-only geometry, cached per page: the ayah→boxes join and the
+    // word→box pairing are functions of the page's own data (DB rects, layout
+    // tokens, word list) and of no verdict. They used to sit inside the
+    // verdict-keyed `draws` remember, so live recitation re-paired every box
+    // on the page and re-grouped every word list several times a second -
+    // the hide-mode lag the user felt.
+    val wordsAndMasksByAyah = remember(page.page, allWords, lineGroups, slotsByAyah) {
+        val byAyah = LinkedHashMap<String, MutableList<Pair<Int, RectF>>>()
+        val orderedKeys = lineGroups.keys.mapNotNull { k ->
+            val pp = k.split(":")
+            if (pp.size != 3) null
+            else Triple(pp[0].toInt(), pp[1].toInt(), pp[2].toInt()) to k
+        }.sortedWith(compareBy({ it.first.first }, { it.first.second }, { it.first.third }))
+        for ((_, gk) in orderedKeys) {
+            val ak = gk.substringBeforeLast(":")
+            val line = gk.substringAfterLast(":").toIntOrNull() ?: 0
+            byAyah.getOrPut(ak) { mutableListOf() }
+                .addAll((lineGroups[gk] ?: emptyList()).map { line to it })
+        }
+        val wordsByAyah = allWords.groupBy { "${it.surah}:${it.verse}" }
+            .mapValues { (_, ws) -> ws.sortedBy { it.wordInVerse } }
+        buildMap {
             for ((ak, rectsAll) in byAyah) {
                 val words = wordsByAyah[ak] ?: continue
                 // One box per printed token, zipped against the layout's own
@@ -3044,6 +3039,46 @@ fun MushafPageView(
                 // when the counts cannot be reconciled - see pairAyahBoxes.
                 val masks = pairAyahBoxes(rectsAll, slotsByAyah[ak] ?: emptyList(), words.size)
                     ?: continue
+                put(ak, words to masks)
+            }
+        }
+    }
+    // Each word's own orphan ink, chosen once per page by the very near-test
+    // maskRectOf applies. maskRectOf used to scan the page-wide orphan list
+    // for every word on every verdict tick; the per-word list is a handful of
+    // rects. The revealed-word guard still runs LIVE against the current
+    // revealed set inside maskRectOf, so the output is byte-identical.
+    val orphansByWord = remember(page.page, hide, orphanInk, wordsAndMasksByAyah) {
+        if (!hide || orphanInk.isEmpty()) emptyMap()
+        else buildMap {
+            for ((ak, pair) in wordsAndMasksByAyah) {
+                val (words, masks) = pair
+                for (i in words.indices) {
+                    val wm = masks[i] ?: continue
+                    val b = wm.body
+                    val near = orphanInk.filter { o ->
+                        !(o.left > b.right + ORPHAN_NEAR_PX || o.right < b.left - ORPHAN_NEAR_PX ||
+                            o.top > b.bottom + ORPHAN_NEAR_PX || o.bottom < b.top - ORPHAN_NEAR_PX)
+                    }
+                    if (near.isNotEmpty()) {
+                        put("${words[i].surah}:${words[i].verse}:${words[i].wordInVerse}", near)
+                    }
+                }
+            }
+        }
+    }
+    val draws = remember(
+        page.page, statusMap, advisories, currentKey, playOrder, playHead, activeVerse, hide, selectedAyah, activeWindow, scopeSurah,
+        wordsAndMasksByAyah, orphansByWord,
+        // earnedVersion rather than earned: the map is the same object for the
+        // whole session and would compare equal to itself, so the draw list
+        // would never rebuild when a new verdict arrives.
+        earned, earnedVersion, judgedAyahs,
+    ) {
+        buildList {
+            val items = ArrayList<Pair<String, MaskedWord>>()
+            for ((ak, pair) in wordsAndMasksByAyah) {
+                val (words, masks) = pair
                 for (i in words.indices) {
                     // Null only if a word ended up with no token at all, which
                     // the count branches rule out; keep the guard so an
@@ -3056,7 +3091,7 @@ fun MushafPageView(
                     // The live map first, the reader's own record only to fill
                     // what it has expired. Never the other way round: the live
                     // map is the one that knows a word is being re-judged now.
-val st = statusMap[key] ?: earned[key]
+                    val st = statusMap[key] ?: earned[key]
                     val isCur = key == currentKey
                     val gi = playOrder[key]
                     val isPlayed = gi != null && gi <= playHead
@@ -3079,15 +3114,15 @@ val st = statusMap[key] ?: earned[key]
                         advisoryCue = !hide && ReaderPrefs.advisoryDisplay(ctx) == ReaderPrefs.AdvisoryDisplay.IN_FLOW,
                         judgedAyah = st == null && !hide && inScope && judgedAyahs[w.verse].judged(),
                     )
-                    items.add(MaskedWord(rect, style, wm.marks))
+                    items.add(key to MaskedWord(rect, style, wm.marks))
                 }
             }
             // A word the app shows as recited keeps its ink: the orphan ink
             // near it is not this word's, and taking it would damage a word
             // the reciter got right.
-            val revealed = items.filter { !it.style.hidden }.map { it.rect }
-            for (it in items) {
-                add(WordDraw(it.rect, it.style, maskRectOf(it.rect, it.marks, orphanInk, revealed)))
+            val revealed = items.filter { !it.second.style.hidden }.map { it.second.rect }
+            for ((key, it) in items) {
+                add(WordDraw(it.rect, it.style, maskRectOf(it.rect, it.marks, orphansByWord[key].orEmpty(), revealed)))
             }
         }
     }
