@@ -1945,6 +1945,39 @@ gate could hold it:
 Gate 43/43. Still open for the user's sessions to verify: the hide-lag fix
 above (262) and these screens in the hand.
 
+
+## Shipped, 25 October (later) — the sound dashboard (272), and where laya stands
+
+- **The report's sound dashboard.** SessionAudioCard is now the control
+  panel the report was missing: a tick strip plots every wrong verdict at
+  its decision instant on the audio's own clock, tap or drag plays from
+  there, with a live position readout; the card sits directly under the
+  verdicts. The per-word heard line is set with care - label and symbols
+  separated (mixed Latin/Arabic runs scramble bidi), symbols in the Quran
+  face, RTL, readable. The desktop replay gains the same mistake map as a
+  full-width verdict timeline: red ticks at decision times, gold caps on
+  first-letter blames (the borrow shape), click to jump.
+- **laya (convaiinnovations), studied for real.** Three checkpoints; the
+  multilingual one is mmBERT-base, 322M, Arabic tagged, Apache-2.0, CPU
+  inference ~200-460 ms - the first decision model that could eventually
+  run on-device as an advisory layer. The official demo Space
+  (convaiinnovations-laya-demo.hf.space, /gradio_api/call/run_playground,
+  ~250 ms/call, token-free) runs the ENGLISH checkpoint, which its own
+  README says collapses on non-Latin scripts; measuring against it would
+  only re-document that. The measured path needs one decision:
+  duplicate that Space with RL_AGENT_MODEL=convaiinnovations/laya-multilingual
+  (their documented fix, free) and decision_referee.py gains a gradio
+  adapter - or run laya-ts locally on onnxruntime-node with the
+  multilingual weights (any `pip install laya` pulls torch; there is no
+  torch-free pip path). A ~540 MB int8 community ONNX exists
+  (yehor-oleksiuk/laya-multilingual-onnx). Local laya install was attempted
+  and stopped: the dependency chain is the huge thing, not the model.
+- **Word-table rebuild design study**: two agent attempts failed on
+  network errors; deferred to next session's first move, with the
+  builder's safety property already understood (units ship from the old
+  table; only boundaries shift - the vowel change is the first change to
+  UNITS and must be measured on the corpus before and after).
+
 ## What is open next
 
 **1. The review/UX round, in the order the user ranked it.** (a) Report as
