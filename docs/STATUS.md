@@ -1894,27 +1894,52 @@ the oldest #249 files, which are safe in `.iqra-records/258/`).
   "progress": finishing a recitation and pressing back dropped the reciter
   into the history list. The report now records its origin (progress list or
   just-finished session) and returns there.
+- **Hide mode stops re-pairing the page on every verdict tick (262).** The
+  lag the user felt with hide on was not the pixel scan (that was already
+  cached once per page + toggle) but the geometry: the ayah→boxes join, the
+  word→box pairing and the words-by-ayah regrouping sat inside the
+  verdict-keyed `draws` remember, so live recitation re-paired every box on
+  the page several times a second, then scanned the page-wide orphan list
+  once per word, then re-rasterized. Geometry is now cached per page
+  (`wordsAndMasksByAyah`), each word's orphan ink is chosen once per page by
+  maskRectOf's own near-test (`orphansByWord`), and `draws` rebuilds only
+  verdict state. The revealed-word guard still runs live, so the output is
+  byte-identical; `hide_mask_parity` passes unmodified. Measured by code
+  reading, not by gfxinfo — the user's own next hide session is the
+  instrument.
 
 ## What is open next
 
-**1. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
+**1. The review/UX round, in the order the user ranked it.** (a) Report as
+the testing surface: metrics upgrades, per-word "what the model heard" text
+(the emissions the record already holds), controls; (b) parent screen and
+routing: BackHandler/origin discipline across child screens; (c) Settings:
+a plain-wording sub-label per item, dependent rows gated with the reason
+(Tarteel's "has also been enabled since…" pattern), more knobs in the
+user's hands (keep-N sessions, audio retention); (d) reference recitation:
+a pre-play sheet (reciter, start ayah, speed) with one-tap play kept as the
+default, plus per-reciter storage totals and a cap; (e) mistake-kind
+taxonomy phase 1: MISSED/EXTRA are already separable in the alignment DP —
+write them additively, show them in the report before they ever touch live
+judging. Ranked map with file:line evidence is in the 24 October study.
+**2. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
 words end bare; the mushaf text carries the vowel; the builder already walks
-word by word. The runtime `final_vowel_id` rule then becomes a backstop. Check
-the blame fall on the next session before touching anything else.
-**2. DONE — replay screen, desktop first** (`engine/replay/replay_export.py`
-writes `out/replay/<record>/`; open the html — no headless browser here).
-Per-WRONG causes render only where the record can reproduce them.
-**3. Engine comparison** on the noisy human corpus; swap only on loss, per the
-shootout's own decision rule.
-**4. The word-latency instrument.** DONE (18 October night): `emMs` in the
-record and the lag/cadence split in `device_blame.py`; the paint half was
-already fixed structurally (ahead-ayah judging - colour no longer waits for
-the lock). What remains: one device session on build 237+, then the floor is
-a measured engine/paint split instead of an ambiguity.
-**5. Standing-word pointer** — fixed and gated; now also follows the reciter
-into the next ayah. Needs one device confirmation of both.
-**6. UI polish**: type sizes, session list order, RTL on the live caption,
-search deep-link, reference-app pop-menu.
+word by word. The runtime `final_vowel_id` rule then becomes a backstop.
+The fractional `wu` + the fresh records make the before/after measurable.
+**3. Engine comparison** on the noisy human corpus; swap only on loss, per
+the shootout's own decision rule. A real external reference for the unit
+inventory: Quran-Lab/mfa-quran-hafs's 67-symbol phone set with contextual
+cross-word rules (idgham/ikhfa/iqlab) — studied, not adopted blindly.
+**4. The per-word borrow test** — the engine-side fix for the borrow charges
+(18/18 reproduced; the shape now seen on 3:118, surah 67, 2:19:10 and ~40%
+of the surah-17 sample). The fresh fractional records are its dataset.
+**5. Decision models: rejected for now, measured later.** All four proposed
+models exist (verified on HF: JEV-27B-VL 27.8B VL, clef-flash 9.4B,
+GLiNER2.5-Decide 486M English text, kev-4b 4B) — none takes audio, Arabic,
+or a 250 ms on-device loop; three are server-class. The measured failure
+classes are window attribution and unit granularity, not judgment. If a
+labeled residual of genuinely two-plausible-readings ever emerges, it gets a
+kB-scale classifier over unit posteriors, not an LLM.
 
 ## Ownership
 
