@@ -1969,7 +1969,19 @@ inventory: Quran-Lab/mfa-quran-hafs's 67-symbol phone set with contextual
 cross-word rules (idgham/ikhfa/iqlab) — studied, not adopted blindly.
 **4. The per-word borrow test** — the engine-side fix for the borrow charges
 (18/18 reproduced; the shape now seen on 3:118, surah 67, 2:19:10 and ~40%
-of the surah-17 sample). The fresh fractional records are its dataset.
+of the surah-17 sample). The fresh fractional records are its dataset —
+and the rule is now PROJECTED before anyone builds it
+(`borrow_projection.py`, 24/25 October): across seven pulled sessions, of
+46 reproduced charges the per-word arrival rule would drop **15** and flip
+**10 accusations clean**, with **8** dropped charges sitting 6–15 symbols
+before their ayah's arrival, **5** at 16+, and only **2** within
+poll-granularity noise (1–5 symbols) — those two are the honest-charge
+risk, a real mistake whose arrival stamp lags by a poll, and an
+implementation should excuse only beyond a margin, not at one. Unlike the
+rejected whole-window test (621/621 firings, 25 lost CORRECTs), this rule
+only ever removes charges from words already judged WRONG, so it cannot
+cost a CORRECT verdict by construction. Build next session with the user
+in the loop, margin-gated.
 **5. Decision models: rejected for the live loop; the referee pilot is
 built (24/25 October).** The user pushed back, and the deeper study
 justifies the category if not these four instances: the decide contract

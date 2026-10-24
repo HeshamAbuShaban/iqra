@@ -239,11 +239,13 @@ git) and measured with the app's own alignment. Details in `docs/STATUS.md`,
    else moved, the ayah numbers and the surah frame untouched). What the
    check cannot see is the rule's arithmetic, so the arithmetic stays
    measured.
-8. **Session sound capture is still to be built**, on by default with a
-   visible indicator as the user asked, with the recorder's own audio tee, a
-   first-sample clock anchor in the record, retention that deletes the audio
-   with its record, and playback in the desktop replay and the phone
-   observer.
+8. **DONE — session sound capture (builds 260–261).** On by default with a
+   visible REC indicator, the recorder's own audio tee, a first-sample clock
+   anchor in the record, retention that deletes the audio with its record
+   plus an orphan sweep, `wav_check` parity, playback in the desktop replay,
+   and in-app playback in the report ("hear it" per wrong word and the whole
+   session). Verified on three device sessions (records + WAVs agree; every
+   verdict time maps inside its WAV).
 9. **The harakat and sukun precision work** in the matcher stands: the
    shipped Kotlin collapses short vowels on nineteen letters anywhere in a
    word, while the harness's rule is position-aware — the app is more
