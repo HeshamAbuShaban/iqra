@@ -1999,7 +1999,45 @@ WAV parity pass, 3 of 3 reproduced charges sit 6+ symbols before their
 ayah's arrival — the borrow projection now reads 18 dropped / 13 flipped
 clean across 8 sessions, and the referee pilot holds 130 labelled cases.
 
+
+## Measured overnight, 25/26 October — the word-table rebuild is refuted; the real fix is the app rule's scope
+
+Open item 2 ("rebuild the word table with case vowels on finals") was put to
+the measurement it had never had, with the builder's inputs re-fetched
+(hash-pinned) and the build re-verified reproducible against the committed
+asset (6,236 ayat, 0 differing keys):
+
+- **The recitation source does not carry the written case vowels.** Per word,
+  old-table final unit vs tajweed final unit: 77,124 of 77,481 identical,
+  23 differ by exactly a trailing vowel, 334 differ otherwise. The written
+  i'rab lives in mushaf orthography, whose phonemisation this project
+  refused for measured cause (gemination, context-dependent madd lengths).
+- **Table vowels would be matching-neutral anyway.** `final_vowel_id`
+  interns bare and vowelled finals of the nineteen vowel-less consonants to
+  one id, in both directions, in both the harness (position-aware) and the
+  app — so expected-side vowels change no comparison the rule already
+  forgives. Both forms are real: "a reciter who vowels the final letter and
+  a reciter who pauses on it are saying the same word" (final_vowel_parity).
+- **Two counts confused the docs, now named**: 26,733 = words whose final
+  consonant is of the vowel-less CLASS (the rule's coverage, bare or
+  vowelled); 13,448 = words stored with a literally bare final unit. Both
+  true, different denominators.
+- **The real precision win is the pair TODO item 9 already names**: the
+  shipped Kotlin collapses short vowels on nineteen letters ANYWHERE in a
+  word, while the harness's rule is position-aware — the app is more
+  permissive than its own spec and can hide a real mid-word vowel error.
+  Narrowing the app's collapse to word-final position (the table stays as
+  is) is the measured-change candidate, gated on the 114-dump corpus
+  before/after.
+
+The item is rewritten as that narrowing; the rebuild is closed with its
+negative result rather than half-built. The per-word borrow test remains
+the next engine change, projected at 18 dropped charges / 13 flipped
+accusations with a margin gate, implementation to be device-verified with
+the user.
+
 ## What is open next
+
 
 
 **1. The review/UX round, in the order the user ranked it.** (a) Report as

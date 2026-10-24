@@ -102,7 +102,7 @@ check items only when the shipped code proves them.
    rescore first. `optional_final.py` now prints `no licensed mark`
    truthfully (the old tag said "mark but not final" on every un-marked
    row; the booleans were always right, only the tag lied).
-8. **Rebuild the word table with case vowels on finals** (26,733 bare-end
+8. **CLOSED (measured negative) — was: rebuild the word table with case vowels on finals** (26,733 bare-end
    words; the builder's STOP condition needs a deliberate corpus rescore,
    not a weakening).
 9. **The 2.65s word-latency floor** — re-read 18 October: the walk's
