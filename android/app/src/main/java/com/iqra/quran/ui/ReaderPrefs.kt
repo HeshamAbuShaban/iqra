@@ -165,6 +165,18 @@ object ReaderPrefs {
 
     fun setRightToLeft(ctx: Context, v: Boolean) = write(ctx) { putBoolean("rtl", v) }
 
+    /**
+     * The recitation screen's engine lens: the band that shows what the
+     * recogniser is doing while it does it - gate, decoder, the coverage trio
+     * against their thresholds, and each verdict as it lands.
+     *
+     * Default off: the recitation screen's power is how little it shows, and
+     * the lens is a study/diagnostic instrument, not furniture. Remembered,
+     * because a person who wants it wants it every session.
+     */
+    fun liveLens(ctx: Context): Boolean = prefs(ctx).getBoolean("liveLens", false)
+    fun setLiveLens(ctx: Context, v: Boolean) = write(ctx) { putBoolean("liveLens", v) }
+
     // ---- recognition ------------------------------------------------------
     //
     // These are not cosmetics. Each one decides whether the app is ALLOWED to

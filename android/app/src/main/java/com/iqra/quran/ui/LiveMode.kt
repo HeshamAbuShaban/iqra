@@ -53,6 +53,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Pause
@@ -60,9 +62,14 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.border
 import com.iqra.quran.ui.theme.IqraColors
+import com.iqra.quran.ui.theme.IqraShape
 import com.iqra.quran.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.MonitorHeart
 
 /**
  * Recitation test: the verse is hidden, you recite it from memory, and each
@@ -114,12 +121,13 @@ fun LiveModeScreen(
     // the preference, so a reciter who turned hiding on in the reader still
     // read the ayah off this screen.
     val hide = remember(ctx, prefTick) { ReaderPrefs.hideVerse(ctx) }
+    val lensOn = remember(prefTick) { ReaderPrefs.liveLens(ctx) }
     // Wraps the whole screen, top bar included: a mirrored title beside an
     // unmirrored word list would be the same mismatch in a smaller place.
     CompositionLocalProvider(
         LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr
     ) {
-        LiveModeContent(vm, data, surah, startAyah, ayahCount, onRequestMic, onExit, onFinished, hide)
+        LiveModeContent(vm, data, surah, startAyah, ayahCount, onRequestMic, onExit, onFinished, hide, lensOn)
     }
 }
 
@@ -134,6 +142,7 @@ private fun LiveModeContent(
     onExit: () -> Unit,
     onFinished: () -> Unit,
     hide: Boolean,
+    lensOn: Boolean,
 ) {
     val ctx = LocalContext.current
     val lcG = LocalIqraColors.current
@@ -170,6 +179,24 @@ private fun LiveModeContent(
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val policy by vm.policyLive.collectAsStateWithLifecycle()
+    // The lens reads only what the engine already publishes; nothing in
+    // PracticeViewModel moves for this surface. lensOn arrives keyed on the
+    // prefs tick from the caller, so the toggle recomposes the band.
+    val gateReason by vm.gateReason.collectAsStateWithLifecycle()
+    val decoderState by vm.decoderState.collectAsStateWithLifecycle()
+    val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
+    val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
+    val needs = remember { vm.policyNeeds() }
+    var micDb by remember { mutableStateOf(0f) }
+    var micN by remember { mutableStateOf(0) }
+    LaunchedEffect(lensOn) {
+        if (!lensOn) return@LaunchedEffect
+        while (true) {
+            micDb = vm.micLevel()
+            micN = vm.micSampleCount()
+            delay(250)
+        }
+    }
 
     // The wrong-verdict buzz: session-scoped, debounced, settings-gated. It
     // watches the map as a whole because a per-word effect would fire again on
@@ -446,7 +473,13 @@ private fun LiveModeContent(
                     modifier = Modifier.weight(1f),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
-                Spacer(Modifier.width(48.dp))
+                IconButton(onClick = { ReaderPrefs.setLiveLens(ctx, !lensOn) }) {
+                    Icon(
+                        Icons.Filled.MonitorHeart,
+                        stringResource(R.string.lens_toggle),
+                        tint = if (lensOn) lcG.gold else lcG.inkMuted,
+                    )
+                }
             }
         },
     ) { pad ->
@@ -629,6 +662,26 @@ private fun LiveModeContent(
                 // its own denominator.
                 val inScope = scopeProgress.filter { it.ayah in scopeAyahs }
                 val judged = minOf(inScope.sumOf { it.decided }, totalWords)
+                if (lensOn) {
+                    EngineLens(
+                        lcG = lcG,
+                        engineLabel = engineLabel,
+                        gateReason = gateReason,
+                        decoderState = decoderState,
+                        vadSpeech = policy.vadSpeech,
+                        gateClosed = policy.gateClosed,
+                        stallNote = policy.stallNote,
+                        stallSec = policy.stallSec,
+                        held = policy.held,
+                        next = policy.next, here = policy.here, back = policy.back,
+                        needs = needs,
+                        micDb = micDb, micN = micN,
+                        wpm = wpm,
+                        statusMap = statusMap,
+                        scopeProgress = scopeProgress,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
                 Text(ltr(stringResource(R.string.live_heard_count, judged, totalWords)), fontSize = 12.sp, color = lcG.inkMuted)
                 Spacer(Modifier.height(16.dp))
 
@@ -998,6 +1051,273 @@ private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean, hide
  * the only way the two can agree, and the engine already publishes it.
  */
 
+
+/**
+ * The engine lens: what the recogniser is doing, while it does it.
+ *
+ * Four bands, top to bottom, reading input to output:
+ *   chips   - the pipeline's health: engine, gate, VAD, decoder, mic level
+ *   bars    - the coverage trio the lock decides on, against their thresholds
+ *   counts  - the session so far, decided words only
+ *   feed    - each verdict the moment it lands, the word itself, newest first
+ *
+ * Everything here is already published state; the lens is a window, not a
+ * second engine. The bars are the reason it exists: a lock that sits still is
+ * the one failure a reciter cannot see the cause of, and here the cause is a
+ * bar short of its tick.
+ */
+@Composable
+private fun EngineLens(
+    lcG: IqraColors,
+    engineLabel: String,
+    gateReason: String,
+    decoderState: String,
+    vadSpeech: Boolean?,
+    gateClosed: Long,
+    stallNote: String,
+    stallSec: Float,
+    held: String,
+    next: Float,
+    here: Float,
+    back: Float,
+    needs: Triple<Float, Float, Float>,
+    micDb: Float,
+    micN: Int,
+    wpm: Double,
+    statusMap: Map<String, WordStatus>,
+    scopeProgress: List<ScopeAyah>,
+) {
+    val decided = statusMap.count { it.value == WordStatus.CORRECT } to
+        statusMap.count { it.value == WordStatus.WRONG }
+    val unknown = statusMap.count { it.value == WordStatus.UNKNOWN }
+    val heard = scopeProgress.sumOf { it.heard }
+    val total = scopeProgress.sumOf { it.words }
+
+    // The decision feed: the map is the truth, the feed is its recent delta.
+    // Each newly decided word enters with the wall-clock moment it was seen,
+    // newest first, six deep. SKIPPED and UNKNOWN are absence, not decisions,
+    // and never enter.
+    var seen by remember { mutableStateOf<Map<String, WordStatus>>(emptyMap()) }
+    var feed by remember { mutableStateOf(listOf<Triple<String, WordStatus, Long>>()) }
+    LaunchedEffect(statusMap) {
+        if (statusMap.isEmpty()) {
+            seen = emptyMap(); feed = emptyList(); return@LaunchedEffect
+        }
+        val now = System.currentTimeMillis()
+        val newly = statusMap.filter { (k, v) ->
+            (v == WordStatus.CORRECT || v == WordStatus.WRONG) && seen[k] != v
+        }
+        if (newly.isNotEmpty()) {
+            feed = (newly.map { Triple(it.key, it.value, now) } + feed).take(6)
+        }
+        seen = statusMap
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(IqraShape.card)
+            .background(lcG.surface)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // ---- pipeline chips ----
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            LensChip(lcG, stringResource(R.string.lens_engine),
+                engineLabel.ifEmpty { stringResource(R.string.lens_idle) }, lcG.inkMuted)
+            val gateOpen = gateReason.isEmpty()
+            LensChip(lcG, stringResource(R.string.lens_gate),
+                if (gateOpen) stringResource(R.string.lens_open) else gateReason,
+                if (gateOpen) lcG.wordGood else lcG.chartBad)
+            LensChip(lcG, stringResource(R.string.lens_vad),
+                when (vadSpeech) {
+                    true -> stringResource(R.string.lens_speech)
+                    false -> stringResource(R.string.lens_silence)
+                    null -> stringResource(R.string.lens_idle)
+                },
+                when (vadSpeech) { true -> lcG.wordGood; false -> lcG.inkMuted; null -> lcG.inkFaint })
+            LensChip(lcG, stringResource(R.string.lens_decoder),
+                decoderState.ifEmpty { stringResource(R.string.lens_idle) }, lcG.inkMuted)
+            LensMic(lcG, micDb, micN)
+        }
+
+        // ---- the coverage trio ----
+        // NEXT is the ayah ahead: when its coverage crosses the gold tick the
+        // lock advances. BACK is the ayah behind, the retreat door. HERE is
+        // the locked ayah itself, shown so a dead band is visible as one.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LensBar(lcG, stringResource(R.string.lens_next), next, needs.first, Modifier.weight(1f), tick = true)
+            LensBar(lcG, stringResource(R.string.lens_here), here, null, Modifier.weight(1f), tick = false)
+            LensBar(lcG, stringResource(R.string.lens_back), back, needs.third, Modifier.weight(1f), tick = true)
+        }
+        Text(
+            stringResource(R.string.lens_policy_note,
+                "%.2f".format(needs.first), "%.2f".format(needs.third)),
+            fontSize = 9.sp,
+            color = lcG.inkFaint,
+        )
+
+        // ---- held / stall, the one-line why ----
+        if (stallNote.isNotEmpty() || held.isNotEmpty() || gateClosed > 0L) {
+            val bits = listOfNotNull(
+                held.takeIf { it.isNotEmpty() },
+                stallNote.takeIf { it.isNotEmpty() },
+                if (gateClosed > 0L) "$gateClosed" else null,
+            )
+            Text(
+                bits.joinToString("  ·  "),
+                fontSize = 10.sp,
+                color = lcG.gold,
+                maxLines = 2,
+            )
+        }
+
+        // ---- counts ----
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LensCount(lcG, "✓", "${decided.first}", lcG.wordGood, Modifier.weight(1f))
+            LensCount(lcG, "✕", "${decided.second}", lcG.chartBad, Modifier.weight(1f))
+            LensCount(lcG, "?", "$unknown", lcG.inkMuted, Modifier.weight(1f))
+            LensCount(lcG, stringResource(R.string.lens_heard), "$heard/$total", lcG.ink, Modifier.weight(1.4f))
+            LensCount(lcG, stringResource(R.string.practice_wpm_short), "%.0f".format(wpm), lcG.ink, Modifier.weight(1f))
+        }
+
+        // ---- the feed ----
+        if (feed.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                feed.forEach { (key, st, at) ->
+                    val word = key.split(":").getOrNull(2) ?: ""
+                    val ref = key.split(":").take(2).joinToString(":")
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            when (st) { WordStatus.CORRECT -> "✓"; else -> "✕" },
+                            fontSize = 11.sp,
+                            color = when (st) { WordStatus.CORRECT -> lcG.wordGood; else -> lcG.chartBad },
+                        )
+                        Text(
+                            ref,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = lcG.inkFaint,
+                        )
+                        Text(
+                            String.format(java.util.Locale.US, "%tT", java.util.Date(at)),
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = lcG.inkFaint,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LensChip(c: IqraColors, label: String, value: String, tint: Color) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = c.surfaceHigh,
+        contentColor = tint,
+    ) {
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+            Text(label, fontSize = 8.sp, letterSpacing = 0.8.sp, color = c.inkFaint)
+            Text(value, fontSize = 11.sp, color = tint, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun LensMic(c: IqraColors, micDb: Float, micN: Int) {
+    Surface(shape = RoundedCornerShape(8.dp), color = c.surfaceHigh) {
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp).width(74.dp)) {
+            Text(stringResource(R.string.lens_mic), fontSize = 8.sp, letterSpacing = 0.8.sp, color = c.inkFaint)
+            Canvas(Modifier.fillMaxWidth().height(6.dp).padding(vertical = 1.dp)) {
+                val level = (micDb * 4f).coerceIn(0f, 1f)
+                drawRoundRect(
+                    c.surface,
+                    androidx.compose.ui.geometry.Offset.Zero,
+                    androidx.compose.ui.geometry.Size(size.width, size.height),
+                    androidx.compose.ui.geometry.CornerRadius(3f, 3f),
+                )
+                drawRoundRect(
+                    if (level <= 0.01f) c.inkFaint else c.accent,
+                    androidx.compose.ui.geometry.Offset.Zero,
+                    androidx.compose.ui.geometry.Size(size.width * level, size.height),
+                    androidx.compose.ui.geometry.CornerRadius(3f, 3f),
+                )
+            }
+            Text("$micN", fontSize = 8.sp, fontFamily = FontFamily.Monospace, color = c.inkFaint)
+        }
+    }
+}
+
+/**
+ * One coverage bar. [tick] places the gold threshold mark the bar must cross
+ * for the lock to act; [here] has none, because its number explains the dead
+ * band rather than driving a move.
+ */
+@Composable
+private fun LensBar(
+    c: IqraColors,
+    label: String,
+    coverage: Float,
+    threshold: Float?,
+    modifier: Modifier = Modifier,
+    tick: Boolean,
+) {
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontSize = 9.sp, letterSpacing = 0.8.sp, color = c.inkFaint)
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (coverage < 0f) "—" else "%.0f%%".format(coverage * 100f),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                color = if (threshold != null && coverage >= threshold) c.gold else c.ink,
+            )
+        }
+        Spacer(Modifier.height(3.dp))
+        Canvas(Modifier.fillMaxWidth().height(6.dp)) {
+            drawRoundRect(
+                c.surfaceHigh,
+                androidx.compose.ui.geometry.Offset.Zero,
+                androidx.compose.ui.geometry.Size(size.width, size.height),
+                androidx.compose.ui.geometry.CornerRadius(3f, 3f),
+            )
+            if (coverage >= 0f) {
+                drawRoundRect(
+                    c.accent,
+                    androidx.compose.ui.geometry.Offset.Zero,
+                    androidx.compose.ui.geometry.Size(size.width * coverage.coerceIn(0f, 1f), size.height),
+                    androidx.compose.ui.geometry.CornerRadius(3f, 3f),
+                )
+            }
+            if (tick && threshold != null) {
+                drawRoundRect(
+                    c.gold,
+                    androidx.compose.ui.geometry.Offset(size.width * threshold - 1f, -2f),
+                    androidx.compose.ui.geometry.Size(2f, size.height + 4f),
+                    androidx.compose.ui.geometry.CornerRadius(1f, 1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LensCount(c: IqraColors, label: String, value: String, tint: Color, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = tint)
+        Text(label, fontSize = 8.sp, color = c.inkFaint, maxLines = 1)
+    }
+}
 
 /**
  * Sacred geometry behind the passage.

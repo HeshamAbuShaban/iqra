@@ -132,4 +132,20 @@
     <string name="home_slot_recite_detail">%1$s · ayah %2$d</string>
     <string name="home_slot_listen">Listen again</string>
     <string name="home_slot_listen_detail">Surah %1$s</string>
+    <string name="lens_toggle">Engine lens</string>
+    <string name="lens_engine">Engine</string>
+    <string name="lens_idle">idle</string>
+    <string name="lens_gate">Gate</string>
+    <string name="lens_open">open</string>
+    <string name="lens_vad">VAD</string>
+    <string name="lens_speech">speech</string>
+    <string name="lens_silence">silence</string>
+    <string name="lens_decoder">Decoder</string>
+    <string name="lens_mic">Mic</string>
+    <string name="lens_next">NEXT</string>
+    <string name="lens_here">HERE</string>
+    <string name="lens_back">BACK</string>
+    <string name="lens_policy_note">NEXT ≥ %1$s advances the lock · BACK ≥ %2$s retreats</string>
+    <string name="lens_heard">heard</string>
+    <string name="practice_wpm_short">wpm</string>
 </resources>

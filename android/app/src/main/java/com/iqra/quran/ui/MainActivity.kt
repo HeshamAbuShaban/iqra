@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -1394,7 +1395,6 @@ fun ReaderScreen(
     val bookmarkPages by vm.bookmarks.collectAsStateWithLifecycle()
     var showGoto by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
-    var gotoText by remember { mutableStateOf("") }
     // The ayah the play sheet opens at: 1 from the header's play affordance,
     // the selected ayah from the sheet's "Listen from this ayah". Every play
     // passes through the sheet so the reciter is a choice, not an assumption.
@@ -1863,70 +1863,96 @@ fun ReaderScreen(
                 )
             }
             if (showGoto) {
+                // Move to, in the reference app's shape: three linked pickers,
+                // whichever you touch becomes the driver and the other two
+                // follow. A page names the surah that lives on it; a surah
+                // names its first page; an ayah names the page that carries
+                // it. Plain on purpose - this is a navigation instrument, and
+                // the value is the reach, not the decoration.
+                val c = LocalIqraColors.current
+                val surahs = remember { data?.surahList().orEmpty() }
+                var jSurah by remember { mutableIntStateOf(headerSurah.coerceIn(1, 114)) }
+                var jAyah by remember { mutableIntStateOf(1) }
+                var jPage by remember { mutableIntStateOf(shownPage.coerceIn(1, mushaf.size)) }
+
+                fun ayahCount(s: Int) = surahs.firstOrNull { it.number == s }?.ayahCount ?: 3
+                fun firstAyahOnPage(surah: Int, page: Int): Int =
+                    mushaf.getOrNull(page - 1)?.lines
+                        ?.flatMap { it.words.orEmpty() }
+                        ?.firstOrNull { it.surah == surah }?.verse ?: 1
+
+                fun pickSurah(n: Int) {
+                    jSurah = n
+                    jAyah = 1
+                    surahs.firstOrNull { it.number == n }?.let { jPage = it.startPage }
+                }
+                fun pickAyah(a: Int) {
+                    jAyah = a.coerceIn(1, ayahCount(jSurah))
+                    vm.pageOfVerse(jSurah, jAyah)?.let { jPage = it }
+                }
+                fun pickPage(p: Int) {
+                    jPage = p
+                    data?.surahAtPage(p)?.number?.let { s2 ->
+                        jSurah = s2
+                        jAyah = firstAyahOnPage(s2, p)
+                    }
+                }
                 val go = {
-                    val p = gotoText.toIntOrNull()
-                    if (p != null && p in 1..mushaf.size) {
-                        vm.jumpToPage(p)
-                        gotoText = ""
+                    if (jPage in 1..mushaf.size) {
+                        vm.jumpToPage(jPage)
                         showGoto = false
                     }
                 }
-                // The dialog, like the sheets below it, is app chrome: wrap it
-                // in the app's own scheme so it stops inheriting the reader's
-                // light colours on a dark theme.
-                val c = LocalIqraColors.current
+                // App chrome, not the reader's light scheme.
                 MaterialTheme(colorScheme = iqraScheme(c)) {
                 AlertDialog(
-                    // Every exit clears the field: it used to be cleared only
-                    // inside `go`, so cancelling or dismissing left the last
-                    // page number sitting there for the next time.
-                    onDismissRequest = { gotoText = ""; showGoto = false },
-                    confirmButton = {
-                        TextButton(onClick = go) { Text("Go") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { gotoText = ""; showGoto = false }) { Text("Cancel") }
-                    },
-                    title = { Text("Go to page") },
+                    onDismissRequest = { showGoto = false },
+                    confirmButton = { TextButton(onClick = go) { Text("Go") } },
+                    dismissButton = { TextButton(onClick = { showGoto = false }) { Text("Cancel") } },
+                    title = { Text("Move to") },
                     text = {
                         Column {
-                            Text(
-                                "Page $shownPage of ${mushaf.size}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = gotoText,
-                                onValueChange = { gotoText = it.filter { c -> c.isDigit() }.take(3) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done,
-                                ),
-                                keyboardActions = KeyboardActions(onDone = { go() }),
-                                placeholder = { Text("1 – ${mushaf.size}") },
-                            )
-                            // Move-to preview: the number is meaningless until
-                            // you know what lives there. The surah (or surahs,
-                            // on the 51 two-surah pages) on the typed page,
-                            // live as you type.
-                            gotoText.toIntOrNull()?.takeIf { it in 1..mushaf.size }?.let { target ->
-                                val names = data?.surahList()
-                                    ?.filter { target >= it.startPage && target <= it.endPage }
-                                    ?.joinToString(" · ") { it.name }
-                                if (!names.isNullOrEmpty()) {
-                                    Spacer(Modifier.height(10.dp))
-                                    Text(
-                                        names,
-                                        fontSize = 15.sp,
-                                        fontFamily = quranFont,
-                                        color = c.gold,
-                                        textAlign = TextAlign.End,
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                JumpPicker(
+                                    modifier = Modifier.weight(1.5f),
+                                    label = "Surah",
+                                    value = "$jSurah · " + (surahs.firstOrNull { it.number == jSurah }?.nameEn ?: ""),
+                                    count = surahs.size,
+                                    selected = jSurah - 1,
+                                    onPick = { i -> pickSurah(i + 1) },
+                                    labeler = { i -> "${i + 1} · ${surahs[i].nameEn}" },
+                                )
+                                JumpPicker(
+                                    modifier = Modifier.weight(0.9f),
+                                    label = "Ayah",
+                                    value = "$jAyah",
+                                    count = ayahCount(jSurah),
+                                    selected = jAyah - 1,
+                                    onPick = { i -> pickAyah(i + 1) },
+                                    labeler = { i -> "${i + 1}" },
+                                )
+                                JumpPicker(
+                                    modifier = Modifier.weight(0.9f),
+                                    label = "Page",
+                                    value = "$jPage",
+                                    count = mushaf.size,
+                                    selected = jPage - 1,
+                                    onPick = { i -> pickPage(i + 1) },
+                                    labeler = { i -> "${i + 1}" },
+                                )
                             }
+                            Spacer(Modifier.height(12.dp))
+                            val info = surahs.firstOrNull { it.number == jSurah }
+                            Text(
+                                buildString {
+                                    append(info?.nameEn ?: "Surah $jSurah")
+                                    append("  $jSurah:$jAyah")
+                                    append("  ·  page $jPage")
+                                    if (info != null) append("  ·  Juz ${info.juz}")
+                                },
+                                fontSize = 12.sp,
+                                color = c.inkMuted,
+                            )
                         }
                     },
                 )
@@ -2155,6 +2181,72 @@ private fun BookmarkRow(
             fontSize = 12.sp,
             color = if (filled) accentColor else c.inkMuted,
         )
+    }
+}
+
+/**
+ * One linked picker of the Move-to dialog: a label, the current choice as a
+ * tappable value, and a scrollable menu. Plain by intent - the convenience is
+ * that 604 pages and 114 surahs are two taps away with the destination
+ * previewed before the jump commits.
+ */
+@Composable
+private fun JumpPicker(
+    modifier: Modifier = Modifier,
+    label: String,
+    value: String,
+    count: Int,
+    selected: Int,
+    onPick: (Int) -> Unit,
+    labeler: (Int) -> String,
+) {
+    val c = LocalIqraColors.current
+    var open by remember { mutableStateOf(false) }
+    Column(modifier) {
+        Text(label, fontSize = 10.sp, letterSpacing = 1.sp, color = c.inkFaint)
+        Spacer(Modifier.height(3.dp))
+        Box {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = c.surface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, c.hairline),
+                onClick = { open = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    value,
+                    fontSize = 13.sp,
+                    color = c.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                )
+            }
+            DropdownMenu(
+                expanded = open,
+                onDismissRequest = { open = false },
+                modifier = Modifier.heightIn(max = 340.dp),
+                containerColor = c.surfaceHigh,
+            ) {
+                LazyColumn(state = rememberLazyListState(initialFirstVisibleItemIndex = selected.coerceAtMost(count - 1))) {
+                    items(count) { i ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    labeler(i),
+                                    fontSize = 13.sp,
+                                    color = if (i == selected) c.accent else c.ink,
+                                )
+                            },
+                            onClick = {
+                                onPick(i)
+                                open = false
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

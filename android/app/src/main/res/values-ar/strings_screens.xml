@@ -131,4 +131,20 @@
     <string name="home_slot_recite_detail">%1$s · آية %2$d</string>
     <string name="home_slot_listen">استمع مجدداً</string>
     <string name="home_slot_listen_detail">سورة %1$s</string>
+    <string name="lens_toggle">عدسة المحرك</string>
+    <string name="lens_engine">المحرك</string>
+    <string name="lens_idle">خامل</string>
+    <string name="lens_gate">البوابة</string>
+    <string name="lens_open">مفتوحة</string>
+    <string name="lens_vad">كاشط الصوت</string>
+    <string name="lens_speech">كلام</string>
+    <string name="lens_silence">صمت</string>
+    <string name="lens_decoder">فاكّ الترميز</string>
+    <string name="lens_mic">الميكروفون</string>
+    <string name="lens_next">التالية</string>
+    <string name="lens_here">الحالية</string>
+    <string name="lens_back">السابقة</string>
+    <string name="lens_policy_note">التالية ≥ %1$s يقرّب التتبع · السابقة ≥ %2$s يرجّعه</string>
+    <string name="lens_heard">سُمِع</string>
+    <string name="practice_wpm_short">كلمة/د</string>
 </resources>
