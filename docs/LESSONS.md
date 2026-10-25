@@ -258,6 +258,30 @@ None of those is a threshold. Every one of them changed what got built.
 
 ---
 
+## 14. A locale is a data contract too
+
+The UI was translated to Arabic, and every mushaf page image silently vanished
+into the text fallback. Nothing in the data layer had changed; nothing had
+moved; the page files were exactly where they always were.
+
+`String.format("%03d.png", page)` had simply begun to answer `٠٠٣.png`. The
+default locale had changed, digits are localizable characters, and a filename
+that matched no file lost to no error at all — every candidate stat'ed false,
+the loader picked the first one anyway, decode returned null, and the screen
+fell back with the same cream paint the real pages use. It looked like a
+permission bug, a storage bug, a device bug. It was a format string.
+
+> **Anything that builds a file name, a cache key, a hash, or a string a tool
+> parses is code-side data, and its locale is pinned.** UI text formats with
+> the user's locale; contracts format with `Locale.US`. The app now pins
+> `Locale.Category.FORMAT` once, at startup, and the two never meet.
+
+The instrument that would have caught it in one look: a machine-readable
+rendering check — "the page draws zero text nodes" — not a screenshot a human
+pattern-matches. The accessibility tree saw the truth the whole time.
+
+---
+
 ## If you only remember five things
 
 1. Measure the whole corpus before you trust the first sample.

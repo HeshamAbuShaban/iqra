@@ -2137,3 +2137,66 @@ And a session record can overwrite its own results: a periodic flush fired after
 teardown and rewrote a good final record with reset counters, which is how the
 Al-Fatiha record came to hold 192 frames and report `moves=0`. An instrument that
 can lose its own data fails silently and looks like data.
+## The shell, 24–25 October — Arabic, and the lessons the pages taught
+
+The engine was not touched this round; the shell around it was, and two of the
+shell's defects turned out to matter to the engine's credibility on screen.
+
+**The pages vanished, and it was a format string.** After the Arabic UI
+landed, every mushaf page image silently fell back to the text renderer.
+Root cause: `String.format("%03d.png", page)` under the `ar` locale formats
+Arabic-Indic digits — `٠٠٣.png`, a filename matching no file. Fix:
+`Locale.setDefault(Locale.Category.FORMAT, Locale.US)` at startup plus
+explicit `Locale.US` pins in `AssetPaths`/`AudioStore` (page names, page URLs,
+sha256 hex, mp3 cache keys). UI text keeps locale formatting; contracts keep
+Latin. Lesson 14 in `docs/LESSONS.md`. The diagnostic that settled it after
+two wrong theories (MIUI storage grant, night mode): the accessibility tree —
+the fallback page carries text nodes, the bitmap carries none. Not a
+screenshot, not `run-as` (which cannot see FUSE storage).
+
+**Localization architecture.** ~370 user-facing strings moved into
+`values/` + `values-ar/` across five domain files. Per-app language lives in
+Settings → اللغة: on API 33+ it is the system's own `LocaleManager` store
+(`adb shell cmd locale get-app-locales com.iqra.quran` reads it), below that
+`attachBaseContext` wraps. Numbers a person reads resolve per locale (٦٠٤);
+record data, TSV, replay tags stay Latin by construction. Enum labels
+(theme, metric, strictness, advisories) are resource ids; the enum name
+remains the wire identity. Gate checks that grepped moved prose now read the
+resource files the code points at — each re-pointing fault-injected red
+first (`device_blame_parity`, `session_wav_parity`, `latin_wrap_parity`).
+
+**Reader: revert, then what was asked back.** The reader screen was reverted
+byte-exact to its shipping state and the mushaf rendering is frozen. What the
+owner then sanctioned back as the norm: the ayah long-press sheet in three
+labelled sections with live-state bookmark rows (This ayah / This page,
+Saved markers), and "Listen from this ayah" opening the reference-play sheet
+pre-set to that ayah — the reciter is a choice before any internet is spent.
+The play sheet also targets the surah actually on screen (the sheet used to
+inherit the surah the reader OPENED with, diverging after a swipe).
+
+**Resume now remembers the act.** Surah rows/grid/search opened every surah
+at its first page — the clash that forced the magnifier detour; they resume
+at lastRead's page. Home carries three resume doors: read (lastRead),
+recite (the latest recorded session's own lock position, anchored on entry),
+listen (the surah last chosen for playback — written by the play sheet and
+audio library at the moment of choosing).
+
+**Search folds Arabic.** The stored names are fully vocalised
+(سُورَةُ ٱلْفَاتِحَةِ), so a bare query never matched; both sides now fold
+marks and alef variants (`arabicFold` in `TextDir.kt`). Home and Choose.
+
+**Move to.** The reader's page dialog is the reference app's triple picker —
+surah / ayah / page, linked, whichever you touch drives the other two, with
+the destination previewed before Go.
+
+**Sheets follow the app.** The reader's three sheets and its dialog read the
+app palette (`LocalIqraColors`) instead of the reader's light scheme — on a
+dark theme they had been cream panels from a different app. The recite bar's
+progress strip shows for every recitation, not only hide mode.
+
+**The engine lens (new).** LiveMode carries a toggleable band (heart icon,
+remembered in ReaderPrefs) that shows the recogniser working: pipeline chips
+(engine/gate/VAD/decoder/mic level), the coverage trio (NEXT/HERE/BACK)
+against their gold threshold ticks, session counts, and each verdict as it
+lands. It reads only already-published state; nothing in PracticeViewModel
+moved. A lock that sits still now shows its cause — a bar short of its tick.
