@@ -36,6 +36,10 @@ HERE = Path(__file__).resolve().parent
 VM = HERE.parent.parent / "android/app/src/main/java/com/iqra/quran/ui/PracticeViewModel.kt"
 MAP = HERE.parent.parent / "android/app/src/main/java/com/iqra/quran/ml/PhonemeMapper.kt"
 SR = HERE.parent.parent / "android/app/src/main/java/com/iqra/quran/ui/SessionReport.kt"
+# The report's user-facing prose lives in resources since the Arabic
+# translation landed; the behaviour under test is "the admission reaches the
+# screen", so the check reads the resource file the code points at.
+SR_RES = HERE.parent.parent / "android/app/src/main/res/values/strings_report.xml"
 TOOL = HERE / "device_blame.py"
 
 
@@ -154,8 +158,12 @@ def main() -> int:
         # SessionReport renders the bands on device; its v1 branch must say
         # the record cannot place the charge rather than dress a binary 1000
         # up as "the last letter" - the mislabel the 19 October pull caught.
+        # The sentence itself moved to strings_report.xml with the Arabic
+        # translation, so the behaviour is: the v1 branch points at the
+        # resource, and the resource carries the admission.
         ("the report admits a v1 record has no finer position",
-         re.search(r'"blamed past the first letter', sr) is not None),
+         re.search(r'r\.v < 2 -> stringResource\(R\.string\.report_blame_past_first\)', sr) is not None
+         and "no finer position" in SR_RES.read_text(encoding="utf-8")),
         ("the report's last-letter band is gated on v2",
          re.search(r"r\.v < 2[\s\S]{0,200}?row\.wu >= 1000", sr) is not None),
         # The report as a testing surface: what was heard near a wrong

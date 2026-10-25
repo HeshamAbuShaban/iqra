@@ -34,10 +34,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.iqra.quran.R
 import com.iqra.quran.data.AssetPaths
 import com.iqra.quran.data.DataFetcher
 import com.iqra.quran.ui.theme.LocalIqraColors
@@ -66,6 +68,7 @@ fun DataSetupScreen(onDone: () -> Unit) {
 
     val cs = MaterialTheme.colorScheme
     val gate = statuses.firstOrNull { !it.present && it.spec.kind == AssetPaths.Kind.GATED }
+    val downloadFailedMsg = stringResource(R.string.setup_download_failed)
 
     Column(
         Modifier
@@ -74,10 +77,10 @@ fun DataSetupScreen(onDone: () -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
     ) {
-        Text("Set up your mushaf", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+        Text(stringResource(R.string.setup_title), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
         Spacer(Modifier.height(6.dp))
         Text(
-            "Page images and data are downloaded once and kept in a shared folder, so app updates stay small. The recitation model is supplied by you, once.",
+            stringResource(R.string.setup_subtitle),
             fontSize = 14.sp, color = cs.onSurface.copy(alpha = 0.75f)
         )
         Spacer(Modifier.height(18.dp))
@@ -93,8 +96,8 @@ fun DataSetupScreen(onDone: () -> Unit) {
                     Text(st.spec.key, fontSize = 14.sp, color = cs.onSurface)
                     val detail = when {
                         !st.present && st.spec.kind == AssetPaths.Kind.GATED ->
-                            "required · copy into ${AssetPaths.sharedRoot().absolutePath}"
-                        !st.present -> "will download (${fmt(st.spec.bytes)})"
+                            stringResource(R.string.setup_detail_gated, AssetPaths.sharedRoot().absolutePath)
+                        !st.present -> stringResource(R.string.setup_detail_will_download, fmt(st.spec.bytes))
                         else -> "${fmt(st.actualBytes)} · ${st.actualPath}"
                     }
                     Text(
@@ -111,12 +114,10 @@ fun DataSetupScreen(onDone: () -> Unit) {
 
         if (gate != null) {
             Card2(cs) {
-                Text("One file you must supply", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurface)
+                Text(stringResource(R.string.setup_gate_title), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurface)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "model.int8.onnx is gated by its authors, so it cannot be downloaded automatically. " +
-                        "Copy it over USB into:\n${AssetPaths.sharedRoot().absolutePath}\n" +
-                        "then press Re-check.",
+                    stringResource(R.string.setup_gate_text, AssetPaths.sharedRoot().absolutePath),
                     fontSize = 12.sp, color = cs.onSurface.copy(alpha = 0.75f)
                 )
             }
@@ -136,7 +137,7 @@ fun DataSetupScreen(onDone: () -> Unit) {
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Allow shared-folder access (optional)") }
+            ) { Text(stringResource(R.string.setup_allow_access)) }
             Spacer(Modifier.height(8.dp))
         }
 
@@ -161,14 +162,14 @@ fun DataSetupScreen(onDone: () -> Unit) {
                         }
                     }.isFailure
                     busy = false
-                    progress = if (failed) "some downloads failed - press Re-check" else ""
+                    progress = if (failed) downloadFailedMsg else ""
                     statuses = AssetPaths.allStatuses(ctx)
                 }
             },
             enabled = !busy && statuses.any { !it.present && it.spec.kind == AssetPaths.Kind.FETCHABLE },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = cs.secondary)
-        ) { Text("Download what's missing", color = cs.onSecondary) }
+        ) { Text(stringResource(R.string.setup_download_missing), color = cs.onSecondary) }
 
         Spacer(Modifier.height(8.dp))
 
@@ -176,18 +177,18 @@ fun DataSetupScreen(onDone: () -> Unit) {
             OutlinedButton(
                 onClick = { statuses = AssetPaths.allStatuses(ctx) },
                 modifier = Modifier.weight(1f)
-            ) { Text("Re-check") }
+            ) { Text(stringResource(R.string.setup_recheck)) }
             Button(
                 onClick = onDone,
                 enabled = statuses.all { it.present },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = cs.primary)
-            ) { Text("Continue", color = cs.onPrimary) }
+            ) { Text(stringResource(R.string.action_continue), color = cs.onPrimary) }
         }
         if (statuses.any { !it.present }) {
             Spacer(Modifier.height(8.dp))
             Text(
-                "Continue unlocks once every file is present.",
+                stringResource(R.string.setup_continue_hint),
                 fontSize = 11.sp,
                 color = cs.onSurface.copy(alpha = 0.5f)
             )

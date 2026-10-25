@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared strings: app identity, common actions, the language picker, and
+     the theme names (Tokens.kt resolves them by resource id). Screen-specific
+     strings live in strings_<domain>.xml beside their screens. -->
+<resources>
+    <string name="app_name">Iqra</string>
+
+    <!-- Common actions -->
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_search">Search</string>
+    <string name="action_back">Back</string>
+    <string name="action_change">Change</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_share">Share</string>
+
+    <!-- Language -->
+    <string name="language">Language</string>
+    <string name="language_subtitle">App language; the mushaf pages are unaffected</string>
+    <string name="language_system">System</string>
+    <string name="language_english">English</string>
+    <string name="language_arabic">العربية</string>
+    <string name="language_system_native">System</string>
+
+    <!-- Themes (IqraTheme) -->
+    <string name="theme_night_garden">Night garden</string>
+    <string name="theme_night_garden_blurb">Teal and gold on near-black</string>
+    <string name="theme_ink_silver">Ink and silver</string>
+    <string name="theme_ink_silver_blurb">Cool slate with pale gold lettering</string>
+    <string name="theme_parchment">Parchment</string>
+    <string name="theme_parchment_blurb">Warm low-contrast, easy on the eyes at night</string>
+    <string name="theme_high_contrast">High contrast</string>
+    <string name="theme_high_contrast_blurb">Maximum separation for bright rooms</string>
+
+    <!-- Verdict words (ReaderPrefs.Metric and friends may reference these) -->
+    <string name="metric_accuracy">Accuracy</string>
+    <string name="metric_accuracy_explain">correct ÷ decided words. A session that tested nothing shows —, not 0%.</string>
+    <string name="metric_coverage">Coverage</string>
+    <string name="metric_coverage_explain">decided ÷ words reached. Low means the app saw little, not that you erred.</string>
+    <string name="metric_decided">Words decided</string>
+    <string name="metric_decided_explain">How many words the engine had evidence for. No percentage.</string>
+    <string name="metric_net">Correct vs wrong</string>
+    <string name="metric_net_explain">correct and wrong as absolute counts, side by side.</string>
+
+    <string name="strictness_cautious">Cautious</string>
+    <string name="strictness_balanced">Balanced</string>
+    <string name="strictness_strict">Strict</string>
+
+    <string name="advisory_quiet">Quiet: session report only</string>
+    <string name="advisory_in_flow">In flow: amber mark on the mushaf</string>
+    <string name="advisory_off">Off: no engine notes anywhere</string>
+    <string name="advisory_alarm_measured">Measured + notes</string>
+    <string name="advisory_alarm_measured_explain">Every engine note is shown: missed-stop notes, low-evidence words, no-audio words.</string>
+    <string name="advisory_alarm_engine">Engine failures only</string>
+    <string name="advisory_alarm_engine_explain">Only what the engine can prove about itself: words it could not hear, frames it could not process. Nothing about your reading.</string>
+
+    <!-- Advisory kinds (AdvisoryKind). The enum name is the wire identity; only
+         these display sentences are localized. -->
+    <string name="advisory_missed_ruling">A legal stop may have happened here; the engine cannot model the join</string>
+    <string name="advisory_unmodelled_final">This word ends in a letter that need not be sounded; not accused</string>
+    <string name="advisory_unsupported_realisation">A reading the engine cannot represent may have occurred</string>
+    <string name="advisory_no_audio_window">The engine had no audio for this word</string>
+    <string name="advisory_low_evidence">The engine heard a contradiction it would not stand behind</string>
+    <string name="advisory_unanchored_audio">No audio anchors this ayah\'s window; the engine cannot say the audio is yours, so it is not accused</string>
+    <string name="advisory_decoder_starvation">The audio stream reset before the engine heard this</string>
+</resources>

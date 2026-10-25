@@ -1,5 +1,6 @@
 package com.iqra.quran.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -40,21 +40,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.iqra.quran.R
 import com.iqra.quran.data.AudioPrefs
 import com.iqra.quran.data.AudioStore
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.Reciters
+import com.iqra.quran.ui.theme.IqraShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-enum class AudioSort(val label: String) {
-    Surah("Surah"), Reciter("Reciter"), Newest("Newest"), Largest("Largest")
+enum class AudioSort(@StringRes val labelRes: Int) {
+    Surah(R.string.audio_sort_surah),
+    Reciter(R.string.audio_sort_reciter),
+    Newest(R.string.audio_sort_newest),
+    Largest(R.string.audio_sort_largest)
 }
 
 /**
@@ -104,10 +110,10 @@ fun AudioLibraryScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Downloaded audio") },
+                title = { Text(stringResource(R.string.audio_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -120,16 +126,17 @@ fun AudioLibraryScreen(
             if (entries.isEmpty()) {
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    "Nothing saved yet. Press play on a surah and the audio " +
-                        "saves itself here, so replaying it never downloads " +
-                        "it a second time.",
+                    stringResource(R.string.audio_empty),
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
             } else {
                 Text(
-                    "${entries.size} surah${if (entries.size == 1) "" else "s"} · " +
-                        fmtLibBytes(totalBytes),
+                    if (entries.size == 1) {
+                        stringResource(R.string.audio_summary_one, fmtLibBytes(totalBytes))
+                    } else {
+                        stringResource(R.string.audio_summary, entries.size, fmtLibBytes(totalBytes))
+                    },
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
@@ -142,12 +149,12 @@ fun AudioLibraryScreen(
                     AudioSort.entries.forEach { s ->
                         val on = s == sort
                         Text(
-                            s.label,
+                            stringResource(s.labelRes),
                             fontSize = 12.sp,
                             color = if (on) MaterialTheme.colorScheme.onPrimary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(IqraShape.chip)
                                 .background(
                                     if (on) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.surfaceVariant
@@ -157,11 +164,11 @@ fun AudioLibraryScreen(
                         )
                     }
                     Text(
-                        "Delete all",
+                        stringResource(R.string.audio_delete_all),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(IqraShape.chip)
                             .clickable { confirmDeleteAll = true }
                             .padding(horizontal = 12.dp, vertical = 7.dp),
                     )
@@ -170,11 +177,11 @@ fun AudioLibraryScreen(
                         val others = byReciter.filter { it.first != currentReciter }
                         if (others.isNotEmpty()) {
                             Text(
-                                "Delete other reciters",
+                                stringResource(R.string.audio_delete_others),
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .clip(IqraShape.chip)
                                     .clickable { confirmKeepReciter = currentReciter }
                                     .padding(horizontal = 12.dp, vertical = 7.dp),
                             )
@@ -185,8 +192,20 @@ fun AudioLibraryScreen(
                 // The blended total split by whose voice it is.
                 byReciter.forEach { (id, count, bytes) ->
                     Text(
-                        "${Reciters.byId(id).name}: $count surah${if (count == 1) "" else "s"} · " +
-                            fmtLibBytes(bytes),
+                        if (count == 1) {
+                            stringResource(
+                                R.string.audio_reciter_summary_one,
+                                Reciters.byId(id).name,
+                                fmtLibBytes(bytes),
+                            )
+                        } else {
+                            stringResource(
+                                R.string.audio_reciter_summary,
+                                Reciters.byId(id).name,
+                                count,
+                                fmtLibBytes(bytes),
+                            )
+                        },
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                     )
@@ -194,7 +213,8 @@ fun AudioLibraryScreen(
                 Spacer(Modifier.height(6.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     items(sorted, key = { it.reciterId + ":" + it.surah }) { e ->
-                        val name = quran?.surahInfo(e.surah)?.nameEn ?: "Surah ${e.surah}"
+                        val name = quran?.surahInfo(e.surah)?.nameEn
+                            ?: stringResource(R.string.audio_fallback_surah, e.surah)
                         val reciter = Reciters.byId(e.reciterId)
                         Row(
                             Modifier.fillMaxWidth(),
@@ -203,7 +223,7 @@ fun AudioLibraryScreen(
                             IconButton(onClick = { onPlay(e.surah, e.reciterId) }) {
                                 Icon(
                                     Icons.Filled.PlayArrow,
-                                    "Play $name",
+                                    stringResource(R.string.audio_play_desc, name),
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
@@ -226,7 +246,7 @@ fun AudioLibraryScreen(
                             IconButton(onClick = { confirmDeleteEntry = e }) {
                                 Icon(
                                     Icons.Filled.Delete,
-                                    "Delete $name",
+                                    stringResource(R.string.audio_delete_desc, name),
                                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
                                     modifier = Modifier.size(20.dp),
                                 )
@@ -239,14 +259,14 @@ fun AudioLibraryScreen(
     }
 
     confirmDeleteEntry?.let { e ->
-        val name = quran?.surahInfo(e.surah)?.nameEn ?: "Surah ${e.surah}"
+        val name = quran?.surahInfo(e.surah)?.nameEn
+            ?: stringResource(R.string.audio_fallback_surah, e.surah)
         AlertDialog(
             onDismissRequest = { confirmDeleteEntry = null },
-            title = { Text("Delete $name?") },
+            title = { Text(stringResource(R.string.audio_delete_entry_title, name)) },
             text = {
                 Text(
-                    "${fmtLibBytes(e.bytes)} will be removed. Playing the surah " +
-                        "again will stream it and save a fresh copy.",
+                    stringResource(R.string.audio_delete_entry_text, fmtLibBytes(e.bytes)),
                     fontSize = 13.sp,
                 )
             },
@@ -255,10 +275,10 @@ fun AudioLibraryScreen(
                     AudioStore.delete(ctx, e)
                     confirmDeleteEntry = null
                     refresh++
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteEntry = null }) { Text("Keep") }
+                TextButton(onClick = { confirmDeleteEntry = null }) { Text(stringResource(R.string.audio_keep)) }
             },
         )
     }
@@ -268,12 +288,18 @@ fun AudioLibraryScreen(
         val doomedBytes = doomed.sumOf { it.bytes }
         AlertDialog(
             onDismissRequest = { confirmKeepReciter = null },
-            title = { Text("Keep only ${Reciters.byId(keep).name}?") },
+            title = { Text(stringResource(R.string.audio_keep_only_title, Reciters.byId(keep).name)) },
             text = {
                 Text(
-                    "${doomed.size} surah${if (doomed.size == 1) "" else "s"} by other reciters " +
-                        "(${fmtLibBytes(doomedBytes)}) will be removed. They stream " +
-                        "again if played later.",
+                    if (doomed.size == 1) {
+                        stringResource(R.string.audio_delete_others_text_one, fmtLibBytes(doomedBytes))
+                    } else {
+                        stringResource(
+                            R.string.audio_delete_others_text,
+                            doomed.size,
+                            fmtLibBytes(doomedBytes),
+                        )
+                    },
                     fontSize = 13.sp,
                 )
             },
@@ -282,21 +308,25 @@ fun AudioLibraryScreen(
                     doomed.forEach { AudioStore.delete(ctx, it) }
                     confirmKeepReciter = null
                     refresh++
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmKeepReciter = null }) { Text("Keep") }
+                TextButton(onClick = { confirmKeepReciter = null }) { Text(stringResource(R.string.audio_keep)) }
             },
         )
     }
     if (confirmDeleteAll) {
         AlertDialog(
             onDismissRequest = { confirmDeleteAll = false },
-            title = { Text("Delete all ${entries.size} saved surah${if (entries.size == 1) "" else "s"}?") },
+            title = {
+                Text(
+                    if (entries.size == 1) stringResource(R.string.audio_delete_all_title_one)
+                    else stringResource(R.string.audio_delete_all_title, entries.size)
+                )
+            },
             text = {
                 Text(
-                    "${fmtLibBytes(totalBytes)} will be removed. A surah played " +
-                        "afterwards streams and saves again.",
+                    stringResource(R.string.audio_delete_all_text, fmtLibBytes(totalBytes)),
                     fontSize = 13.sp,
                 )
             },
@@ -305,10 +335,10 @@ fun AudioLibraryScreen(
                     AudioStore.deleteAll(ctx)
                     confirmDeleteAll = false
                     refresh++
-                }) { Text("Delete all", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.audio_delete_all), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteAll = false }) { Text("Keep") }
+                TextButton(onClick = { confirmDeleteAll = false }) { Text(stringResource(R.string.audio_keep)) }
             },
         )
     }

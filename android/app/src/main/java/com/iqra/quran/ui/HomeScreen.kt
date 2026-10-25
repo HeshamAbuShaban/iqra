@@ -37,9 +37,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
@@ -64,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.iqra.quran.R
 import com.iqra.quran.data.AyahBookmarks
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.data.SurahInfo
@@ -96,8 +96,6 @@ fun HomeScreen(
     lastRead: Pair<Int, Int>?,
     onOpen: (Int, Int) -> Unit,
     onOpenAyah: (Int, Int, Int) -> Unit = { _, _, _ -> },
-    onDiag: () -> Unit = {},
-    onData: () -> Unit = {},
     onSettings: () -> Unit = {},
     onTest: (Int, Int) -> Unit = { _, _ -> },
     onProgress: () -> Unit = {},
@@ -121,7 +119,7 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Iqra",
+                stringResource(R.string.app_name),
                 fontFamily = quranFont,
                 fontSize = 24.sp,
                 color = cs.onSurface,
@@ -131,20 +129,18 @@ fun HomeScreen(
                 // Resuming is a navigation decision, so it lives here - on
                 // home - rather than inside the reading surface.
                 IconButton(onClick = onResume) {
-                    Icon(Icons.Outlined.History, "Back to last read", tint = cs.onSurface.copy(alpha = 0.55f))
+                    Icon(Icons.Outlined.History, stringResource(R.string.home_cd_last_read), tint = cs.onSurface.copy(alpha = 0.55f))
                 }
             }
-            IconButton(onClick = onData) {
-                Icon(Icons.Outlined.FolderOpen, "Data files", tint = cs.onSurface.copy(alpha = 0.55f))
-            }
+            // Three doors, not five. Data files and the engine check are
+            // Settings concerns - they each already had a labelled row there -
+            // and a header of unlabeled icons was reading as clutter rather
+            // than navigation.
             IconButton(onClick = onProgress) {
-                Icon(Icons.Outlined.ShowChart, "Your practice", tint = cs.onSurface.copy(alpha = 0.55f))
+                Icon(Icons.Outlined.ShowChart, stringResource(R.string.home_cd_practice), tint = cs.onSurface.copy(alpha = 0.55f))
             }
             IconButton(onClick = onSettings) {
-                Icon(Icons.Outlined.Tune, "Settings", tint = cs.onSurface.copy(alpha = 0.55f))
-            }
-            IconButton(onClick = onDiag) {
-                Icon(Icons.Outlined.MonitorHeart, "Engine check", tint = cs.onSurface.copy(alpha = 0.55f))
+                Icon(Icons.Outlined.Tune, stringResource(R.string.home_cd_settings), tint = cs.onSurface.copy(alpha = 0.55f))
             }
         }
 
@@ -156,7 +152,7 @@ fun HomeScreen(
             onValueChange = { q = it },
             placeholder = {
                 Text(
-                    "Search a surah, or a word from a verse",
+                    stringResource(R.string.home_search_hint),
                     fontSize = 14.sp,
                     color = cs.onSurface.copy(alpha = 0.45f),
                 )
@@ -167,7 +163,7 @@ fun HomeScreen(
             trailingIcon = {
                 if (q.isNotEmpty()) {
                     IconButton(onClick = { q = "" }) {
-                        Icon(Icons.Outlined.Close, "Clear", tint = cs.onSurface.copy(alpha = 0.5f))
+                        Icon(Icons.Outlined.Close, stringResource(R.string.home_cd_clear), tint = cs.onSurface.copy(alpha = 0.5f))
                     }
                 }
             },
@@ -231,13 +227,13 @@ private fun SearchResults(
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         if (surahHits.isNotEmpty()) {
-            item { SectionHeader("Surahs", surahHits.size, false) }
+            item { SectionHeader(stringResource(R.string.home_section_surahs), surahHits.size, false) }
             items(surahHits, key = { "s${it.number}" }) { s ->
                 SurahRow(s) { n, p -> onOpen(n, p) }
             }
         }
         if (ayahHits.isNotEmpty()) {
-            item { SectionHeader("Verses", ayahHits.size, false) }
+            item { SectionHeader(stringResource(R.string.home_section_verses), ayahHits.size, false) }
             items(ayahHits, key = { "a${it.surah}:${it.ayah}" }) { h ->
                 val v = data.getVerse(h.surah, h.ayah)
                 val surah = data.surahInfo(h.surah)
@@ -279,7 +275,7 @@ private fun SearchResults(
             }
         }
         if (surahHits.isEmpty() && ayahHits.isEmpty()) {
-            item { EmptyHint("Nothing matched.") }
+            item { EmptyHint(stringResource(R.string.home_empty_search)) }
         }
     }
 }
@@ -301,9 +297,9 @@ fun HomeTabRow(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
             ) {
                 Text(
                     when (t) {
-                        HomeTab.Surahs -> "Surahs"
-                        HomeTab.Juz -> "Juz"
-                        HomeTab.Bookmarks -> "Saved"
+                        HomeTab.Surahs -> stringResource(R.string.home_tab_surahs)
+                        HomeTab.Juz -> stringResource(R.string.home_tab_juz)
+                        HomeTab.Bookmarks -> stringResource(R.string.home_tab_saved)
                     },
                     fontSize = 14.sp,
                     fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
@@ -357,7 +353,7 @@ fun SurahIndex(
             IconButton(onClick = { view = if (view == SurahView.List) SurahView.Grid else SurahView.List }) {
                 Icon(
                     if (view == SurahView.List) Icons.Filled.ViewModule else Icons.Filled.ViewList,
-                    "Toggle layout",
+                    stringResource(R.string.home_cd_toggle_layout),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -385,15 +381,15 @@ fun SurahIndex(
                         }
                     }
                     if (meccan.isNotEmpty()) {
-                        item { SectionHeader("Meccan", meccan.size, false) }
+                        item { SectionHeader(stringResource(R.string.home_section_meccan), meccan.size, false) }
                         items(meccan, key = { it.number }) { SurahRow(it, onOpen) }
                     }
                     if (madani.isNotEmpty()) {
-                        item { SectionHeader("Madani", madani.size, true) }
+                        item { SectionHeader(stringResource(R.string.home_section_madani), madani.size, true) }
                         items(madani, key = { it.number }) { SurahRow(it, onOpen) }
                     }
                     if (filtered.isEmpty()) {
-                        item { EmptyHint("No surah matches") }
+                        item { EmptyHint(stringResource(R.string.home_empty_surah_match)) }
                     }
                 }
             } else {
@@ -448,10 +444,10 @@ fun ContinueCard(
                 Icon(Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Continue", fontSize = 12.sp,
+                    Text(stringResource(R.string.home_continue_title), fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSecondaryContainer)
                     Text(
-                        "${info.nameEn}  ·  Page $page  ·  ${info.ayahCount} verses",
+                        stringResource(R.string.home_continue_detail, info.nameEn, page, info.ayahCount),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -512,15 +508,14 @@ private fun TestHeroCard(surah: Int, onTest: () -> Unit) {
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "Recite from memory",
+                    stringResource(R.string.home_test_title),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = c.ink,
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "The verse stays hidden until you say it. We listen and " +
-                        "grade each word.",
+                    stringResource(R.string.home_test_blurb),
                     fontSize = 12.sp,
                     color = c.inkMuted,
                 )
@@ -570,7 +565,11 @@ fun SurahRow(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
                 Text(s.nameEn, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${if (madani) "Madani" else "Meccan"} · ${s.ayahCount} verses · pp ${s.startPage}–${s.endPage} · Juz ${s.juz}",
+                    stringResource(
+                        R.string.home_surah_meta,
+                        stringResource(if (madani) R.string.home_section_madani else R.string.home_section_meccan),
+                        s.ayahCount, s.startPage, s.endPage, s.juz,
+                    ),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )
@@ -638,9 +637,10 @@ fun JuzList(
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Juz ${j.number}", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text(stringResource(R.string.home_juz_title, j.number), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            "pp ${j.startPage}–$endPage" + if (j.surahNameEn.isNotEmpty()) " · ${j.surahNameEn}" else "",
+                            stringResource(R.string.home_juz_pages, j.startPage, endPage) +
+                                if (j.surahNameEn.isNotEmpty()) " · ${j.surahNameEn}" else "",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
@@ -687,14 +687,14 @@ fun BookmarkList(
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "No bookmarks yet",
+                stringResource(R.string.home_bookmarks_empty_title),
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "The header icon saves a page; an ayah's sheet saves the ayah.",
+                stringResource(R.string.home_bookmarks_empty_hint),
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 textAlign = TextAlign.Center,
@@ -710,7 +710,7 @@ fun BookmarkList(
     ) {
         if (ayahKeys.isNotEmpty()) {
             if (bothSections) {
-                item(key = "hdr-ayah") { BookmarkSectionHeader("Ayahs") }
+                item(key = "hdr-ayah") { BookmarkSectionHeader(stringResource(R.string.home_bookmark_section_ayahs)) }
             }
             items(ayahKeys, key = { "a:${it.first}:${it.second}" }) { (s, a) ->
                 val info = surahs.firstOrNull { it.number == s }
@@ -728,7 +728,10 @@ fun BookmarkList(
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
-                                "${info?.nameEn ?: "Surah $s"} · Ayah $a",
+                                stringResource(
+                                    R.string.home_surah_ayah,
+                                    info?.nameEn ?: stringResource(R.string.home_surah_n, s), a,
+                                ),
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -736,6 +739,7 @@ fun BookmarkList(
                             Text(
                                 text,
                                 fontSize = 12.sp,
+                                fontFamily = quranFont,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -747,7 +751,7 @@ fun BookmarkList(
                         }) {
                             Icon(
                                 Icons.Filled.Delete,
-                                "Remove ayah bookmark",
+                                stringResource(R.string.home_cd_remove_ayah_bookmark),
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                             )
                         }
@@ -757,7 +761,7 @@ fun BookmarkList(
         }
         if (sorted.isNotEmpty()) {
             if (bothSections) {
-                item(key = "hdr-page") { BookmarkSectionHeader("Pages") }
+                item(key = "hdr-page") { BookmarkSectionHeader(stringResource(R.string.home_bookmark_section_pages)) }
             }
         items(sorted, key = { it }) { page ->
             val info = surahs.firstOrNull { page in it.startPage..it.endPage }
@@ -771,9 +775,9 @@ fun BookmarkList(
                     Icon(Icons.Filled.Bookmark, null, tint = MaterialTheme.colorScheme.secondary)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Page $page", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text(stringResource(R.string.home_page_n, page), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            info?.let { "${it.nameEn} · Juz ${it.juz}" } ?: "",
+                            info?.let { stringResource(R.string.home_surah_juz, it.nameEn, it.juz) } ?: "",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
@@ -781,7 +785,7 @@ fun BookmarkList(
                     IconButton(onClick = { vm.toggleBookmark(page) }) {
                         Icon(
                             Icons.Filled.Delete,
-                            "Remove bookmark",
+                            stringResource(R.string.home_cd_remove_bookmark),
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                         )
                     }

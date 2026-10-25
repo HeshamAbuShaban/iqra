@@ -60,5 +60,17 @@ package com.iqra.quran.ui
 private const val LRI = '\u2066'
 private const val PDI = '\u2069'
 
-/** Reads [s] left-to-right. See the file comment for why. */
-fun ltr(s: String): String = "$LRI$s$PDI"
+/**
+ * Reads [s] left-to-right. See the file comment for why.
+ *
+ * Content-aware since the Arabic translation: when the resolved string already
+ * reads right-to-left - Arabic script anywhere in it - the isolate is dropped
+ * rather than applied. An LRI around an Arabic run forces it into an LTR
+ * paragraph, which mirrors exactly the punctuation defect this function exists
+ * to prevent, one direction over. English strings keep the isolate; Arabic
+ * strings pass through and the RTL paragraph resolves them correctly on its
+ * own.
+ */
+fun ltr(s: String): String =
+    if (s.any { it in '\u0600'..'\u08FF' || it in '\uFB50'..'\uFDFF' || it in '\uFE70'..'\uFEFF' }) s
+    else "$LRI$s$PDI"

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- النسخة العربية لسلاسل الشاشة الرئيسية واختيار التسميع وسجل التدريب. -->
+<resources>
+    <!-- ===== الشاشة الرئيسية ===== -->
+    <string name="home_cd_last_read">العودة إلى آخر قراءة</string>
+    <string name="home_cd_practice">سجل تدريبك</string>
+    <string name="home_cd_settings">الإعدادات</string>
+    <string name="home_search_hint">ابحث عن سورة، أو عن كلمة من آية</string>
+    <string name="home_cd_clear">مسح</string>
+    <string name="home_section_surahs">السور</string>
+    <string name="home_section_verses">الآيات</string>
+    <string name="home_empty_search">لا نتائج مطابقة.</string>
+    <string name="home_tab_surahs">السور</string>
+    <string name="home_tab_juz">الأجزاء</string>
+    <string name="home_tab_saved">العلامات</string>
+    <string name="home_cd_toggle_layout">تبديل طريقة العرض</string>
+    <string name="home_section_meccan">مكية</string>
+    <string name="home_section_madani">مدنية</string>
+    <string name="home_empty_surah_match">لا سورة مطابقة</string>
+    <string name="home_continue_title">متابعة</string>
+    <string name="home_continue_detail">%1$s  ·  صفحة %2$d  ·  %3$d آيات</string>
+    <string name="home_test_title">تسميع من الذاكرة</string>
+    <string name="home_test_blurb">تبقى الآية مخفية حتى تنطقها. نستمع ونقيّم كل كلمة.</string>
+    <string name="home_surah_n">سورة %1$d</string>
+    <string name="home_surah_meta">%1$s · %2$d آيات · ص %3$d–%4$d · الجزء %5$d</string>
+    <string name="home_juz_title">الجزء %1$d</string>
+    <string name="home_juz_pages">ص %1$d–%2$d</string>
+    <string name="home_bookmarks_empty_title">لا علامات بعد</string>
+    <string name="home_bookmarks_empty_hint">أيقونة الرأس تحفظ الصفحة، وورقة الآية تحفظ الآية.</string>
+    <string name="home_bookmark_section_ayahs">الآيات</string>
+    <string name="home_bookmark_section_pages">الصفحات</string>
+    <string name="home_surah_ayah">%1$s · آية %2$d</string>
+    <string name="home_cd_remove_ayah_bookmark">إزالة علامة الآية</string>
+    <string name="home_page_n">صفحة %1$d</string>
+    <string name="home_surah_juz">%1$s · الجزء %2$d</string>
+    <string name="home_cd_remove_bookmark">إزالة العلامة</string>
+
+    <!-- ===== اختيار التسميع ===== -->
+    <string name="choose_title_stage0">تسميع من الذاكرة</string>
+    <string name="choose_title_stage1">أي مقطع؟</string>
+    <string name="choose_subtitle_stage0">لا يُعرض شيء حتى تنطقه</string>
+    <string name="choose_subtitle_stage1">سورة %1$d · %2$d آيات</string>
+    <string name="choose_heading">ماذا تحب أن تُسمّع؟</string>
+    <string name="choose_heading_hint1">اختر السورة، ثم قرر: أتُسمّعها كاملة أم مقطعاً منها.</string>
+    <string name="choose_heading_hint2">الكلمة التي تخطئ فيها تُكشف وتُعلَّم؛ وكل كلمة سواها تبقى مخفية.</string>
+    <string name="choose_last_passage">آخر مقطع</string>
+    <string name="choose_drill">تسميع سريع</string>
+    <string name="choose_search_hint">ابحث بالاسم أو بالرقم</string>
+    <string name="choose_no_match">لا نتيجة تطابق «%1$s».</string>
+    <string name="choose_surah_detail">%1$s · %2$d آيات · تبدأ عند صفحة %3$d</string>
+    <string name="choose_mode_whole">السورة كاملة</string>
+    <string name="choose_mode_range">مقطع محدّد</string>
+    <string name="choose_all_ayat">كل الآيات، وهي %1$d</string>
+    <string name="choose_whole_blurb">السورة كاملة. %1$d آيات، من أولها.</string>
+    <string name="choose_range_label">النطاق</string>
+    <string name="choose_from_ayah">من آية</string>
+    <string name="choose_to_ayah">إلى آية</string>
+    <string name="choose_ayah_n">آية %1$d</string>
+    <string name="choose_ayat_range">الآيات %1$d–%2$d</string>
+    <string name="choose_more">… و%1$d أخرى</string>
+    <string name="choose_cta_whole">سمّع %1$s</string>
+    <string name="choose_cta_ayah">سمّع الآية %1$d</string>
+    <string name="choose_cta_range">سمّع %1$d آيات</string>
+    <string name="choose_surah_meta">%1$d آيات · صفحة %2$d</string>
+
+    <!-- ===== سجل التدريب ===== -->
+    <string name="practice_title">سجل التدريب</string>
+    <string name="practice_footnote">تحسب الدقة الكلمات التي حكم عليها المحرك. الكلمات التي لم يسمعها تُعرض على حدة.</string>
+    <string name="practice_empty_title">لا تدريب بعد</string>
+    <string name="practice_empty_body">سمّع مقطعاً من الذاكرة وسيظهر هنا — كم أصبت، وأي الآيات أبطأ، وأي الكلمات تعثر فيها.</string>
+    <string name="practice_words_judged">كلمة محسومة</string>
+    <string name="practice_all_time">على مدى الوقت</string>
+    <string name="practice_streak_day">يوماً متتالياً</string>
+    <string name="practice_streak_days">أياماً متتالية</string>
+    <string name="practice_streak_best">أطولها %1$d</string>
+    <string name="practice_accuracy_with_unknown">مع احتساب %1$d٪ من الكلمات التي لم يسمعها المحرك، تكون النتيجة %2$s.</string>
+    <string name="practice_trend_up">ارتفاع %1$s عن جلستك السابقة</string>
+    <string name="practice_trend_down">انخفاض %1$s عن جلستك السابقة</string>
+    <string name="practice_trend_level">على مستوى جلستك السابقة</string>
+    <string name="practice_first_session">أول جلسة لك فيها كلمة محسومة. سمّع مرة أخرى وسيبدأ الخط البياني.</string>
+    <string name="practice_panel_accuracy">الدقة عبر الوقت</string>
+    <string name="practice_needs_two">تحتاج جلستين على الأقل</string>
+    <string name="practice_n_sessions">%1$d جلسات</string>
+    <string name="practice_accuracy_chart_hint">الارتفاع هو الدقة. الأعمدة الباهتة كلمات محسومة، فالخط المار بكلمة واحدة يبدو رفيعاً بوضوح.</string>
+    <string name="practice_panel_pace">السرعة</string>
+    <string name="practice_needs_judged">تحتاج جلسة فيها كلمات محسومة</string>
+    <string name="practice_wpm">كلمة في الدقيقة</string>
+    <string name="practice_most_recent">الأحدث</string>
+    <string name="practice_fastest">الأسرع</string>
+    <string name="practice_best">الأفضل</string>
+    <string name="practice_pace_hint">السرعة تقدير ممهور من توقيت بوابة التتبع نفسها، لا ساعة إيقاف. خذها اتجاهاً لا رقماً.</string>
+    <string name="practice_activity_title">آخر ٢٦ أسبوعاً</string>
+    <string name="practice_active_days">%1$d يوماً نشطاً</string>
+    <string name="practice_activity_hint">الأغمق يعني كلمات محسومة أكثر ذلك اليوم. الخلية المحدّدة هي اليوم.</string>
+    <string name="practice_by_surah">حسب السورة</string>
+    <string name="practice_top_of">أفضل ١٠ من %1$d</string>
+    <string name="practice_reached">بلغ %1$d من %2$d</string>
+    <string name="practice_mastery_hint">العمود دقة موزونة بمقدار ما غطيته من السورة، فآية واحدة صحيحة لا تصنع سورة متقنة.</string>
+    <string name="practice_hard_title">كلمات تحتاج عملاً</string>
+    <string name="practice_hard_sub">من الأخطاء فقط</string>
+    <string name="practice_ayah_n">آية %1$d</string>
+    <string name="practice_word_ref">%1$s %2$d</string>
+    <string name="practice_recent_title">الجلسات الأخيرة</string>
+    <string name="practice_recent_sub">انقر جلسة للتقرير الكامل</string>
+
+    <!-- ===== شاشة التسميع ===== -->
+    <string name="live_leave">مغادرة</string>
+    <string name="live_stay">إبقاء</string>
+    <string name="live_ayah_one">آية واحدة</string>
+    <string name="live_ayah_n">%1$d آيات</string>
+    <string name="live_state_listening">يستمع</string>
+    <string name="live_state_tap">انقر الضوء للبدء</string>
+    <string name="live_state_quiet">لا أسمعك</string>
+    <string name="live_state_go">تفضّل</string>
+    <string name="live_state_think">دعني أفكر…</string>
+    <string name="live_state_paused">متوقف مؤقتاً — انقر للاستئناف</string>
+    <string name="live_heard_count">سُمِع %1$d من %2$d</string>
+    <string name="live_pause">إيقاف مؤقت</string>
+    <string name="live_resume">استئناف</string>
+    <string name="live_end">إنهاء الجلسة</string>
+    <string name="live_exit_title">مغادرة هذه الجلسة؟</string>
+    <string name="live_exit_body">ما سمّعته حتى الآن يبقى محسوباً.</string>
+
+    <!-- ===== لوحة ضبط الوضع الليلي ===== -->
+    <string name="night_title">الوضع الليلي</string>
+    <string name="night_readout">صفحة معكوسة · سطوع النص %1$d · الخلفية %2$d</string>
+    <string name="night_effective">الفعلية %1$d</string>
+    <string name="night_text">سطوع النص</string>
+    <string name="night_bg">سطوع الخلفية</string>
+</resources>

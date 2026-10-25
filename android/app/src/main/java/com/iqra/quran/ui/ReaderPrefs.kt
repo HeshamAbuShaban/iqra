@@ -2,6 +2,7 @@ package com.iqra.quran.ui
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import com.iqra.quran.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -244,18 +245,18 @@ object ReaderPrefs {
      * judged" with a percentage derived from it, which reads as a score and is in
      * fact the population. Hence the choice is explicit.
      */
-    enum class Metric(val id: Int, val label: String, val explain: String) {
+    enum class Metric(val id: Int, val labelRes: Int, val explainRes: Int) {
         /** Share of decided words marked CORRECT. Skipped words are not in the denominator. */
-        ACCURACY(0, "Accuracy", "correct ÷ decided words. A session that tested nothing shows —, not 0%."),
+        ACCURACY(0, R.string.metric_accuracy, R.string.metric_accuracy_explain),
 
         /** How much of the recitation was actually judged. */
-        COVERAGE(1, "Coverage", "decided ÷ words reached. Low means the app saw little, not that you erred."),
+        COVERAGE(1, R.string.metric_coverage, R.string.metric_coverage_explain),
 
         /** Decided words as a count. The only figure with no denominator to flatter it. */
-        DECIDED(2, "Words decided", "How many words the engine had evidence for. No percentage."),
+        DECIDED(2, R.string.metric_decided, R.string.metric_decided_explain),
 
         /** Correct against wrong only, ignoring everything undecided. */
-        NET(3, "Correct vs wrong", "correct and wrong as absolute counts, side by side.");
+        NET(3, R.string.metric_net, R.string.metric_net_explain);
 
         companion object {
             fun of(id: Int): Metric = entries.firstOrNull { it.id == id } ?: ACCURACY
@@ -287,10 +288,10 @@ object ReaderPrefs {
      * evidence. `Cautious` is the default and `Strict` is offered only because a
      * user may want it, with the consequence stated.
      */
-    enum class Strictness(val id: Int, val label: String) {
-        CAUTIOUS(0, "Cautious"),
-        BALANCED(1, "Balanced"),
-        STRICT(2, "Strict");
+    enum class Strictness(val id: Int, val labelRes: Int) {
+        CAUTIOUS(0, R.string.strictness_cautious),
+        BALANCED(1, R.string.strictness_balanced),
+        STRICT(2, R.string.strictness_strict);
 
         companion object {
             fun of(id: Int): Strictness = entries.firstOrNull { it.id == id } ?: CAUTIOUS
@@ -326,10 +327,10 @@ object ReaderPrefs {
      * them while reciting. Every value must behave differently from the other
      * two, and a gate check counts the comparisons that actually read it.
      */
-    enum class AdvisoryDisplay(val id: Int, val label: String) {
-        QUIET(0, "Quiet: session report only"),
-        IN_FLOW(1, "In flow: amber mark on the mushaf"),
-        OFF(2, "Off: no engine notes anywhere");
+    enum class AdvisoryDisplay(val id: Int, val labelRes: Int) {
+        QUIET(0, R.string.advisory_quiet),
+        IN_FLOW(1, R.string.advisory_in_flow),
+        OFF(2, R.string.advisory_off);
         companion object {
             fun of(id: Int): AdvisoryDisplay = entries.firstOrNull { it.id == id } ?: IN_FLOW
         }
@@ -348,9 +349,9 @@ object ReaderPrefs {
      * reciter default), HARD_RULES_ONLY shows only the engine failures it can
      * facts about itself. Measured rules never lose their force either way.
      */
-    enum class AdvisoryAlarm(val id: Int, val label: String, val explain: String) {
-        NEVER(0, "Measured + notes", "Every engine note is shown: missed-stop notes, low-evidence words, no-audio words."),
-        HARD_RULES_ONLY(1, "Engine failures only", "Only what the engine can prove about itself: words it could not hear, frames it could not process. Nothing about your reading.");
+    enum class AdvisoryAlarm(val id: Int, val labelRes: Int, val explainRes: Int) {
+        NEVER(0, R.string.advisory_alarm_measured, R.string.advisory_alarm_measured_explain),
+        HARD_RULES_ONLY(1, R.string.advisory_alarm_engine, R.string.advisory_alarm_engine_explain);
         companion object {
             fun of(id: Int): AdvisoryAlarm = entries.firstOrNull { it.id == id } ?: NEVER
         }

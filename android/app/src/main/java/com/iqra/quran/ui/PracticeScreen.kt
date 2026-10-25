@@ -37,10 +37,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.iqra.quran.R
 import com.iqra.quran.data.Mushaf
 import com.iqra.quran.data.MushafPage
 import com.iqra.quran.data.MushafWord
@@ -104,10 +106,10 @@ fun PracticeScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = c.inkMuted)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), tint = c.inkMuted)
                 }
                 Text(
-                    "Practice",
+                    stringResource(R.string.practice_title),
                     fontSize = 19.sp,
                     color = c.ink,
                     modifier = Modifier.weight(1f),
@@ -160,8 +162,7 @@ fun PracticeScreen(
                         RecentSessionsCard(s, data, c, onOpenSession)
                     }
                     item("foot") { Text(
-                        "Accuracy counts words the engine judged. " +
-                            "Words it never heard are shown separately.",
+                        stringResource(R.string.practice_footnote),
                         fontSize = 11.sp, lineHeight = 16.sp, color = c.inkFaint,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                     )
@@ -214,15 +215,13 @@ private fun EmptyPractice(c: IqraColors) {
             }
             Spacer(Modifier.height(18.dp))
             Text(
-                "Nothing practised yet",
+                stringResource(R.string.practice_empty_title),
                 fontSize = 17.sp, color = c.ink,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Recite a passage from memory and it will appear here - " +
-                    "how much you got right, which ayat are slow, and which " +
-                    "words keep slipping.",
+                stringResource(R.string.practice_empty_body),
                 fontSize = 13.sp, lineHeight = 19.sp, color = c.inkMuted,
                 textAlign = TextAlign.Center,
             )
@@ -272,18 +271,23 @@ private fun HeadlineCard(s: PracticeLog.Summary, c: IqraColors) {
             )
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
-                Metric(c.ink, "${s.judgedWords}", "words judged", "all time")
+                Metric(
+                    c.ink, "${s.judgedWords}",
+                    stringResource(R.string.practice_words_judged),
+                    stringResource(R.string.practice_all_time),
+                )
                 Spacer(Modifier.height(12.dp))
                 Metric(
                     c.ink, "${s.currentStreak}",
-                    if (s.currentStreak == 1) "day in a row" else "days in a row",
+                    if (s.currentStreak == 1) stringResource(R.string.practice_streak_day)
+                    else stringResource(R.string.practice_streak_days),
                     // Both arms rendered "best ${s.longestStreak}": the test was
                     // decoration, a comparison that could not change the answer,
                     // which is worse than no comparison because it looks like
                     // one. If the intent was "best vs current", the two numbers
                     // must differ, and until they do this says the one true
                     // thing.
-                    "best ${s.longestStreak}",
+                    stringResource(R.string.practice_streak_best, s.longestStreak),
                 )
             }
         }
@@ -298,8 +302,10 @@ private fun HeadlineCard(s: PracticeLog.Summary, c: IqraColors) {
             Hairline(c)
             Spacer(Modifier.height(12.dp))
             Text(
-                "Counting the ${(100 - (full * 100).toInt())}% of words the " +
-                    "engine never heard, this is ${pct1(full)}.",
+                stringResource(
+                    R.string.practice_accuracy_with_unknown,
+                    100 - (full * 100).toInt(), pct1(full),
+                ),
                 fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
             )
         }
@@ -312,9 +318,9 @@ private fun HeadlineCard(s: PracticeLog.Summary, c: IqraColors) {
             val d = (withAcc.last().accuracy ?: 0f) - (withAcc[withAcc.size - 2].accuracy ?: 0f)
             Text(
                 when {
-                    d > 0.005f -> "Up ${pct1(d)} on your previous session"
-                    d < -0.005f -> "Down ${pct1(-d)} on your previous session"
-                    else -> "Level with your previous session"
+                    d > 0.005f -> stringResource(R.string.practice_trend_up, pct1(d))
+                    d < -0.005f -> stringResource(R.string.practice_trend_down, pct1(-d))
+                    else -> stringResource(R.string.practice_trend_level)
                 },
                 fontSize = 12.sp,
                 color = if (d > 0.005f) c.chartGood else if (d < -0.005f) c.chartBad else c.inkMuted,
@@ -322,8 +328,7 @@ private fun HeadlineCard(s: PracticeLog.Summary, c: IqraColors) {
         } else if (withAcc.size == 1) {
             Spacer(Modifier.height(14.dp))
             Text(
-                "Your first session with a judged word. Recite once more and " +
-                    "this becomes a trend.",
+                stringResource(R.string.practice_first_session),
                 fontSize = 12.sp, lineHeight = 17.sp, color = c.inkFaint,
             )
         }
@@ -335,9 +340,9 @@ private fun AccuracyTrendCard(s: PracticeLog.Summary, c: IqraColors) {
     val withAcc = s.series.filter { it.accuracy != null }
     Panel(c) {
         PanelTitle(
-            "Accuracy over time",
-            if (withAcc.size < 2) "Needs at least two sessions"
-            else "${withAcc.size} sessions",
+            stringResource(R.string.practice_panel_accuracy),
+            if (withAcc.size < 2) stringResource(R.string.practice_needs_two)
+            else stringResource(R.string.practice_n_sessions, withAcc.size),
             c,
         )
         if (withAcc.size >= 2) {
@@ -360,8 +365,7 @@ private fun AccuracyTrendCard(s: PracticeLog.Summary, c: IqraColors) {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "Height is accuracy. The faint columns are words judged, so a " +
-                    "line drawn through one word is visibly thin.",
+                stringResource(R.string.practice_accuracy_chart_hint),
                 fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
             )
         }
@@ -377,19 +381,23 @@ private fun PaceTrendCard(s: PracticeLog.Summary, c: IqraColors) {
     val paced = s.series.filter { it.wpm > 1.0 && it.judged > 0 }
     Panel(c) {
         PanelTitle(
-            "Pace",
-            if (paced.isEmpty()) "Needs a session where words were judged" else null,
+            stringResource(R.string.practice_panel_pace),
+            if (paced.isEmpty()) stringResource(R.string.practice_needs_judged) else null,
             c,
         )
         if (paced.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Row {
                 val last = paced.last()
-                Metric(c.ink, "%.0f".format(last.wpm), "words per minute", "most recent")
+                Metric(
+                    c.ink, "%.0f".format(last.wpm),
+                    stringResource(R.string.practice_wpm), stringResource(R.string.practice_most_recent),
+                )
                 Spacer(Modifier.width(24.dp))
                 val best = paced.maxByOrNull { it.wpm }
                 Metric(
-                    c.gold, "%.0f".format(best?.wpm ?: 0.0), "fastest", "best",
+                    c.gold, "%.0f".format(best?.wpm ?: 0.0),
+                    stringResource(R.string.practice_fastest), stringResource(R.string.practice_best),
                 )
             }
             if (paced.size >= 2) {
@@ -412,8 +420,7 @@ private fun PaceTrendCard(s: PracticeLog.Summary, c: IqraColors) {
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                "Pace is a smoothed estimate from the lock's own gate timing, " +
-                    "not a stopwatch. Treat it as a direction, not a number.",
+                stringResource(R.string.practice_pace_hint),
                 fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
             )
         }
@@ -427,7 +434,11 @@ private fun ActivityCard(s: PracticeLog.Summary, c: IqraColors) {
             .mapValues { (_, v) -> v.sumOf { it.judged } }
     }
     Panel(c) {
-        PanelTitle("Last 26 weeks", "${s.activeDays} active days", c)
+        PanelTitle(
+            stringResource(R.string.practice_activity_title),
+            stringResource(R.string.practice_active_days, s.activeDays),
+            c,
+        )
         Spacer(Modifier.height(18.dp))
         ActivityHeatmap(
             days = s.days,
@@ -441,7 +452,7 @@ private fun ActivityCard(s: PracticeLog.Summary, c: IqraColors) {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            "Darker means more words judged that day. The outlined cell is today.",
+            stringResource(R.string.practice_activity_hint),
             fontSize = 10.sp, color = c.inkFaint,
         )
     }
@@ -457,8 +468,8 @@ private fun SurahMasteryCard(
     val rows = s.surahs.filter { it.judged > 0 }.take(10)
     Panel(c) {
         PanelTitle(
-            "By surah",
-            if (s.surahs.size > 10) "Top 10 of ${s.surahs.size}" else null,
+            stringResource(R.string.practice_by_surah),
+            if (s.surahs.size > 10) stringResource(R.string.practice_top_of, s.surahs.size) else null,
             c,
         )
         Spacer(Modifier.height(12.dp))
@@ -477,17 +488,26 @@ private fun SurahMasteryCard(
                 )
                 Column(Modifier.weight(1f)) {
                     Text(
-                        info?.nameEn ?: "Surah ${p.surah}",
+                        info?.nameEn ?: stringResource(R.string.home_surah_n, p.surah),
                         fontSize = 13.sp, color = c.ink,
                     )
+                    // "reached N of M" and "N sessions" are composed from
+                    // resources so Arabic can reorder; the " · " separators
+                    // between the three parts stay in code.
+                    val reachedTxt =
+                        if (p.reached > 0 && p.ayahCount > 0)
+                            stringResource(R.string.practice_reached, p.reached, p.ayahCount)
+                        else null
+                    val sessionsTxt =
+                        if (p.sessions > 1) stringResource(R.string.practice_n_sessions, p.sessions) else null
                     Text(
                         buildString {
                             p.accuracy?.let { append(pct1(it)) }
-                            if (p.reached > 0 && p.ayahCount > 0) {
+                            if (reachedTxt != null) {
                                 if (isNotEmpty()) append(" · ")
-                                append("reached ${p.reached} of ${p.ayahCount}")
+                                append(reachedTxt)
                             }
-                            if (p.sessions > 1) append(" · ${p.sessions} sessions")
+                            if (sessionsTxt != null) append(" · $sessionsTxt")
                         },
                         fontSize = 10.sp, color = c.inkFaint,
                     )
@@ -497,8 +517,7 @@ private fun SurahMasteryCard(
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "The bar is accuracy weighted by how much of the surah you have " +
-                "covered, so one perfect ayah is not a mastered surah.",
+            stringResource(R.string.practice_mastery_hint),
             fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
         )
     }
@@ -527,7 +546,11 @@ private fun HardestWordsCard(
 ) {
     val words = s.hardest.take(12)
     Panel(c) {
-        PanelTitle("Words to work on", "Counted from misses only", c)
+        PanelTitle(
+            stringResource(R.string.practice_hard_title),
+            stringResource(R.string.practice_hard_sub),
+            c,
+        )
         Spacer(Modifier.height(12.dp))
         words.forEach { w ->
             val text = hardWords[w.key]
@@ -536,7 +559,7 @@ private fun HardestWordsCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text ?: "ayah ${w.ayah}",
+                    text ?: stringResource(R.string.practice_ayah_n, w.ayah),
                     fontSize = 17.sp,
                     fontFamily = quranFont,
                     color = if (text != null) c.ink else c.inkMuted,
@@ -545,7 +568,10 @@ private fun HardestWordsCard(
                 )
                 val info = data.surahInfo(w.surah)
                 Text(
-                    "${info?.nameEn ?: "Surah ${w.surah}"} ${w.ayah}",
+                    stringResource(
+                        R.string.practice_word_ref,
+                        info?.nameEn ?: stringResource(R.string.home_surah_n, w.surah), w.ayah,
+                    ),
                     fontSize = 11.sp, color = c.inkFaint,
                 )
                 Spacer(Modifier.width(10.dp))
@@ -567,7 +593,11 @@ private fun RecentSessionsCard(
     onOpen: (String) -> Unit,
 ) {
     Panel(c) {
-        PanelTitle("Recent sessions", "Tap one for the full report", c)
+        PanelTitle(
+            stringResource(R.string.practice_recent_title),
+            stringResource(R.string.practice_recent_sub),
+            c,
+        )
         Spacer(Modifier.height(10.dp))
         s.recent.forEach { r ->
             Row(

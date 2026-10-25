@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- سلاسل شاشة فحص المحرك. -->
+<resources>
+    <string name="reader_diag_title">فحص المحرك</string>
+    <string name="reader_diag_refresh">تحديث</string>
+    <string name="reader_diag_copy_log">نسخ السجل</string>
+    <string name="reader_diag_share_report">مشاركة التقرير الكامل</string>
+    <string name="reader_diag_report_subject">تقرير محرك اقرأ</string>
+    <string name="reader_diag_share_via">مشاركة تقرير المحرك</string>
+    <string name="reader_diag_copy_ring">نسخ حلقة الأطر</string>
+    <string name="reader_diag_clear_log">مسح السجل المحفوظ</string>
+    <string name="reader_diag_engine">المحرك · %1$s</string>
+    <string name="reader_diag_engine_idle">المحرك · خامل</string>
+    <string name="reader_diag_mic">الميكروفون · %1$s · %2$d عيّنة</string>
+    <string name="reader_diag_matcher">المطابِق</string>
+    <string name="reader_diag_lock_policy">سياسة التتبع</string>
+    <string name="reader_diag_four_states">التتبع الذي لا يتقدم يكون في واحدة من أربع حالات: أنك لم تبلغ الآية التالية بعد (تغطية التالية أدنى من %1$s)، أو أن البوابة مغلقة فلا يصل شيء إلى فاكّ الترميز، أو أن التغطية بين عتبة التقدم وعتبة التراجع فلا يتفعّل أي مسار، أو أن المستعرِف يسمع قارئاً غير الذي دُرِّب النموذج عليه.</string>
+    <string name="reader_diag_events">الأحداث (%1$d)</string>
+    <string name="reader_diag_no_events">لا أحداث بعد — ابدأ جلسة تسميع.</string>
+    <string name="reader_hint_missing_files">ملفات المحرك ناقصة — انسخها عبر adb (الأوامر في كل صف)، ثم أعد بدء التسميع.</string>
+    <string name="reader_hint_silence">الميكروفون يلتقط شبه صمت — تحقق من الكسب والمسافة، أو من تطبيق آخر يمسك الميكروفون.</string>
+    <string name="reader_hint_frozen">مجرى الميكروفون متجمد — أوقف التسميع ثم ابدأه من جديد.</string>
+    <string name="reader_hint_gate_silence">تسمع البوابة صمتاً — بوابة %1$s مغلقة، فلا يصل شيء إلى فاكّ الترميز. ارفع صوتك.</string>
+    <string name="reader_hint_no_match">لم تطابق أي آية بعد — تلُ الآية المتوقعة بوضوح.</string>
+</resources>

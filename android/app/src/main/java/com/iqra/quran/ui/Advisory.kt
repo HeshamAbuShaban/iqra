@@ -1,5 +1,8 @@
 package com.iqra.quran.ui
 
+import androidx.annotation.StringRes
+import com.iqra.quran.R
+
 /**
  * How many times a kind is worth counting.
  *
@@ -46,53 +49,56 @@ data class Advisory(
  *
  * Severity decides which kind the user is shown when a word collects several;
  * it must never decide whether the word is blamed.
+ *
+ * The label is a resource id, not a string: these sentences reach the screen
+ * (session report) and the app speaks two languages. The kind's NAME stays the
+ * wire identity - records, replay tools and the engine all match on it.
  */
 enum class AdvisoryKind(
-    val label: String,
+    @StringRes val labelRes: Int,
     val severity: Int,
     val counting: AdvisoryCounting,
 ) {
     /** A marked stop boundary was crossed while scoring — a legal stop may have occurred. */
     MISSED_RULING_POSSIBLE(
-        "A legal stop may have happened here; the engine cannot model the join",
+        R.string.advisory_missed_ruling,
         4,
         AdvisoryCounting.PER_EVENT,
     ),
     /** A word carries a final letter the register does not require to be sounded. */
     UNMODELLED_FINAL(
-        "This word ends in a letter that need not be sounded; not accused",
+        R.string.advisory_unmodelled_final,
         4,
         AdvisoryCounting.PER_EVENT,
     ),
     /** Audio matched neither the expected nor any supported competing form. */
     UNSUPPORTED_REALISATION(
-        "A reading the engine cannot represent may have occurred",
+        R.string.advisory_unsupported_realisation,
         3,
         AdvisoryCounting.PER_EVENT,
     ),
     /** The audio window held nothing usable for the words it covered. */
     NO_AUDIO_WINDOW(
-        "The engine had no audio for this word",
+        R.string.advisory_no_audio_window,
         2,
         AdvisoryCounting.PER_EVENT,
     ),
     /** Audio was contradictory, but below the evidence floor to call WRONG. */
     LOW_EVIDENCE(
-        "The engine heard a contradiction it would not stand behind",
+        R.string.advisory_low_evidence,
         2,
         AdvisoryCounting.ONCE_PER_WORD,
     ),
     /** No previous ayah's arrival anchors the window, so its leading audio is unattributable. */
     UNANCHORED_AUDIO(
-        "No audio anchors this ayah's window; the engine cannot say the audio is yours, so it is not accused",
+        R.string.advisory_unanchored_audio,
         3,
         AdvisoryCounting.ONCE_PER_WORD,
     ),
     /** The decoder was starved, so the frame cannot speak for the word. */
     DECODER_STARVATION(
-        "The audio stream reset before the engine heard this",
+        R.string.advisory_decoder_starvation,
         1,
         AdvisoryCounting.ONCE_PER_WORD,
     ),
 }
-

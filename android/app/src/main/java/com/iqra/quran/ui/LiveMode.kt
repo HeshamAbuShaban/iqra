@@ -60,6 +60,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.border
 import com.iqra.quran.ui.theme.IqraColors
+import com.iqra.quran.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.geometry.Size
 
 /**
@@ -428,7 +430,7 @@ private fun LiveModeContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = { showExit = true }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Leave",
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.live_leave),
                         tint = lcG.inkMuted)
                 }
                 Text(
@@ -436,7 +438,8 @@ private fun LiveModeContent(
                     // is what the reciter is holding in their head.
                     listOfNotNull(
                         data.surahInfo(surah)?.nameEn,
-                        "$scopeCount ${if (scopeCount == 1) "ayah" else "ayat"}",
+                        if (scopeCount == 1) stringResource(R.string.live_ayah_one)
+                        else stringResource(R.string.live_ayah_n, scopeCount),
                     ).joinToString("  ·  ")),
                     fontSize = 14.sp,
                     color = lcG.inkMuted,
@@ -502,15 +505,16 @@ private fun LiveModeContent(
                     // working one until you read the glyphs. Any edit to this Text
                     // must keep it; latin_wrap_parity holds the whole screen to it.
                     ltr(when (state) {
-                        LiveState.Idle -> if (started) "Listening" else "Tap the light to begin"
-                        LiveState.Quiet -> "I can't hear you"
-                        LiveState.Hearing -> "Go ahead"
-                        LiveState.Thinking -> "Let me think…"
+                        LiveState.Idle -> if (started) stringResource(R.string.live_state_listening)
+                        else stringResource(R.string.live_state_tap)
+                        LiveState.Quiet -> stringResource(R.string.live_state_quiet)
+                        LiveState.Hearing -> stringResource(R.string.live_state_go)
+                        LiveState.Thinking -> stringResource(R.string.live_state_think)
                         // Says what Pause did and how to undo it. "Listening"
                         // here was the actual complaint: the engine really is
                         // still open, so every other string on this screen was
                         // true and still read as "you are being judged".
-                        LiveState.Paused -> "Paused — tap ▶ to resume"
+                        LiveState.Paused -> stringResource(R.string.live_state_paused)
                     }),
                     fontSize = 13.sp,
                     color = when (state) {
@@ -625,7 +629,7 @@ private fun LiveModeContent(
                 // its own denominator.
                 val inScope = scopeProgress.filter { it.ayah in scopeAyahs }
                 val judged = minOf(inScope.sumOf { it.decided }, totalWords)
-                Text(ltr("$judged of $totalWords heard"), fontSize = 12.sp, color = lcG.inkMuted)
+                Text(ltr(stringResource(R.string.live_heard_count, judged, totalWords)), fontSize = 12.sp, color = lcG.inkMuted)
                 Spacer(Modifier.height(16.dp))
 
                 // The controls: a pair, close together, on the dark ground below
@@ -640,6 +644,8 @@ private fun LiveModeContent(
                     RoundControl(
                         glyph = if (recording && !paused) Icons.Filled.Pause
                                 else Icons.Filled.PlayArrow,
+                        label = if (paused) stringResource(R.string.live_resume)
+                                else stringResource(R.string.live_pause),
                         tint = if (paused) lcG.gold else lcG.ink,
                         // While paused this control is not "pause" any more, it is
                         // "resume", and it is the only thing on the screen that
@@ -660,6 +666,7 @@ private fun LiveModeContent(
                     )
                     RoundControl(
                         glyph = Icons.Filled.Close,
+                        label = stringResource(R.string.live_end),
                         tint = lcG.chartBad,
                         // The end control is the one red thing on the screen, and
                         // it is filled rather than tinted: ending a session is the
@@ -677,17 +684,17 @@ private fun LiveModeContent(
     if (showExit) {
         AlertDialog(
             onDismissRequest = { showExit = false },
-            title = { Text(ltr("Leave this session?")) },
-            text = { Text(ltr("What you have recited so far is still counted.")) },
+            title = { Text(ltr(stringResource(R.string.live_exit_title))) },
+            text = { Text(ltr(stringResource(R.string.live_exit_body))) },
             confirmButton = {
                 TextButton(onClick = {
                     showExit = false
                     if (recording) vm.stopRecite("live exit")
                     onExit()
-                }) { Text(ltr("Leave")) }
+                }) { Text(ltr(stringResource(R.string.live_leave))) }
             },
             dismissButton = {
-                TextButton(onClick = { showExit = false }) { Text(ltr("Stay")) }
+                TextButton(onClick = { showExit = false }) { Text(ltr(stringResource(R.string.live_stay))) }
             },
         )
     }
@@ -1083,6 +1090,7 @@ private fun RoundControl(
     track: Color,
     border: Color = Color.Transparent,
     enabled: Boolean = true,
+    label: String? = null,
     onClick: () -> Unit,
 ) {
     Box(
@@ -1098,7 +1106,7 @@ private fun RoundControl(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            glyph, contentDescription = null,
+            glyph, contentDescription = label,
             tint = if (enabled) tint else tint.copy(alpha = 0.35f),
             modifier = Modifier.size(24.dp),
         )

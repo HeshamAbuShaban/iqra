@@ -13,6 +13,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.iqra.quran.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -45,9 +47,9 @@ fun NightTuningPanel() {
         val adjusted = NightPalette.adjustedTextBrightness(text.roundToInt(), bg.roundToInt())
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Night mode", fontSize = 15.sp, color = cs.onSurface)
+                Text(stringResource(R.string.night_title), fontSize = 15.sp, color = cs.onSurface)
                 Text(
-                    "inverted page · text brightness ${text.roundToInt()} · background ${bg.roundToInt()}",
+                    stringResource(R.string.night_readout, text.roundToInt(), bg.roundToInt()),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = cs.onSurface.copy(alpha = 0.6f),
@@ -71,7 +73,7 @@ fun NightTuningPanel() {
             )
             Spacer(Modifier.weight(1f))
             Text(
-                "effective $adjusted",
+                stringResource(R.string.night_effective, adjusted),
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 color = Color(adjusted, adjusted, adjusted).copy(alpha = 0.7f),
@@ -79,12 +81,12 @@ fun NightTuningPanel() {
         }
 
         Spacer(Modifier.height(12.dp))
-        LabelledSlider("Text brightness", text, 0f..255f) { v ->
+        LabelledSlider(stringResource(R.string.night_text), text, 0f..255f) { v ->
             text = v
             ReaderPrefs.setTextBrightness(ctx, v.roundToInt())
         }
         Spacer(Modifier.height(6.dp))
-        LabelledSlider("Background brightness", bg, 0f..64f) { v ->
+        LabelledSlider(stringResource(R.string.night_bg), bg, 0f..64f) { v ->
             bg = v
             ReaderPrefs.setBackgroundBrightness(ctx, v.roundToInt())
         }

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- الترجمة العربية لسلاسل SettingsScreen.kt وDataSetupScreen.kt وAudioLibraryScreen.kt.
+     البادئات: settings_ / setup_ / audio_. الأفعال المشتركة في strings.xml. -->
+<resources>
+
+    <!-- ===== SettingsScreen: الشريط العلوي ===== -->
+    <string name="settings_title">الإعدادات</string>
+
+    <!-- ===== SettingsScreen: القراءة ===== -->
+    <string name="settings_section_reading">القراءة</string>
+    <string name="settings_text_size">حجم الخط</string>
+    <string name="settings_night_mode">الوضع الليلي</string>
+    <string name="settings_night_mode_subtitle">يعكس ألوان الصفحة فيصير المصحف نصاً فاتحاً على خلفية داكنة.</string>
+    <string name="settings_text_brightness">سطوع النص</string>
+    <string name="settings_bg_brightness">سطوع الخلفية</string>
+    <string name="settings_rtl_title">التخطيط من اليمين إلى اليسار</string>
+    <string name="settings_rtl_subtitle">يعكس اتجاه شاشتي التسميع والمقاطع في العربية. يتبع ذلك ترتيبُ الكلمات وهامشُ الآية.</string>
+
+    <!-- ===== SettingsScreen: المظهر ===== -->
+    <string name="settings_section_theme">المظهر</string>
+
+    <!-- ===== SettingsScreen: شاشة التسميع ===== -->
+    <string name="settings_section_recitation">شاشة التسميع</string>
+    <string name="settings_live_animation_title">تحريك ضوء التسميع</string>
+    <string name="settings_live_animation_subtitle">الأفق في شاشة التسميع يتحرك باستمرار. أوقفه لصورة ثابتة.</string>
+    <string name="settings_vibrate_title">اهتزاز عند الكلمة الخاطئة</string>
+    <string name="settings_vibrate_subtitle">اهتزاز قصير عند أول تعليم كلمةٍ خطأً في الجلسة، ليصلك الحكم وأنت مشغول البصر بالصفحة. الكلمات التي لم يسمعها المحرك وملاحظاته لا تسبب اهتزازاً أبداً.</string>
+    <string name="settings_keep_awake_title">إبقاء الشاشة مضاءة</string>
+    <string name="settings_keep_awake_subtitle">يبقي الشاشة مضاءة في كل التطبيق، وأثناء التسميع خاصة. فالتلاوة تتجاوز غالباً نحو ثلاثين ثانية قبل أن يعتم أندرويد الشاشة، والشاشة التي تنطفئ بين آية تبدو كأن الجلسة انتهت. أوقفه لتوفير البطارية.</string>
+
+    <!-- ===== SettingsScreen: التعرّف ===== -->
+    <string name="settings_section_recognition">التعرّف</string>
+    <string name="settings_model_card_title">ما لا يستطيع هذا المحرك الحكم عليه</string>
+    <string name="settings_madd_title">طول المدّ</string>
+    <string name="settings_gap_madd_detail">٩٬٧٠٦ من أصل ٥١٬٣٩٥ موضع مدٍّ حرٌّ يجيز فيه حفصٌ أكثر من طولٍ واحد، والمحرك يعتمد الطولَ المعتمدَ وحده.</string>
+    <string name="settings_waqf_title">الوقف عند علامة وقف</string>
+    <string name="settings_gap_waqf_detail">النصُّ المتوقع واقعٌ واحد: وقفٌ عند نهاية كل آية ووصلٌ في داخلها. وفي المصحف ٩٬٩٥٠ علامةَ وقفٍ في جوف الآيات، والوقوف مشروعٌ لكنه يُحتسب عدمَ تطابق.</string>
+    <string name="settings_gap_idgham_title">حدود الإدغام</string>
+    <string name="settings_gap_idgham_detail">صوتُ آخر الكلمة يندمج في الكلمة التالية، وحيثما يعجز المحرك عن فصلهما لا يُصدر حكماً.</string>
+    <string name="settings_gap_silent_title">الحروف الساكنة والتاء المربوطة</string>
+    <string name="settings_gap_silent_detail">قوائم استثناءات هذه الحروف ليست في أي ملف بيانات، فلا يمكن الحكم على كلماتها.</string>
+    <string name="settings_never_accuse_on">ما لا يُحاسَب عليه أبداً</string>
+    <string name="settings_madd_never_subtitle">مدُّ المدِّ حركتين أو أربعَ أو ستاً حيث يجوز أكثر من طولٍ واحد ليس خطأً أبداً.</string>
+    <string name="settings_waqf_never_subtitle">الوقوف حيث تظهر في النص علامةُ وقفٍ اختيارٌ مشروع في التلاوة، لا خطأ.</string>
+    <string name="settings_unanchored_title">أول آية ليس قبلها شيء</string>
+    <string name="settings_unanchored_subtitle">حين لا تسند آيةٌ سابقةُ بدايةَ النافذة، فقد يكون الصوت الذي قبلها لشخصٍ آخر، والمحرك لا يستطيع إثبات أنه صوتك، فلا يُحاسَب.</string>
+    <string name="settings_engine_may_tell">ما يمكن للمحرك أن يخبرك به</string>
+    <string name="settings_engine_note_label">ما يُعَدّ ملاحظةً من المحرك</string>
+    <string name="settings_engine_notes_where">أين تظهر ملاحظات المحرك</string>
+    <string name="settings_how_strict">درجة الصرامة</string>
+    <string name="settings_evidence_label">مقدار الدليل اللازم قبل اعتبار الكلمة خطأً</string>
+    <string name="settings_heard_floor_explain">يشترط سماع %1$d٪ من أصوات الكلمة نفسها قبل أن يُحتسب عدمُ التطابق عليك. الانخفاض يعني تحذيرات أكثر.</string>
+    <string name="settings_accuracy_means">ماذا تعني «الدقة»</string>
+    <string name="settings_metric_shown_in">يظهر في تقرير الجلسة</string>
+    <string name="settings_diagnostics_title">تشخيصات التعرّف</string>
+    <string name="settings_diagnostics_subtitle">يعرض حالة المحرك في تقرير الجلسة: سلامة نافذة الصوت، ولحظات تعطل فكّ التشفير. الصمت على الشاشة ليس تشخيصاً.</string>
+
+    <!-- ===== SettingsScreen: الصوت المرجعي ===== -->
+    <string name="settings_section_reference_audio">الصوت المرجعي</string>
+    <string name="settings_reciter">القارئ</string>
+    <string name="settings_keep_copy_title">الاحتفاظ بنسخة لإعادة الاستماع</string>
+    <string name="settings_keep_copy_subtitle">التشغيل الأول يُبثّ بينما يُحفظ الملف في الخلفية، فتقرأ الإعاداتُ النسخةَ المحلية بدل تنزيل السورة مرةً أخرى.</string>
+    <string name="settings_wifi_only_title">الحفظ عبر Wi-Fi فقط</string>
+    <string name="settings_wifi_only_subtitle">يستمر البث عند التشغيل دائماً؛ هذا الخيار يؤخّر النسخةَ المحفوظة فقط عند استخدام بيانات الهاتف.</string>
+    <string name="settings_wifi_rule_off_note">الحفظ متوقف، فلا شيء تسري عليه قاعدة Wi-Fi. فعِّل «الاحتفاظ بنسخة لإعادة الاستماع» لحفظ التنزيلات.</string>
+    <string name="settings_playback_speed">سرعة التشغيل</string>
+    <string name="settings_auto_next_title">تشغيل السورة التالية عند الانتهاء</string>
+    <string name="settings_auto_next_subtitle">الفاتحة تتلوها البقرة بدل التوقف عند آخر آية.</string>
+    <string name="settings_downloaded_audio">الصوتيات المحفوظة</string>
+    <string name="settings_nothing_saved">لا شيء محفوظ بعد</string>
+    <string name="settings_one_surah_size">سورة واحدة · %1$s</string>
+    <string name="settings_n_surahs_size">%1$d من السور · %2$s</string>
+    <string name="settings_manage">إدارة</string>
+
+    <!-- ===== SettingsScreen: بياناتك ===== -->
+    <string name="settings_section_your_data">بياناتك</string>
+    <string name="settings_data_all_present">جميع ملفات البيانات الـ%1$d موجودة · %2$s</string>
+    <string name="settings_data_missing_count">ملفات بيانات ناقصة: %1$d من %2$d</string>
+    <string name="settings_manage_data_files">إدارة ملفات البيانات</string>
+    <string name="settings_practice_history">سجل التسميع</string>
+    <string name="settings_nothing_recorded">لا شيء مسجَّل بعد</string>
+    <string name="settings_one_session">جلسة واحدة</string>
+    <string name="settings_n_sessions">الجلسات المحفوظة: %1$d</string>
+    <string name="settings_view">عرض</string>
+    <string name="settings_clear">مسح</string>
+    <string name="settings_sessions_kept_label">الجلسات المحفوظة على هذا الجهاز</string>
+    <string name="settings_retention_note">عند تجاوز العدد تُحذف أقدمُ الجلسات وصوتُها نهائياً، وتبقى الإحصاءات المبنية عليها إلى الأبد.</string>
+    <string name="settings_keep_audio_title">الاحتفاظ بصوت كل جلسة</string>
+    <string name="settings_keep_audio_subtitle">أثناء تسميعك يُكتب صوتُ الجلسة بجوار سجلّها، فيستطيع التقرير تشغيل ما سمعه النموذج. لا يترك هذا الجهاز أبداً ويُحذف مع جلسته. أوقفه للاحتفاظ بالسجلات بلا صوت.</string>
+    <string name="settings_no_session_audio">لا صوت جلسات على القرص.</string>
+    <string name="settings_session_audio_disk_one">صوت الجلسات على القرص: %1$s، تسجيلٌ واحد.</string>
+    <string name="settings_session_audio_disk">صوت الجلسات على القرص: %1$s، عددُ التسجيلات %2$d.</string>
+
+    <!-- ===== SettingsScreen: حول التطبيق ===== -->
+    <string name="settings_section_about">حول التطبيق</string>
+    <string name="settings_version">الإصدار</string>
+    <string name="settings_mushaf">المصحف</string>
+    <string name="settings_mushaf_value">٦٠٤ صفحة · المدينة</string>
+    <string name="settings_ondevice_value">على الجهاز فقط</string>
+    <string name="settings_privacy_note">لا شيء مما تتلوه يترك جهازك. لا حساب، ولا خادم، ولا وصول إلى الشبكة أثناء التشغيل.</string>
+
+    <!-- ===== SettingsScreen: حوار مسح السجل ===== -->
+    <string name="settings_clear_history_title">مسح سجل التسميع؟</string>
+    <string name="settings_clear_history_text">يؤدي هذا إلى حذف الجلسات المسجَّلة (%1$d) والإحصاءات المبنية عليها، ولا يمكن التراجع.</string>
+
+    <!-- ===== SettingsScreen: منتقي مظهر شاشة التسميع ===== -->
+    <string name="settings_live_follow_app">مطابق للتطبيق</string>
+    <string name="settings_live_follows_theme">يتبع %1$s — المحدَّد حالياً</string>
+
+    <!-- ===== DataSetupScreen ===== -->
+    <string name="setup_title">جهِّز مصحفك</string>
+    <string name="setup_subtitle">تُنزَّل صور الصفحات والبيانات مرةً واحدةً وتُحفظ في مجلد مشترك، فتبقى تحديثات التطبيق صغيرة. ونموذج التسميع توفّره أنت، مرةً واحدة.</string>
+    <string name="setup_detail_gated">مطلوب · انسخه إلى %1$s</string>
+    <string name="setup_detail_will_download">سيُنزَّل (%1$s)</string>
+    <string name="setup_gate_title">ملفٌّ واحد يجب أن توفّره</string>
+    <string name="setup_gate_text">نموذج model.int8.onnx محميٌّ من مؤلفيه، فلا يمكن تنزيله تلقائياً. انسخه عبر USB إلى:\n%1$s\nثم اضغط «إعادة الفحص».</string>
+    <string name="setup_allow_access">السماح بالوصول إلى المجلد المشترك (اختياري)</string>
+    <string name="setup_download_failed">فشل بعض التنزيلات — اضغط «إعادة الفحص»</string>
+    <string name="setup_download_missing">تنزيل الملفات الناقصة</string>
+    <string name="setup_recheck">إعادة الفحص</string>
+    <string name="setup_continue_hint">يُتاح «متابعة» بعد اكتمال كل ملف.</string>
+
+    <!-- ===== AudioLibraryScreen ===== -->
+    <string name="audio_title">الصوتيات المحفوظة</string>
+    <string name="audio_sort_surah">سورة</string>
+    <string name="audio_sort_reciter">القارئ</string>
+    <string name="audio_sort_newest">الأحدث</string>
+    <string name="audio_sort_largest">الأكبر</string>
+    <string name="audio_empty">لا شيء محفوظ بعد. اضغط تشغيلاً على سورة، فيحفظ الصوتُ نفسه هنا، فلا تُنزَّل السورة ثانيةً عند إعادة الاستماع.</string>
+    <string name="audio_summary_one">سورة واحدة · %1$s</string>
+    <string name="audio_summary">%1$d من السور · %2$s</string>
+    <string name="audio_delete_all">حذف الكل</string>
+    <string name="audio_delete_others">حذف القرّاء الآخرين</string>
+    <string name="audio_reciter_summary_one">%1$s: سورة واحدة · %2$s</string>
+    <string name="audio_reciter_summary">%1$s: %2$d من السور · %3$s</string>
+    <string name="audio_fallback_surah">سورة %1$d</string>
+    <string name="audio_play_desc">تشغيل %1$s</string>
+    <string name="audio_delete_desc">حذف %1$s</string>
+    <string name="audio_delete_entry_title">حذف %1$s؟</string>
+    <string name="audio_delete_entry_text">سيُحذف %1$s. تشغيل السورة مجدداً يُبثّها ويحفظ نسخةً جديدة.</string>
+    <string name="audio_keep">إبقاء</string>
+    <string name="audio_keep_only_title">الاحتفاظ بـ%1$s فقط؟</string>
+    <string name="audio_delete_others_text_one">ستُحذف سورة واحدة لقرّاء آخرين (%1$s)، وتُبثّ مجدداً إذا شُغِّلت لاحقاً.</string>
+    <string name="audio_delete_others_text">ستُحذف %1$d من سور قرّاء آخرين (%2$s)، وتُبثّ مجدداً إذا شُغِّلت لاحقاً.</string>
+    <string name="audio_delete_all_title_one">حذف السورة المحفوظة؟</string>
+    <string name="audio_delete_all_title">حذف كل السور المحفوظة (%1$d)؟</string>
+    <string name="audio_delete_all_text">سيُحذف %1$s. أي سورة تُشغَّل بعدها تُبثّ وتُحفظ من جديد.</string>
+</resources>

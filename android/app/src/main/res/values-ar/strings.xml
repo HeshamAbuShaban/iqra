@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- النسخة العربية من السلاسل المشتركة. -->
+<resources>
+    <string name="app_name">اقرأ</string>
+
+    <string name="action_ok">حسناً</string>
+    <string name="action_cancel">إلغاء</string>
+    <string name="action_close">إغلاق</string>
+    <string name="action_delete">حذف</string>
+    <string name="action_continue">متابعة</string>
+    <string name="action_search">بحث</string>
+    <string name="action_back">رجوع</string>
+    <string name="action_change">تغيير</string>
+    <string name="action_copy">نسخ</string>
+    <string name="action_share">مشاركة</string>
+
+    <string name="language">اللغة</string>
+    <string name="language_subtitle">لغة التطبيق؛ صفحات المصحف لا تتأثر</string>
+    <string name="language_system">لغة النظام</string>
+    <string name="language_english">English</string>
+    <string name="language_arabic">العربية</string>
+    <string name="language_system_native">System</string>
+
+    <string name="theme_night_garden">حديقة الليل</string>
+    <string name="theme_night_garden_blurb">تركواز وذهب على أرضٍ شبه سوداء</string>
+    <string name="theme_ink_silver">حبر وفضة</string>
+    <string name="theme_ink_silver_blurb">أردواز بارد بحروف ذهبية باهتة</string>
+    <string name="theme_parchment">رقّ</string>
+    <string name="theme_parchment_blurb">دفء منخفض التباين، مريح للعين ليلاً</string>
+    <string name="theme_high_contrast">تباين عالٍ</string>
+    <string name="theme_high_contrast_blurb">أقصى فصل بين الألوان للغرف المضيئة</string>
+
+    <string name="metric_accuracy">الدقة</string>
+    <string name="metric_accuracy_explain">الصحيح ÷ الكلمات المحسومة. الجلسة التي لم يُختبر فيها شيء تظهر — لا 0٪.</string>
+    <string name="metric_coverage">التغطية</string>
+    <string name="metric_coverage_explain">المحسوم ÷ الكلمات التي بلغها التتبع. انخفاضُها يعني أن التطبيق سمع القليل، لا أنك أخطأت.</string>
+    <string name="metric_decided">الكلمات المحسومة</string>
+    <string name="metric_decided_explain">عدد الكلمات التي توفر لها المحرك دليل سماع. بلا نسبة مئوية.</string>
+    <string name="metric_net">الصحيح مقابل الخطأ</string>
+    <string name="metric_net_explain">الصحيح والخطأ كعددين مطلقين، جنباً إلى جنب.</string>
+
+    <string name="strictness_cautious">حَذِر</string>
+    <string name="strictness_balanced">متوازن</string>
+    <string name="strictness_strict">صارم</string>
+
+    <string name="advisory_quiet">هادئ: تقرير الجلسة فقط</string>
+    <string name="advisory_in_flow">داخل التلاوة: علامة كهرمانية على المصحف</string>
+    <string name="advisory_off">معطّل: لا ملاحظات من المحرك إطلاقاً</string>
+    <string name="advisory_alarm_measured">مقاس + ملاحظات</string>
+    <string name="advisory_alarm_measured_explain">تُعرض كل ملاحظات المحرك: الوقف الذي لم يُحتسب، الكلمات قليلة الدليل، الكلمات بلا صوت.</string>
+    <string name="advisory_alarm_engine">أعطال المحرك فقط</string>
+    <string name="advisory_alarm_engine_explain">ما يمكن للمحرك إثباته عن نفسه فقط: الكلمات التي لم يسمعها، الأطر التي لم يستطع معالجتها. لا شيء عن تلاوتك.</string>
+
+    <string name="advisory_missed_ruling">ربما وقع هنا وقفٌ مشروع؛ والمحرك لا يستطيع تمثيل الوصل</string>
+    <string name="advisory_unmodelled_final">تنتهي هذه الكلمة بحرفٍ غير لازم نطقه؛ فلا تُحاسَب</string>
+    <string name="advisory_unsupported_realisation">ربما وقعت قراءةٌ لا يستطيع المحرك تمثيلها</string>
+    <string name="advisory_no_audio_window">لم يملك المحرك صوتاً لهذه الكلمة</string>
+    <string name="advisory_low_evidence">سمع المحرك تناقضاً لم يقف خلفه</string>
+    <string name="advisory_unanchored_audio">لا صوت يرسم بداية نافذة هذه الآية؛ فلا يستطيع المحرك أن يقول إن الصوت لك، ولذلك لا تُحاسَب</string>
+    <string name="advisory_decoder_starvation">أُعيد ضبط مجرى الصوت قبل أن يسمع المحرك هذه الكلمة</string>
+</resources>

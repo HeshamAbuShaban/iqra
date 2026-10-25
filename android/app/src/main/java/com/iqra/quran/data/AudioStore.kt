@@ -8,7 +8,7 @@ object AudioStore {
     data class Entry(val reciterId: String, val surah: Int, val bytes: Long, val modified: Long)
 
     fun file(ctx: Context, reciterId: String, surah: Int): File =
-        File(File(root(ctx), reciterId), "%03d.mp3".format(surah))
+        File(File(root(ctx), reciterId), String.format(java.util.Locale.US, "%03d.mp3", surah))
 
     fun exists(ctx: Context, reciterId: String, surah: Int): Boolean =
         file(ctx, reciterId, surah).isFile

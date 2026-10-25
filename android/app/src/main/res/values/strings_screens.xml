@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home (picker), Choose (test picker) and Practice (history) screens.
+     LiveMode and NightTuningPanel strings live here too. -->
+<resources>
+    <!-- ===== HomeScreen ===== -->
+    <string name="home_cd_last_read">Back to last read</string>
+    <string name="home_cd_practice">Your practice</string>
+    <string name="home_cd_settings">Settings</string>
+    <string name="home_search_hint">Search a surah, or a word from a verse</string>
+    <string name="home_cd_clear">Clear</string>
+    <string name="home_section_surahs">Surahs</string>
+    <string name="home_section_verses">Verses</string>
+    <string name="home_empty_search">Nothing matched.</string>
+    <string name="home_tab_surahs">Surahs</string>
+    <string name="home_tab_juz">Juz</string>
+    <string name="home_tab_saved">Saved</string>
+    <string name="home_cd_toggle_layout">Toggle layout</string>
+    <string name="home_section_meccan">Meccan</string>
+    <string name="home_section_madani">Madani</string>
+    <string name="home_empty_surah_match">No surah matches</string>
+    <string name="home_continue_title">Continue</string>
+    <string name="home_continue_detail">%1$s  ·  Page %2$d  ·  %3$d verses</string>
+    <string name="home_test_title">Recite from memory</string>
+    <string name="home_test_blurb">The verse stays hidden until you say it. We listen and grade each word.</string>
+    <string name="home_surah_n">Surah %1$d</string>
+    <string name="home_surah_meta">%1$s · %2$d verses · pp %3$d–%4$d · Juz %5$d</string>
+    <string name="home_juz_title">Juz %1$d</string>
+    <string name="home_juz_pages">pp %1$d–%2$d</string>
+    <string name="home_bookmarks_empty_title">No bookmarks yet</string>
+    <string name="home_bookmarks_empty_hint">The header icon saves a page; an ayah\'s sheet saves the ayah.</string>
+    <string name="home_bookmark_section_ayahs">Ayahs</string>
+    <string name="home_bookmark_section_pages">Pages</string>
+    <string name="home_surah_ayah">%1$s · Ayah %2$d</string>
+    <string name="home_cd_remove_ayah_bookmark">Remove ayah bookmark</string>
+    <string name="home_page_n">Page %1$d</string>
+    <string name="home_surah_juz">%1$s · Juz %2$d</string>
+    <string name="home_cd_remove_bookmark">Remove bookmark</string>
+
+    <!-- ===== ChooseScreen ===== -->
+    <string name="choose_title_stage0">Recite from memory</string>
+    <string name="choose_title_stage1">Which part?</string>
+    <string name="choose_subtitle_stage0">Nothing is shown until you say it</string>
+    <string name="choose_subtitle_stage1">Surah %1$d · %2$d ayat</string>
+    <string name="choose_heading">What would you like to recite?</string>
+    <string name="choose_heading_hint1">Pick the surah, then choose whether to do all of it or just a stretch.</string>
+    <string name="choose_heading_hint2">A word you get wrong is revealed and marked; every other word stays hidden.</string>
+    <string name="choose_last_passage">Last passage</string>
+    <string name="choose_drill">Drill it</string>
+    <string name="choose_search_hint">Search by name or number</string>
+    <string name="choose_no_match">Nothing matches \u201C%1$s\u201D.</string>
+    <string name="choose_surah_detail">%1$s · %2$d ayat · starts on page %3$d</string>
+    <string name="choose_mode_whole">The whole surah</string>
+    <string name="choose_mode_range">Just a range</string>
+    <string name="choose_all_ayat">All %1$d ayat</string>
+    <string name="choose_whole_blurb">The whole surah. %1$d ayat, starting from the first.</string>
+    <string name="choose_range_label">Range</string>
+    <string name="choose_from_ayah">From ayah</string>
+    <string name="choose_to_ayah">To ayah</string>
+    <string name="choose_ayah_n">Ayah %1$d</string>
+    <string name="choose_ayat_range">Ayat %1$d–%2$d</string>
+    <string name="choose_more">\u2026 and %1$d more</string>
+    <string name="choose_cta_whole">Recite %1$s</string>
+    <string name="choose_cta_ayah">Recite ayah %1$d</string>
+    <string name="choose_cta_range">Recite %1$d ayat</string>
+    <string name="choose_surah_meta">%1$d ayat · page %2$d</string>
+
+    <!-- ===== PracticeScreen ===== -->
+    <string name="practice_title">Practice</string>
+    <string name="practice_footnote">Accuracy counts words the engine judged. Words it never heard are shown separately.</string>
+    <string name="practice_empty_title">Nothing practised yet</string>
+    <string name="practice_empty_body">Recite a passage from memory and it will appear here - how much you got right, which ayat are slow, and which words keep slipping.</string>
+    <string name="practice_words_judged">words judged</string>
+    <string name="practice_all_time">all time</string>
+    <string name="practice_streak_day">day in a row</string>
+    <string name="practice_streak_days">days in a row</string>
+    <string name="practice_streak_best">best %1$d</string>
+    <string name="practice_accuracy_with_unknown">Counting the %1$d%% of words the engine never heard, this is %2$s.</string>
+    <string name="practice_trend_up">Up %1$s on your previous session</string>
+    <string name="practice_trend_down">Down %1$s on your previous session</string>
+    <string name="practice_trend_level">Level with your previous session</string>
+    <string name="practice_first_session">Your first session with a judged word. Recite once more and this becomes a trend.</string>
+    <string name="practice_panel_accuracy">Accuracy over time</string>
+    <string name="practice_needs_two">Needs at least two sessions</string>
+    <string name="practice_n_sessions">%1$d sessions</string>
+    <string name="practice_accuracy_chart_hint">Height is accuracy. The faint columns are words judged, so a line drawn through one word is visibly thin.</string>
+    <string name="practice_panel_pace">Pace</string>
+    <string name="practice_needs_judged">Needs a session where words were judged</string>
+    <string name="practice_wpm">words per minute</string>
+    <string name="practice_most_recent">most recent</string>
+    <string name="practice_fastest">fastest</string>
+    <string name="practice_best">best</string>
+    <string name="practice_pace_hint">Pace is a smoothed estimate from the lock\'s own gate timing, not a stopwatch. Treat it as a direction, not a number.</string>
+    <string name="practice_activity_title">Last 26 weeks</string>
+    <string name="practice_active_days">%1$d active days</string>
+    <string name="practice_activity_hint">Darker means more words judged that day. The outlined cell is today.</string>
+    <string name="practice_by_surah">By surah</string>
+    <string name="practice_top_of">Top 10 of %1$d</string>
+    <string name="practice_reached">reached %1$d of %2$d</string>
+    <string name="practice_mastery_hint">The bar is accuracy weighted by how much of the surah you have covered, so one perfect ayah is not a mastered surah.</string>
+    <string name="practice_hard_title">Words to work on</string>
+    <string name="practice_hard_sub">Counted from misses only</string>
+    <string name="practice_ayah_n">ayah %1$d</string>
+    <string name="practice_word_ref">%1$s %2$d</string>
+    <string name="practice_recent_title">Recent sessions</string>
+    <string name="practice_recent_sub">Tap one for the full report</string>
+
+    <!-- ===== LiveMode (the recitation test) ===== -->
+    <string name="live_leave">Leave</string>
+    <string name="live_stay">Stay</string>
+    <string name="live_ayah_one">%1$d ayah</string>
+    <string name="live_ayah_n">%1$d ayat</string>
+    <string name="live_state_listening">Listening</string>
+    <string name="live_state_tap">Tap the light to begin</string>
+    <string name="live_state_quiet">I can\'t hear you</string>
+    <string name="live_state_go">Go ahead</string>
+    <string name="live_state_think">Let me think…</string>
+    <string name="live_state_paused">Paused — tap ▶ to resume</string>
+    <string name="live_heard_count">%1$d of %2$d heard</string>
+    <string name="live_pause">Pause</string>
+    <string name="live_resume">Resume</string>
+    <string name="live_end">End session</string>
+    <string name="live_exit_title">Leave this session?</string>
+    <string name="live_exit_body">What you have recited so far is still counted.</string>
+
+    <!-- ===== NightTuningPanel ===== -->
+    <string name="night_title">Night mode</string>
+    <string name="night_readout">inverted page · text brightness %1$d · background %2$d</string>
+    <string name="night_effective">effective %1$d</string>
+    <string name="night_text">Text brightness</string>
+    <string name="night_bg">Background brightness</string>
+</resources>

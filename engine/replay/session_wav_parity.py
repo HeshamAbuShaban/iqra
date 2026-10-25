@@ -42,6 +42,9 @@ WAV = ROOT / "android/app/src/main/java/com/iqra/quran/audio/SessionWavWriter.kt
 MAIN = ROOT / "android/app/src/main/java/com/iqra/quran/ui/MainActivity.kt"
 PL = ROOT / "android/app/src/main/java/com/iqra/quran/data/PracticeLog.kt"
 SR = ROOT / "android/app/src/main/java/com/iqra/quran/ui/SessionReport.kt"
+# User-facing prose moved into resources with the Arabic translation; the
+# check below reads the resource file the code points at.
+SR_RES = ROOT / "android/app/src/main/res/values/strings_report.xml"
 EXPORT = HERE / "replay_export.py"
 
 
@@ -203,7 +206,8 @@ def main() -> int:
          re.search(r'audioAvailable && row\.st == "WRONG" && row\.wt != null', sr)
          is not None),
         ("a named-but-missing WAV is stated, not played",
-         "no longer on this device" in sr),
+         "R.string.report_audio_missing" in sr
+         and "no longer on this device" in SR_RES.read_text(encoding="utf-8")),
         # the exporter copies the WAV when present and says so when not
         ("the replay exporter carries the WAV beside the record",
          "shutil.copy(wav_src, out_dir / \"session.wav\")" in export_src),

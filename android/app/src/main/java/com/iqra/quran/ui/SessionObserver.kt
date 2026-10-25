@@ -39,10 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.iqra.quran.R
 import com.iqra.quran.data.PracticeLog
 import com.iqra.quran.data.QuranData
 import com.iqra.quran.ui.theme.AyahStrip
@@ -119,10 +121,10 @@ fun SessionObserverScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = c.inkMuted)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), tint = c.inkMuted)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("Observer", fontSize = 17.sp, color = c.ink,
+                    Text(stringResource(R.string.obs_title), fontSize = 17.sp, color = c.ink,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     Text(
                         recordName.removeSuffix(".json"),
@@ -136,12 +138,11 @@ fun SessionObserverScreen(
         val d = obs
         when {
             !loaded -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                Text("Reading the walk...", color = c.inkFaint, fontSize = 13.sp)
+                Text(stringResource(R.string.obs_loading), color = c.inkFaint, fontSize = 13.sp)
             }
             d == null -> Box(Modifier.fillMaxSize().padding(36.dp), Alignment.Center) {
                 Text(
-                    "That session is no longer on the phone.\n" +
-                        "Only the ten most recent are kept.",
+                    stringResource(R.string.obs_gone),
                     color = c.inkMuted, fontSize = 13.sp, textAlign = TextAlign.Center,
                 )
             }
@@ -149,8 +150,7 @@ fun SessionObserverScreen(
                 Modifier.fillMaxSize().padding(36.dp), Alignment.Center,
             ) {
                 Text(
-                    "This record has no timed walk - it predates the frame ring " +
-                        "or ended before the engine looked at the microphone.",
+                    stringResource(R.string.obs_no_walk),
                     color = c.inkMuted, fontSize = 13.sp, textAlign = TextAlign.Center,
                 )
             }
@@ -202,7 +202,8 @@ private fun ObserverBody(
                     IconButton(onClick = onTogglePlay, modifier = Modifier.size(48.dp)) {
                         Icon(
                             if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            if (playing) "Pause" else "Play",
+                            if (playing) stringResource(R.string.obs_pause)
+                            else stringResource(R.string.obs_play),
                             tint = c.accent, modifier = Modifier.size(30.dp),
                         )
                     }
@@ -214,7 +215,7 @@ private fun ObserverBody(
                             fontFamily = FontFamily.Monospace,
                         )
                         Text(
-                            "the session played back at the pace it happened",
+                            stringResource(R.string.obs_playback_note),
                             fontSize = 10.sp, color = c.inkFaint,
                         )
                     }
@@ -225,9 +226,10 @@ private fun ObserverBody(
                     valueRange = 0f..d.durationMs.coerceAtLeast(1L).toFloat(),
                 )
                 Row {
-                    Text("$decisions decisions so far", fontSize = 10.sp, color = c.inkFaint)
+                    Text(stringResource(R.string.obs_decisions_so_far, decisions),
+                        fontSize = 10.sp, color = c.inkFaint)
                     Spacer(Modifier.weight(1f))
-                    Text("$movesSoFar lock moves · ${d.movesCounter} in the whole session",
+                    Text(stringResource(R.string.obs_moves_line, movesSoFar, d.movesCounter),
                         fontSize = 10.sp, color = c.inkFaint)
                 }
             }
@@ -235,21 +237,23 @@ private fun ObserverBody(
 
         item {
             Panel(c) {
-                Text("Where the lock stood", fontSize = 11.sp, color = c.inkMuted,
+                Text(stringResource(R.string.obs_lock_title), fontSize = 11.sp, color = c.inkMuted,
                     letterSpacing = 1.1.sp)
                 Spacer(Modifier.height(8.dp))
                 if (cur != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "lock ${cur.surah}:${cur.lock}",
+                            stringResource(R.string.obs_lock_pos, cur.surah, cur.lock),
                             fontSize = 18.sp, color = c.ink,
                             fontFamily = FontFamily.Monospace,
                         )
                         Spacer(Modifier.width(14.dp))
                         // -1 is the frame ring's "not computed", not a coverage.
                         Text(
-                            "next " + (if (cur.next >= 0f) pct1(cur.next) + "%" else "—") +
-                                " · here " + (if (cur.here >= 0f) pct1(cur.here) + "%" else "—"),
+                            stringResource(R.string.obs_next) + " " +
+                                (if (cur.next >= 0f) pct1(cur.next) + "%" else "—") +
+                                " · " + stringResource(R.string.obs_here) + " " +
+                                (if (cur.here >= 0f) pct1(cur.here) + "%" else "—"),
                             fontSize = 11.sp, color = c.inkMuted,
                             fontFamily = FontFamily.Monospace,
                         )
@@ -257,7 +261,7 @@ private fun ObserverBody(
                 } else {
                     // Before the first frame the engine had not yet looked at a
                     // window; saying nothing is honest, a lock of 1:1 is not.
-                    Text("no frame yet at this moment", fontSize = 13.sp, color = c.inkMuted)
+                    Text(stringResource(R.string.obs_no_frame), fontSize = 13.sp, color = c.inkMuted)
                 }
                 Spacer(Modifier.height(12.dp))
                 if (d.ayat.isNotEmpty()) {
@@ -283,24 +287,24 @@ private fun ObserverBody(
                     // report's final outcomes, so they are named rather than
                     // assumed: a reader who has seen the report's strip would
                     // otherwise read "grey" as "unjudged at all".
-                    LegendRow(c, c.wordGood, "clean so far", outcomes.count { it == 0 })
-                    LegendRow(c, c.chartBad, "a word wrong", outcomes.count { it == 1 })
-                    LegendRow(c, c.wordUnknown, "not judged yet", outcomes.count { it == 2 })
+                    LegendRow(c, c.wordGood, stringResource(R.string.obs_legend_clean), outcomes.count { it == 0 })
+                    LegendRow(c, c.chartBad, stringResource(R.string.obs_legend_wrong), outcomes.count { it == 1 })
+                    LegendRow(c, c.wordUnknown, stringResource(R.string.obs_legend_pending), outcomes.count { it == 2 })
                 }
             }
         }
 
         item {
             Panel(c) {
-                Text("Decisions as they came", fontSize = 11.sp, color = c.inkMuted,
+                Text(stringResource(R.string.obs_decisions_title), fontSize = 11.sp, color = c.inkMuted,
                     letterSpacing = 1.1.sp)
                 Text(
-                    "Newest first. A verdict appears when the engine decided it.",
+                    stringResource(R.string.obs_decisions_sub),
                     fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                 )
                 Spacer(Modifier.height(10.dp))
                 if (events.isEmpty()) {
-                    Text("nothing decided yet at this moment", fontSize = 12.sp,
+                    Text(stringResource(R.string.obs_nothing_decided), fontSize = 12.sp,
                         color = c.inkMuted)
                 } else {
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
@@ -336,7 +340,7 @@ private fun ObserverBody(
                                         )
                                         Text(
                                             wordText[e.key]
-                                                ?: "(the record names no text for ${e.key})",
+                                                ?: stringResource(R.string.obs_no_text, e.key),
                                             fontSize = 16.sp, fontFamily = quranFont,
                                             color = when (e.st) {
                                                 "WRONG" -> c.wordBad
@@ -360,19 +364,16 @@ private fun ObserverBody(
 
         item {
             Panel(c) {
-                Text("What the model heard", fontSize = 11.sp, color = c.inkMuted,
+                Text(stringResource(R.string.obs_heard_title), fontSize = 11.sp, color = c.inkMuted,
                     letterSpacing = 1.1.sp)
                 Spacer(Modifier.height(8.dp))
                 if (!d.hasEmTimes) {
                     Text(
-                        "This record has no emission arrival times (written before " +
-                            "emMs), so when a sound was heard cannot be placed. The " +
-                            "count of sounds heard in the whole session is " +
-                            "${d.units.size}.",
+                        stringResource(R.string.obs_no_em_times, d.units.size),
                         fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
                     )
                 } else if (heard.isEmpty()) {
-                    Text("nothing heard yet at this moment", fontSize = 12.sp, color = c.inkMuted)
+                    Text(stringResource(R.string.obs_nothing_heard), fontSize = 12.sp, color = c.inkMuted)
                 } else {
                     Text(
                         heard.takeLast(48).joinToString(" ") { it.first },
@@ -381,8 +382,7 @@ private fun ObserverBody(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "${heard.size} of ${d.units.size} units heard so far, as the " +
-                            "engine received them (arrival times are poll-granular).",
+                        stringResource(R.string.obs_units_heard, heard.size, d.units.size),
                         fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                     )
                 }
@@ -391,28 +391,18 @@ private fun ObserverBody(
 
         item {
             Panel(c) {
-                Text("What this seat cannot show", fontSize = 11.sp, color = c.inkMuted,
+                Text(stringResource(R.string.obs_limits_title), fontSize = 11.sp, color = c.inkMuted,
                     letterSpacing = 1.1.sp)
                 Spacer(Modifier.height(8.dp))
+                // stringResource only resolves in composable context, so the three
+                // sentences are resolved before the (non-composable) buildString.
+                val limitsAudio = stringResource(R.string.obs_limits_audio)
+                val limitsAdvisories = stringResource(
+                    R.string.obs_limits_advisories, d.advisoryCount,
+                )
+                val limitsCoverage = stringResource(R.string.obs_limits_coverage)
                 Text(
-                    buildString {
-                        append(
-                            "A record stores no audio, so this seat replays the " +
-                                "session silently: what the model heard is replayed " +
-                                "as the text stream above, not as sound. ",
-                        )
-                        append(
-                            "Advisories carry no time in the record " +
-                                "(${d.advisoryCount} events in this session), so they " +
-                                "are listed in the report but cannot be placed on this " +
-                                "timeline. ",
-                        )
-                        append(
-                            "The lock's coverage figures are the engine's own " +
-                                "account (next/here at each decision), not a " +
-                                "re-derivation.",
-                        )
-                    },
+                    limitsAudio + limitsAdvisories + limitsCoverage,
                     fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                 )
             }

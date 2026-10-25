@@ -1,6 +1,7 @@
 package com.iqra.quran.ui
 
 import com.iqra.quran.R
+import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.RectF
@@ -146,6 +147,13 @@ class MainActivity : ComponentActivity() {
         if (granted) pendingStart?.invoke() else pendingStart = null
     }
     private var pendingStart: (() -> Unit)? = null
+
+    // The app's chosen UI language, applied below API 33 where the system has
+    // no per-app locale store. On 33+ the LocaleManager owns it and this is a
+    // no-op pass-through. See AppLocales.
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLocales.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -693,6 +701,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onOpenData = { screenName = "data" },
             onOpenProgress = { screenName = "progress" },
             onOpenLibrary = { screenName = "library" },
+            onOpenDiag = { screenName = "diag" },
         )
         Screen.Library -> AudioLibraryScreen(
             onBack = { screenName = "settings" },
@@ -738,8 +747,6 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         Screen.Picker -> HomeScreen(vm, lastRead,
             onOpen = { surah, page -> goReader(surah, page, null) },
             onOpenAyah = { surah, page, ayah -> goReader(surah, page, ayah) },
-            onDiag = { screenName = "diag" },
-            onData = { screenName = "data" },
             onSettings = { screenName = "settings" },
             onProgress = { screenName = "progress" },
             // Opens the door, not the session. Choosing what to train on is a
@@ -871,18 +878,18 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
         }
     }
     fun hint(): String? {
-        if (snap.any { !it.present }) return "Missing engine files — push them via adb (commands on each row), then restart recitation."
-        if (recording && micN > 0 && micDb < 0.005f) return "Mic delivers near-silence — check gain, distance, or another app holding the mic."
-        if (micStalled) return "Mic stream frozen — stop and start recitation again."
+        if (snap.any { !it.present }) return ctx.getString(R.string.reader_hint_missing_files)
+        if (recording && micN > 0 && micDb < 0.005f) return ctx.getString(R.string.reader_hint_silence)
+        if (micStalled) return ctx.getString(R.string.reader_hint_frozen)
         // The gate is fed by SherpaVad.feedAndDetect() (or the RMS fallback)
         // and its per-frame verdict is folded straight into gateReason, never
         // published, so name the gate that is actually running instead of
         // pointing at a VAD row that does not exist.
         if (recording && gate == "silence") {
             val which = if (engineLabel.endsWith("/VAD")) "Silero VAD" else "RMS"
-            return "Gate hears silence — the $which gate is closed, so nothing reaches the decoder. Recite louder."
+            return ctx.getString(R.string.reader_hint_gate_silence, which)
         }
-        if (recording && lastMatch == null) return "No ayah matched yet — recite the locked ayah clearly."
+        if (recording && lastMatch == null) return ctx.getString(R.string.reader_hint_no_match)
         return null
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -891,14 +898,14 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), tint = MaterialTheme.colorScheme.onSurface)
             }
-            Text("Engine check", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(stringResource(R.string.reader_diag_title), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             IconButton(onClick = { snap = vm.engineFilesInfo() }) {
-                Icon(Icons.Filled.Refresh, "Refresh", tint = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.Filled.Refresh, stringResource(R.string.reader_diag_refresh), tint = MaterialTheme.colorScheme.onSurface)
             }
             IconButton(onClick = { clipboard.setText(AnnotatedString(log.joinToString("\n"))) }) {
-                Icon(Icons.Filled.ContentCopy, "Copy log")
+                Icon(Icons.Filled.ContentCopy, stringResource(R.string.reader_diag_copy_log))
             }
             // "Copy log" hands over the event lines alone, which on their own are
             // close to unreadable: they say the lock moved and not what it was
@@ -911,12 +918,12 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                 clipboard.setText(AnnotatedString(text))
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Iqra engine report")
+                    putExtra(Intent.EXTRA_SUBJECT, ctx.getString(R.string.reader_diag_report_subject))
                     putExtra(Intent.EXTRA_TEXT, text)
                 }
-                ctx.startActivity(Intent.createChooser(send, "Share engine report"))
+                ctx.startActivity(Intent.createChooser(send, ctx.getString(R.string.reader_diag_share_via)))
             }) {
-                Icon(Icons.Filled.Share, "Share full report")
+                Icon(Icons.Filled.Share, stringResource(R.string.reader_diag_share_report))
             }
             // The frame ring is what a lock-policy question is actually answered
             // from: per frame it records the lock plus every coverage the
@@ -924,12 +931,12 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
             // header carries the thresholds, so a dump never has to hard-code
             // the policy it was recorded under.
             IconButton(onClick = { clipboard.setText(AnnotatedString(vm.frameRingDump())) }) {
-                Icon(Icons.Filled.Receipt, "Copy frame ring")
+                Icon(Icons.Filled.Receipt, stringResource(R.string.reader_diag_copy_ring))
             }
             // Without this the rotated logs accumulate for the life of the
             // install and "the log" stops meaning one debugging session.
             IconButton(onClick = { vm.clearPersistedDiag() }) {
-                Icon(Icons.Filled.Delete, "Clear saved log")
+                Icon(Icons.Filled.Delete, stringResource(R.string.reader_diag_clear_log))
             }
         }
         LazyColumn(
@@ -937,7 +944,10 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
             item {
-                DiagSection("Engine · " + if (engineLabel.isNotEmpty()) engineLabel else "idle") {
+                DiagSection(
+                    if (engineLabel.isNotEmpty()) ctx.getString(R.string.reader_diag_engine, engineLabel)
+                    else ctx.getString(R.string.reader_diag_engine_idle)
+                ) {
                     snap.forEach { f ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(
@@ -960,7 +970,7 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                 }
             }
             item {
-                DiagSection("Mic · ${"%.3f".format(micDb)} · $micN samples") {
+                DiagSection(ctx.getString(R.string.reader_diag_mic, "%.3f".format(micDb), micN)) {
                     DiagRow("Recording", if (recording) "yes" else "no")
                     DiagRow("Stalled", if (micStalled) "YES — restart recitation" else "no")
                     // engineLabel is the only endpointing state the app
@@ -987,7 +997,7 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                 }
             }
             item {
-                DiagSection("Matcher") {
+                DiagSection(stringResource(R.string.reader_diag_matcher)) {
                     DiagRow("Lock", activeVerse?.toString() ?: "—")
                     DiagRow("Last match", lastMatch?.let { "${it.first} @ ${"%.2f".format(it.second)}" } ?: "—")
                     if (live.next >= 0f) {
@@ -1013,7 +1023,7 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                 }
             }
             item {
-                DiagSection("Lock policy") {
+                DiagSection(stringResource(R.string.reader_diag_lock_policy)) {
                     // The gates, spelled out, because "the lock did not move" is
                     // the most common report and it has a small number of causes
                     // that look identical from the outside. Each of these is a
@@ -1024,13 +1034,7 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                     DiagRow("Stall", if (live.stallNote.isEmpty()) "none" else live.stallNote)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "A lock that will not advance is in one of four states: " +
-                            "the reciter has not reached the next ayah yet (next " +
-                            "coverage below ${"%.2f".format(needs.first)}), the gate " +
-                            "is shut so nothing is reaching the decoder, the " +
-                            "coverage sits between the advance and decay thresholds " +
-                            "so no branch can fire, or the recogniser is hearing a " +
-                            "reciter other than the one the model was trained on.",
+                        stringResource(R.string.reader_diag_four_states, "%.2f".format(needs.first)),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -1046,10 +1050,10 @@ fun DiagScreen(vm: PracticeViewModel, onBack: () -> Unit) {
                 }
             }
             item {
-                DiagSection("Events (${log.size})") {
+                DiagSection(stringResource(R.string.reader_diag_events, log.size)) {
                     if (log.isEmpty()) {
                         Text(
-                            "No events yet — start a recitation.",
+                            stringResource(R.string.reader_diag_no_events),
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                         )
@@ -1384,6 +1388,10 @@ fun ReaderScreen(
     var showGoto by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var gotoText by remember { mutableStateOf("") }
+    // The ayah the play sheet opens at: 1 from the header's play affordance,
+    // the selected ayah from the sheet's "Listen from this ayah". Every play
+    // passes through the sheet so the reciter is a choice, not an assumption.
+    var playSheetAyah by remember { mutableIntStateOf(1) }
 
     // The reader records in place: the Recite button and the ayah sheet's
     // "Practice from here" both start a session without leaving the mushaf, so
@@ -1644,7 +1652,7 @@ fun ReaderScreen(
                 // ayah and speed are checked BEFORE anything sounds, per call.
                 // One-tap play survives in the ayah sheet's "Listen from this
                 // ayah" and in the audio library's rows.
-                onPlayToggle = { showPlaySheet = true },
+                onPlayToggle = { playSheetAyah = 1; showPlaySheet = true },
                 onToggleBookmark = { vm.toggleBookmark(shownPage) },
                 onBack = onBack,
                 onToggleNight = { night = !night; ReaderPrefs.setNightMode(ctx, night) },
@@ -1652,9 +1660,13 @@ fun ReaderScreen(
                 offset = chromeOffset,
             )
             if (showPlaySheet) {
+                // headerSurah, not `surah`: the sheet must target the surah
+                // actually on screen - `surah` is the one the reader OPENED
+                // with, and after a swipe the two differ.
                 ReferencePlaySheet(
-                    vm, surah,
+                    vm, headerSurah,
                     ayahCount = surahInfo?.ayahCount ?: 1,
+                    startAtAyah = playSheetAyah,
                 ) { showPlaySheet = false }
             }
             // A failed reference-audio start used to stop silently, and an ayah
@@ -1991,23 +2003,35 @@ fun ReaderScreen(
                                 Text("Start")
                             }
                         }
+                        // Listen opens the play sheet pre-set to this ayah
+                        // rather than streaming at once: reference audio can
+                        // cost internet the first time it plays, and the
+                        // reciter, start point and speed are the reader's
+                        // choice to make before anything sounds.
                         SheetAction(Icons.Filled.PlayArrow, "Listen from this ayah") {
                             vm.clearSelection()
-                            vm.playFromAyah(selSurah, selAyah)
+                            playSheetAyah = selAyah
+                            showPlaySheet = true
                         }
-                        SheetAction(
-                            if (selAyahBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            if (selAyahBookmarked) "Remove ayah bookmark" else "Bookmark ayah $selSurah:$selAyah",
+                        SheetDivider()
+                        SheetSectionHeader("Save")
+                        BookmarkRow(
+                            filled = selAyahBookmarked,
+                            title = "This ayah",
+                            detail = "Ayah $selSurah:$selAyah",
                         ) {
                             AyahBookmarks.toggle(sheetCtx, selSurah, selAyah)
                             ayahTick++
                         }
-                        SheetAction(
-                            if (selBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            if (selBookmarked) "Remove bookmark (p $selPage)" else "Bookmark page $selPage",
+                        BookmarkRow(
+                            filled = selBookmarked,
+                            title = "This page",
+                            detail = "Page ${selPage ?: shownPage}",
                         ) {
                             selPage?.let { vm.toggleBookmark(it) }
                         }
+                        SheetDivider()
+                        SheetSectionHeader("Share")
                         SheetAction(Icons.Filled.Share, "Share text") {
                             vm.clearSelection()
                             val send = Intent(Intent.ACTION_SEND).apply {
@@ -2040,6 +2064,60 @@ private fun SheetAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     }
 }
 
+/** A sheet section label, in the same idiom as every panel title in the app. */
+@Composable
+private fun SheetSectionHeader(label: String) {
+    Text(
+        label,
+        fontSize = 11.sp,
+        letterSpacing = 1.1.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun SheetDivider() {
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+        modifier = Modifier.padding(top = 10.dp),
+    )
+}
+
+/**
+ * A save target with its state visible: the filled bookmark says saved before
+ * the row is read, the detail names exactly where the save lands, and the
+ * trailing state word is the only thing that has to change on tap.
+ */
+@Composable
+private fun BookmarkRow(
+    filled: Boolean,
+    title: String,
+    detail: String,
+    onToggle: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (filled) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+            null,
+            tint = if (filled) goldColor else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 16.sp)
+            Text(detail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
+        }
+        Text(
+            if (filled) "Saved" else "Save",
+            fontSize = 12.sp,
+            color = if (filled) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /**
  * The pre-play sheet: who recites, where it starts, how fast - checked before
  * anything sounds, per call. The header's play button used to stream the
@@ -2055,12 +2133,13 @@ private fun ReferencePlaySheet(
     vm: PracticeViewModel,
     surah: Int,
     ayahCount: Int,
+    startAtAyah: Int = 1,
     onDismiss: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
     var reciterId by remember { mutableStateOf(AudioPrefs.reciter(ctx)) }
-    var ayah by remember { mutableIntStateOf(1) }
+    var ayah by remember { mutableIntStateOf(startAtAyah.coerceIn(1, ayahCount)) }
     var speed by remember { mutableIntStateOf(AudioPrefs.speedPercent(ctx)) }
     val seekable = remember(reciterId) { AyahTimings.isSupported(reciterId) }
 

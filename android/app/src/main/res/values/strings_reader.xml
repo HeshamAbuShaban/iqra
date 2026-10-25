@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Engine-check screen strings (MainActivity DiagScreen). The reader screen itself is deliberately untranslated: it was reverted to its original state at the owner's demand. -->
+<resources>
+    <string name="reader_diag_title">Engine check</string>
+    <string name="reader_diag_refresh">Refresh</string>
+    <string name="reader_diag_copy_log">Copy log</string>
+    <string name="reader_diag_share_report">Share full report</string>
+    <string name="reader_diag_report_subject">Iqra engine report</string>
+    <string name="reader_diag_share_via">Share engine report</string>
+    <string name="reader_diag_copy_ring">Copy frame ring</string>
+    <string name="reader_diag_clear_log">Clear saved log</string>
+    <string name="reader_diag_engine">Engine · %1$s</string>
+    <string name="reader_diag_engine_idle">Engine · idle</string>
+    <string name="reader_diag_mic">Mic · %1$s · %2$d samples</string>
+    <string name="reader_diag_matcher">Matcher</string>
+    <string name="reader_diag_lock_policy">Lock policy</string>
+    <string name="reader_diag_four_states">A lock that will not advance is in one of four states: the reciter has not reached the next ayah yet (next coverage below %1$s), the gate is shut so nothing is reaching the decoder, the coverage sits between the advance and decay thresholds so no branch can fire, or the recogniser is hearing a reciter other than the one the model was trained on.</string>
+    <string name="reader_diag_events">Events (%1$d)</string>
+    <string name="reader_diag_no_events">No events yet — start a recitation.</string>
+    <string name="reader_hint_missing_files">Missing engine files — push them via adb (commands on each row), then restart recitation.</string>
+    <string name="reader_hint_silence">Mic delivers near-silence — check gain, distance, or another app holding the mic.</string>
+    <string name="reader_hint_frozen">Mic stream frozen — stop and start recitation again.</string>
+    <string name="reader_hint_gate_silence">Gate hears silence — the %1$s gate is closed, so nothing reaches the decoder. Recite louder.</string>
+    <string name="reader_hint_no_match">No ayah matched yet — recite the locked ayah clearly.</string>
+</resources>

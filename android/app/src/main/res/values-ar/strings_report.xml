@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arabic (MSA) — SessionReport.kt + SessionObserver.kt UI strings. -->
+<resources>
+    <!-- Header / loading / empty states -->
+    <string name="report_title">تقرير الجلسة</string>
+    <string name="report_surah_fallback">سورة %1$d</string>
+    <string name="report_position">%1$s · آية %2$d</string>
+    <string name="report_spanned_boundary">امتدت الجلسة عبر أكثر من سورة</string>
+    <string name="report_loading">جارٍ قراءة السجل…</string>
+    <string name="report_gone">لم تعد هذه الجلسة موجودة على الهاتف.\nيُحتفظ بعشر جلسات فقط.</string>
+
+    <!-- Actions -->
+    <string name="report_copied">تم النسخ</string>
+    <string name="report_copy_summary">نسخ الملخص</string>
+    <string name="report_open">فتح</string>
+    <string name="report_hide">إخفاء</string>
+    <string name="report_show">عرض</string>
+
+    <!-- Engine detail panel -->
+    <string name="report_engine_detail">تفاصيل المحرك</string>
+    <string name="report_detail_ended">انتهى على نحو سليم</string>
+    <string name="report_yes">نعم</string>
+    <string name="report_no_ended_early">لا، انتهى مبكراً</string>
+    <string name="report_detail_reason">السبب</string>
+    <string name="report_detail_advances">تقدمات التتبع</string>
+    <string name="report_detail_reversals">ارتدادات التتبع</string>
+    <string name="report_detail_polls">جولات فحص الصوت</string>
+    <string name="report_detail_unjudgeable">آيات لا يمكن الحكم عليها</string>
+    <string name="report_detail_no_window">كلمات لم يستطع المحرك سماعها</string>
+    <string name="report_no_window_value">%1$d (%2$d نوافذ فارغة)</string>
+    <string name="report_detail_frames">أطر التتبع</string>
+    <string name="report_detail_recorded">كلمات لها حالة</string>
+    <string name="report_audio_polls_note">«جولات فحص الصوت» هي عدد المرات التي نظر فيها المحرك إلى الميكروفون، وليست درجة. ووُضعت هنا لأنها تكشف جلسةً لم تُنتج شيئاً.</string>
+
+    <!-- Observer card -->
+    <string name="report_watch_again">إعادة المشاهدة</string>
+    <string name="report_watch_again_blurb">الجلسة على مخطط زمني: مسار التتبع، وكل حكم لحظة صدوره، وما سمعه النموذج.</string>
+
+    <!-- Verdict card -->
+    <string name="report_judged_of">%1$d من %2$d</string>
+    <string name="report_metric_accuracy">الدقة</string>
+    <string name="report_metric_coverage">التغطية</string>
+    <string name="report_stat_decided">الكلمات المحسومة</string>
+    <string name="report_metric_net">صحيح / خطأ</string>
+    <string name="report_stat_duration">المدة</string>
+    <string name="report_stat_wpm">كلمة في الدقيقة</string>
+    <string name="report_unheard_note">لم يسمع المحرك %1$d من هذه الكلمات قط. وباحتسابها تصبح الدقة %2$s٪.</string>
+
+    <!-- Ayah card -->
+    <string name="report_ayah_by_ayah">آية فآية</string>
+    <string name="report_legend_clean">سليمة</string>
+    <string name="report_legend_wrong">كلمة خاطئة</string>
+    <string name="report_legend_unheard">سُمِعت جزئياً</string>
+    <string name="report_ayah_n">آية %1$d</string>
+    <string name="report_ayah_fallback">(آية %1$d)</string>
+    <string name="report_counts_right">%1$d صحيحة</string>
+    <string name="report_counts_wrong">%1$d خاطئة</string>
+    <string name="report_counts_unheard">%1$d لم تُسمَع</string>
+    <string name="report_counts_passed">%1$d تم تجاوزها</string>
+    <string name="report_counts_none">لا حكم على شيء</string>
+
+    <!-- Verdicts card -->
+    <string name="report_verdicts">الأحكام</string>
+    <string name="report_bar_judged">الكلمات المحكومة</string>
+    <string name="report_bar_incl_unheard">بما فيها ما لم يُسمَع</string>
+    <string name="report_nothing_judged">لم يُحكم على أي كلمة في هذه الجلسة.</string>
+    <string name="report_stat_correct">صحيح</string>
+    <string name="report_stat_wrong">خطأ</string>
+    <string name="report_stat_passed">تم تجاوزها</string>
+    <string name="report_stat_unheard">لم يُسمَع</string>
+    <string name="report_verdicts_note">«تم تجاوزها» تعني أن التتبع تقدم دون حكم على الكلمة، و«لم تُسمَع» تعني أن النموذج لم يُنتج فونيماً لها. ولا تُحسب أي منهما عليك.</string>
+
+    <!-- Misses card -->
+    <string name="report_misses_none_wrong">لا شيء خرج خاطئاً</string>
+    <string name="report_misses_none">لا شيء للإبلاغ عنه</string>
+    <string name="report_misses_none_body">لم تُحكم أي كلمة في هذه الجلسة بالخطأ.</string>
+    <string name="report_misses_none_body2">لم يُحكم على أي كلمة في هذه الجلسة، فلا ما يُقيَّم. تجاوز التتبع %1$d كلمة أثناء تقدمه، ولم يسمع النموذج %2$d.</string>
+    <string name="report_misses_title">كلمات زلّت</string>
+    <string name="report_misses_note">الكلمات التي لم يستطع النموذج تحديد موضعها إطلاقاً تُدرج على حدة بوصفها لم تُسمَع، ولا تُحسب أخطاء.</string>
+
+    <!-- Session audio card -->
+    <string name="report_audio_title">صوت الجلسة</string>
+    <string name="report_audio_missing">يذكر هذا السجل ملف صوت (\"%1$s\")، لكن الملف لم يعد موجوداً على هذا الجهاز.</string>
+    <string name="report_pause">إيقاف مؤقت</string>
+    <string name="report_play">تشغيل التسميع</string>
+    <string name="report_audio_caption">محفوظ على هذا الجهاز ولا يُرفع أبداً · العلامات الحمراء أحكام خاطئة</string>
+    <string name="report_mistake_map_cd">خريطة الأخطاء: %1$d حكماً خاطئاً عبر %2$d ثانية</string>
+
+    <!-- Blame bands card -->
+    <string name="report_blame_title">أين يقع الخطأ</string>
+    <string name="report_band_first">الحرف الأول</string>
+    <string name="report_band_near_start">قرب البداية</string>
+    <string name="report_band_early">مبكراً</string>
+    <string name="report_band_middle">الوسط</string>
+    <string name="report_band_late">متأخراً</string>
+    <string name="report_band_near_end">قرب النهاية</string>
+    <string name="report_band_last">الحرف الأخير</string>
+    <string name="report_word_one">%1$d كلمة</string>
+    <string name="report_word_many">%1$d كلمات</string>
+    <string name="report_blame_footer">%1$d كلمات خاطئة حُكم عليها عند موضع الخطأ داخلها.</string>
+
+    <!-- Recitation log card -->
+    <string name="report_log_title">سجل التلاوة</string>
+    <string name="report_log_subtitle">%1$d كلمة، حُكم عليها بالترتيب. كلمة الآية هي الكلمة المنتظرة.</string>
+    <string name="report_show_first">عرض الأولى</string>
+    <string name="report_show_all">عرض الكل</string>
+    <string name="report_all_words">كل الكلمات</string>
+    <string name="report_wrong_only">الأخطاء فقط</string>
+    <string name="report_no_text">(لا يذكر السجل نصاً لكلمة %1$d:%2$d)</string>
+    <string name="report_blame_first">وقع الخطأ عند الحرف الأول من الكلمة</string>
+    <string name="report_blame_past_first">وقع الخطأ بعد الحرف الأول (سجل أقدم: لا موضع أدق)</string>
+    <string name="report_blame_last">وقع الخطأ عند الحرف الأخير من الكلمة</string>
+    <string name="report_blame_half1">وقع الخطأ في النصف الأول من الكلمة</string>
+    <string name="report_blame_half2">وقع الخطأ في النصف الثاني من الكلمة</string>
+    <string name="report_heard">سُمِع:\ </string>
+    <string name="report_stop_clip">إيقاف المقطع</string>
+    <string name="report_hear_clip">استمع إلى الصوت الذي سبق هذا الحكم</string>
+    <string name="report_no_time">لا زمن حكم في هذا السجل</string>
+    <string name="report_log_footer">ما سُمِع فعلاً لكل كلمة خاطئة، صوتاً بصوت، هو إعادة تشغيل سطح المكتب لهذا السجل (engine/replay/replay_export.py).</string>
+
+    <!-- SessionObserver.kt -->
+    <string name="obs_title">إعادة المشاهدة</string>
+    <string name="obs_loading">جارٍ قراءة المسار…</string>
+    <string name="obs_gone">لم تعد هذه الجلسة موجودة على الهاتف.\nيُحتفظ بعشر جلسات فقط.</string>
+    <string name="obs_no_walk">لا يحمل هذا السجل مساراً زمنياً؛ فهو أقدم من حلقة الأطر، أو انتهى قبل أن ينظر المحرك إلى الميكروفون.</string>
+    <string name="obs_pause">إيقاف مؤقت</string>
+    <string name="obs_play">تشغيل</string>
+    <string name="obs_playback_note">تُعاد الجلسة بالإيقاع نفسه الذي جرت به</string>
+    <string name="obs_decisions_so_far">%1$d حكماً حتى الآن</string>
+    <string name="obs_moves_line">%1$d تحركة تتبع · %2$d في الجلسة كلها</string>
+    <string name="obs_lock_title">أين وقف التتبع</string>
+    <string name="obs_lock_pos">التتبع %1$d:%2$d</string>
+    <string name="obs_next">التالي</string>
+    <string name="obs_here">هنا</string>
+    <string name="obs_no_frame">لا إطار بعد عند هذه اللحظة</string>
+    <string name="obs_legend_clean">سليمة حتى الآن</string>
+    <string name="obs_legend_wrong">كلمة خاطئة</string>
+    <string name="obs_legend_pending">لم يُحكم عليها بعد</string>
+    <string name="obs_decisions_title">الأحكام كما صدرت</string>
+    <string name="obs_decisions_sub">الأحدث أولاً. يظهر الحكم لحظة أن يقرره المحرك.</string>
+    <string name="obs_nothing_decided">لا حكم بعد عند هذه اللحظة</string>
+    <string name="obs_no_text">(لا يذكر السجل نصاً لكلمة %1$s)</string>
+    <string name="obs_heard_title">ما سمعه النموذج</string>
+    <string name="obs_no_em_times">لا يحمل هذا السجل أزمنة وصول الانبعاثات (كُتب قبل emMs)، فلا يمكن تحديد متى سُمع الصوت. عدد الأصوات المسموعة في الجلسة كلها %1$d.</string>
+    <string name="obs_nothing_heard">لا شيء مسموع بعد عند هذه اللحظة</string>
+    <string name="obs_units_heard">سُمِع %1$d من %2$d وحدة حتى الآن كما تلقاها المحرك (أزمنة الوصول بدقة جولة الفحص).</string>
+    <string name="obs_limits_title">ما لا تستطيع هذه النافذة عرضه</string>
+    <string name="obs_limits_audio">لا يخزّن السجل أي صوت، لذا تعيد هذه النافذة عرض الجلسة صامتة: ما سمعه النموذج يُعاد عرضه كسلسلة النص أعلاه، لا كصوت.\ </string>
+    <string name="obs_limits_advisories">لا تحمل الملاحظات زمناً في السجل (%1$d حدثاً في هذه الجلسة)، لذا تُدرج في التقرير دون أن تُوضع على هذا المخطط الزمني.\ </string>
+    <string name="obs_limits_coverage">أرقام تغطية التتبع هي رواية المحرك نفسه (التالي/هنا عند كل حكم)، وليست اشتقاقاً جديداً.</string>
+</resources>

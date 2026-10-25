@@ -132,8 +132,16 @@ def check(paths):
                 block += "\n" + lines[j]
                 depth += lines[j].count("(") - lines[j].count(")")
             arg = first_arg(block, block.index("(")).strip()
-            if arg and '"' in arg and not any(k in arg for k in MUSHAF):
-                if "ltr(" not in arg:
+            # Two forms carry user-facing prose since the Arabic translation:
+            # a literal (checked since this check existed) and a resolved
+            # resource (the stringResource call). Both must sit inside ltr(),
+            # which is content-aware - it isolates Latin and passes Arabic
+            # through - so the wrapper is correct in either locale and a
+            # missing one is a defect in English, where the trailing
+            # punctuation still flips.
+            if arg and not any(k in arg for k in MUSHAF):
+                carries = '"' in arg or "stringResource(" in arg
+                if carries and "ltr(" not in arg:
                     bad.append(f"{path.name}:{i + 1} Text({arg[:52]!r} is not wrapped "
                                f"in ltr()")
             i = j + 1
@@ -155,18 +163,17 @@ if failures:
 MUTANTS = {
     "Paused added to the state line, wrapper dropped": (
         UI / "LiveMode.kt",
-        lambda s: s.replace("ltr(when (state) {", "when (state) {", 1)
-                 .replace('LiveState.Paused -> "Paused — tap ▶ to resume"\n                    }),\n'
-                          '                    fontSize = 13.sp,',
-                          'LiveState.Paused -> "Paused — tap ▶ to resume"\n                    },\n'
-                          '                    fontSize = 13.sp,', 1)),
+        lambda s: s.replace("ltr(when (state) {", "when (state) {", 1)),
     "the header title loses its wrapper": (
         UI / "ChooseScreen.kt",
-        lambda s: s.replace('ltr(if (stage == 0) "Recite from memory" else "Which part?")',
-                            'if (stage == 0) "Recite from memory" else "Which part?"', 1)),
+        lambda s: s.replace(
+            "ltr(if (stage == 0) stringResource(R.string.choose_title_stage0)",
+            "if (stage == 0) stringResource(R.string.choose_title_stage0)", 1)),
     "the passage caption loses its wrapper": (
         UI / "ChooseScreen.kt",
-        lambda s: s.replace('ltr("The whole surah.', '"The whole surah.', 1)),
+        lambda s: s.replace(
+            "ltr(stringResource(R.string.choose_whole_blurb, ayahCount))",
+            "stringResource(R.string.choose_whole_blurb, ayahCount)", 1)),
 }
 survived = []
 for label, (path, mutate) in MUTANTS.items():

@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- User-facing strings of SettingsScreen.kt, DataSetupScreen.kt and
+     AudioLibraryScreen.kt. Prefixes: settings_ / setup_ / audio_.
+     Shared actions live in strings.xml (action_*, language_*). -->
+<resources>
+
+    <!-- ===== SettingsScreen: top bar ===== -->
+    <string name="settings_title">Settings</string>
+
+    <!-- ===== SettingsScreen: Reading ===== -->
+    <string name="settings_section_reading">Reading</string>
+    <string name="settings_text_size">Text size</string>
+    <string name="settings_night_mode">Night mode</string>
+    <string name="settings_night_mode_subtitle">Inverts the page so the mushaf is light text on dark.</string>
+    <string name="settings_text_brightness">Text brightness</string>
+    <string name="settings_bg_brightness">Background brightness</string>
+    <string name="settings_rtl_title">Right to left layout</string>
+    <string name="settings_rtl_subtitle">Mirrors the recitation and passage screens for Arabic. Word order and the ayah gutter follow.</string>
+
+    <!-- ===== SettingsScreen: Theme ===== -->
+    <string name="settings_section_theme">Theme</string>
+
+    <!-- ===== SettingsScreen: Recitation screen ===== -->
+    <string name="settings_section_recitation">Recitation screen</string>
+    <string name="settings_live_animation_title">Animate the recitation light</string>
+    <string name="settings_live_animation_subtitle">The horizon on the recitation screen moves continuously. Turn off for a still image.</string>
+    <string name="settings_vibrate_title">Vibrate on a wrong word</string>
+    <string name="settings_vibrate_subtitle">A short buzz the first time each word is marked wrong in a session, so the verdict reaches you when your eyes are on the page. Unheard words and engine notes never vibrate.</string>
+    <string name="settings_keep_awake_title">Keep the screen on</string>
+    <string name="settings_keep_awake_subtitle">Holds the screen awake everywhere in the app, reciting included. A recitation usually runs past the ~30 s before Android dims the screen, and a screen that goes dark mid-ayah looks like the session ended. Turn off to save battery.</string>
+
+    <!-- ===== SettingsScreen: Recognition ===== -->
+    <string name="settings_section_recognition">Recognition</string>
+    <string name="settings_model_card_title">What this engine cannot judge</string>
+    <string name="settings_madd_title">Madd length</string>
+    <string name="settings_gap_madd_detail">9,706 of 51,395 madd sites are free choice, where Hafs permits more than one length. The engine holds only the canonical one.</string>
+    <string name="settings_waqf_title">Stopping on a waqf mark</string>
+    <string name="settings_gap_waqf_detail">The expected text is one realisation: waqf at each ayah end, continuing inside. The mushaf has 9,950 mid-ayah stop marks. Stopping is legal and read as a mismatch.</string>
+    <string name="settings_gap_idgham_title">Idgham boundaries</string>
+    <string name="settings_gap_idgham_detail">A word-final sound merges into the next word. Where the engine cannot separate them, no verdict is given.</string>
+    <string name="settings_gap_silent_title">Silent letters and ta marbuta</string>
+    <string name="settings_gap_silent_detail">The exception lists for these are not in any data asset. Those words cannot be judged.</string>
+    <string name="settings_never_accuse_on">Never accuse on</string>
+    <string name="settings_madd_never_subtitle">Holding a madd for 2, 4 or 6 counts where more than one is legal is never an error.</string>
+    <string name="settings_waqf_never_subtitle">Pausing where the text shows a stop mark is a legal recitation choice, not a mistake.</string>
+    <string name="settings_unanchored_title">First ayah with nothing before it</string>
+    <string name="settings_unanchored_subtitle">When no previous ayah anchors the window, the audio in front may be someone else\'s; the engine cannot prove it is yours, so it is not accused.</string>
+    <string name="settings_engine_may_tell">What the engine may tell you</string>
+    <string name="settings_engine_note_label">What counts as an engine note</string>
+    <string name="settings_engine_notes_where">Where engine notes appear</string>
+    <string name="settings_how_strict">How strict to be</string>
+    <string name="settings_evidence_label">Evidence needed before a word can be called wrong</string>
+    <string name="settings_heard_floor_explain">A word must have %1$d%% of its own sounds heard before a mismatch counts against you. Lower means more warnings.</string>
+    <string name="settings_accuracy_means">What \"accuracy\" means</string>
+    <string name="settings_metric_shown_in">Shown in the session report</string>
+    <string name="settings_diagnostics_title">Recognition diagnostics</string>
+    <string name="settings_diagnostics_subtitle">Show engine state in the session report: whether the audio window is healthy, and when the decoder stalled. Silence on screen is not a diagnosis.</string>
+
+    <!-- ===== SettingsScreen: Reference audio ===== -->
+    <string name="settings_section_reference_audio">Reference audio</string>
+    <string name="settings_reciter">Reciter</string>
+    <string name="settings_keep_copy_title">Keep a copy for replay</string>
+    <string name="settings_keep_copy_subtitle">The first play streams while the file saves in the background, so replays read the local copy instead of downloading the surah again.</string>
+    <string name="settings_wifi_only_title">Save only on Wi-Fi</string>
+    <string name="settings_wifi_only_subtitle">Playback always streams regardless; this only holds back the saved copy while on mobile data.</string>
+    <string name="settings_wifi_rule_off_note">Saving is off, so the Wi-Fi rule has nothing to apply to. Turn on \"Keep a copy for replay\" to save downloads.</string>
+    <string name="settings_playback_speed">Playback speed</string>
+    <string name="settings_auto_next_title">Play the next surah when one ends</string>
+    <string name="settings_auto_next_subtitle">Al-Faatiha rolls into Al-Baqarah instead of stopping at the last ayah.</string>
+    <string name="settings_downloaded_audio">Downloaded audio</string>
+    <string name="settings_nothing_saved">Nothing saved yet</string>
+    <string name="settings_one_surah_size">1 surah · %1$s</string>
+    <string name="settings_n_surahs_size">%1$d surahs · %2$s</string>
+    <string name="settings_manage">Manage</string>
+
+    <!-- ===== SettingsScreen: Your data ===== -->
+    <string name="settings_section_your_data">Your data</string>
+    <string name="settings_data_all_present">All %1$d data files are present · %2$s</string>
+    <string name="settings_data_missing_count">%1$d of %2$d data files missing</string>
+    <string name="settings_manage_data_files">Manage data files</string>
+    <string name="settings_practice_history">Practice history</string>
+    <string name="settings_nothing_recorded">Nothing recorded yet</string>
+    <string name="settings_one_session">1 session</string>
+    <string name="settings_n_sessions">%1$d sessions kept</string>
+    <string name="settings_view">View</string>
+    <string name="settings_clear">Clear</string>
+    <string name="settings_sessions_kept_label">Sessions kept on this device</string>
+    <string name="settings_retention_note">When the count is passed, the oldest sessions and their audio are deleted for good. Statistics built from them stay forever.</string>
+    <string name="settings_keep_audio_title">Keep the audio of each session</string>
+    <string name="settings_keep_audio_subtitle">While you recite, the session\'s own sound is written next to its record, so the report can play what the model heard. It never leaves this device and is deleted with its session. Turn off to keep records without audio.</string>
+    <string name="settings_no_session_audio">No session audio on disk.</string>
+    <string name="settings_session_audio_disk_one">Session audio on disk: %1$s across 1 recording.</string>
+    <string name="settings_session_audio_disk">Session audio on disk: %1$s across %2$d recordings.</string>
+
+    <!-- ===== SettingsScreen: About ===== -->
+    <string name="settings_section_about">About</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_mushaf">Mushaf</string>
+    <string name="settings_mushaf_value">604 pages · Madinah</string>
+    <string name="settings_ondevice_value">on-device only</string>
+    <string name="settings_privacy_note">Nothing you recite leaves the device. There is no account, no server and no network access at runtime.</string>
+
+    <!-- ===== SettingsScreen: clear-history dialog ===== -->
+    <string name="settings_clear_history_title">Clear practice history?</string>
+    <string name="settings_clear_history_text">This deletes the %1$d recorded sessions and the statistics built from them. It cannot be undone.</string>
+
+    <!-- ===== SettingsScreen: live-theme chooser ===== -->
+    <string name="settings_live_follow_app">Same as the app</string>
+    <string name="settings_live_follows_theme">Follows %1$s - currently selected</string>
+
+    <!-- ===== DataSetupScreen ===== -->
+    <string name="setup_title">Set up your mushaf</string>
+    <string name="setup_subtitle">Page images and data are downloaded once and kept in a shared folder, so app updates stay small. The recitation model is supplied by you, once.</string>
+    <string name="setup_detail_gated">required · copy into %1$s</string>
+    <string name="setup_detail_will_download">will download (%1$s)</string>
+    <string name="setup_gate_title">One file you must supply</string>
+    <string name="setup_gate_text">model.int8.onnx is gated by its authors, so it cannot be downloaded automatically. Copy it over USB into:\n%1$s\nthen press Re-check.</string>
+    <string name="setup_allow_access">Allow shared-folder access (optional)</string>
+    <string name="setup_download_failed">some downloads failed - press Re-check</string>
+    <string name="setup_download_missing">Download what\'s missing</string>
+    <string name="setup_recheck">Re-check</string>
+    <string name="setup_continue_hint">Continue unlocks once every file is present.</string>
+
+    <!-- ===== AudioLibraryScreen ===== -->
+    <string name="audio_title">Downloaded audio</string>
+    <string name="audio_sort_surah">Surah</string>
+    <string name="audio_sort_reciter">Reciter</string>
+    <string name="audio_sort_newest">Newest</string>
+    <string name="audio_sort_largest">Largest</string>
+    <string name="audio_empty">Nothing saved yet. Press play on a surah and the audio saves itself here, so replaying it never downloads it a second time.</string>
+    <string name="audio_summary_one">1 surah · %1$s</string>
+    <string name="audio_summary">%1$d surahs · %2$s</string>
+    <string name="audio_delete_all">Delete all</string>
+    <string name="audio_delete_others">Delete other reciters</string>
+    <string name="audio_reciter_summary_one">%1$s: 1 surah · %2$s</string>
+    <string name="audio_reciter_summary">%1$s: %2$d surahs · %3$s</string>
+    <string name="audio_fallback_surah">Surah %1$d</string>
+    <string name="audio_play_desc">Play %1$s</string>
+    <string name="audio_delete_desc">Delete %1$s</string>
+    <string name="audio_delete_entry_title">Delete %1$s?</string>
+    <string name="audio_delete_entry_text">%1$s will be removed. Playing the surah again will stream it and save a fresh copy.</string>
+    <string name="audio_keep">Keep</string>
+    <string name="audio_keep_only_title">Keep only %1$s?</string>
+    <string name="audio_delete_others_text_one">1 surah by other reciters (%1$s) will be removed. They stream again if played later.</string>
+    <string name="audio_delete_others_text">%1$d surahs by other reciters (%2$s) will be removed. They stream again if played later.</string>
+    <string name="audio_delete_all_title_one">Delete the saved surah?</string>
+    <string name="audio_delete_all_title">Delete all %1$d saved surahs?</string>
+    <string name="audio_delete_all_text">%1$s will be removed. A surah played afterwards streams and saves again.</string>
+</resources>

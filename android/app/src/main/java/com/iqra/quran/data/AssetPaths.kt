@@ -52,7 +52,7 @@ object AssetPaths {
 
     // Upstream names them page001.png, NOT 001.png. Verified against the source:
     // 001.png and 1.png both 404, page001.png returns the 31,248-byte PNG.
-    fun pageUrl(page: Int): String = "$IMG_BASE/page%03d.png".format(page)
+    fun pageUrl(page: Int): String = "$IMG_BASE/page" + String.format(java.util.Locale.US, "%03d", page) + ".png"
 
     /** Everything the app needs on disk, in setup-screen display order. */
     fun specs(): List<Spec> = buildList {
@@ -110,7 +110,7 @@ object AssetPaths {
         // Return the preferred destination so callers that create the file
         // (downloads) land somewhere writable.
         val w = writableRoot(context)
-        return if (page in 1..PAGE_COUNT) File(File(w, "pages"), "%03d.png".format(page))
+        return if (page in 1..PAGE_COUNT) File(File(w, "pages"), String.format(java.util.Locale.US, "%03d.png", page))
         else File(w, name)
     }
 
@@ -197,7 +197,7 @@ object AssetPaths {
                 md.update(buf, 0, n)
             }
         }
-        return md.digest().joinToString("") { "%02x".format(it) }
+        return md.digest().joinToString("") { String.format(java.util.Locale.US, "%02x", it) }
     }
 
     // ---- status --------------------------------------------------------------
@@ -258,7 +258,7 @@ object AssetPaths {
      * app's own external dir always is - so whichever the device permits wins.
      */
     fun pageFile(context: Context, page: Int): File {
-        val name = "%03d.png".format(page)
+        val name = String.format(java.util.Locale.US, "%03d.png", page)
         val shared = sharedRoot()
         val candidates = listOf(
             File(File(shared, "pages"), name),
@@ -291,7 +291,7 @@ object AssetPaths {
     fun pagesPresent(context: Context): Boolean {
         val probes = intArrayOf(1, 2, 3, 155, 302, 450, 603, 604)
         for (dir in pageRoots(context)) {
-            if (probes.all { File(dir, "%03d.png".format(it)).isFile }) return true
+            if (probes.all { File(dir, String.format(java.util.Locale.US, "%03d.png", it)).isFile }) return true
         }
         // legacy: still-bundled pages
         return try {

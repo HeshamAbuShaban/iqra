@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SessionReport.kt + SessionObserver.kt UI strings. -->
+<resources>
+    <!-- Header / loading / empty states -->
+    <string name="report_title">Session report</string>
+    <string name="report_surah_fallback">Surah %1$d</string>
+    <string name="report_position">%1$s · ayah %2$d</string>
+    <string name="report_spanned_boundary">Spanned a surah boundary</string>
+    <string name="report_loading">Reading the record…</string>
+    <string name="report_gone">That session is no longer on the phone.\nOnly the ten most recent are kept.</string>
+
+    <!-- Actions -->
+    <string name="report_copied">Copied</string>
+    <string name="report_copy_summary">Copy summary</string>
+    <string name="report_open">Open</string>
+    <string name="report_hide">hide</string>
+    <string name="report_show">show</string>
+
+    <!-- Engine detail panel -->
+    <string name="report_engine_detail">Engine detail</string>
+    <string name="report_detail_ended">ended properly</string>
+    <string name="report_yes">yes</string>
+    <string name="report_no_ended_early">no, ended early</string>
+    <string name="report_detail_reason">reason</string>
+    <string name="report_detail_advances">lock advances</string>
+    <string name="report_detail_reversals">lock reversals</string>
+    <string name="report_detail_polls">audio polls</string>
+    <string name="report_detail_unjudgeable">unjudgeable ayat</string>
+    <string name="report_detail_no_window">words the engine could not hear</string>
+    <string name="report_no_window_value">%1$d (%2$d empty windows)</string>
+    <string name="report_detail_frames">trace frames</string>
+    <string name="report_detail_recorded">words with a status</string>
+    <string name="report_audio_polls_note">\"Audio polls\" is how many times the engine looked at the microphone, not a score. It is here because it diagnoses a session that produced nothing.</string>
+
+    <!-- Observer card -->
+    <string name="report_watch_again">Watch it again</string>
+    <string name="report_watch_again_blurb">The session on a timeline: the lock\'s walk, every verdict at the moment it was decided, and what the model heard.</string>
+
+    <!-- Verdict card -->
+    <string name="report_judged_of">%1$d of %2$d</string>
+    <string name="report_metric_accuracy">accuracy</string>
+    <string name="report_metric_coverage">coverage</string>
+    <string name="report_stat_decided">words decided</string>
+    <string name="report_metric_net">correct / wrong</string>
+    <string name="report_stat_duration">duration</string>
+    <string name="report_stat_wpm">words per minute</string>
+    <string name="report_unheard_note">The engine never heard %1$d of these words. Counting those, accuracy is %2$s%%.</string>
+
+    <!-- Ayah card -->
+    <string name="report_ayah_by_ayah">Ayah by ayah</string>
+    <string name="report_legend_clean">clean</string>
+    <string name="report_legend_wrong">a word wrong</string>
+    <string name="report_legend_unheard">partly unheard</string>
+    <string name="report_ayah_n">ayah %1$d</string>
+    <string name="report_ayah_fallback">(ayah %1$d)</string>
+    <string name="report_counts_right">%1$d right</string>
+    <string name="report_counts_wrong">%1$d wrong</string>
+    <string name="report_counts_unheard">%1$d unheard</string>
+    <string name="report_counts_passed">%1$d passed over</string>
+    <string name="report_counts_none">nothing judged</string>
+
+    <!-- Verdicts card -->
+    <string name="report_verdicts">Verdicts</string>
+    <string name="report_bar_judged">Judged words</string>
+    <string name="report_bar_incl_unheard">Including unheard</string>
+    <string name="report_nothing_judged">Nothing was judged in this session.</string>
+    <string name="report_stat_correct">correct</string>
+    <string name="report_stat_wrong">wrong</string>
+    <string name="report_stat_passed">passed over</string>
+    <string name="report_stat_unheard">unheard</string>
+    <string name="report_verdicts_note">\"Passed over\" means the lock moved without judging the word. \"Unheard\" means the model produced no phoneme for it. Neither is counted against you.</string>
+
+    <!-- Misses card -->
+    <string name="report_misses_none_wrong">Nothing came out wrong</string>
+    <string name="report_misses_none">Nothing to report</string>
+    <string name="report_misses_none_body">No word in this session was judged wrong.</string>
+    <string name="report_misses_none_body2">No word was judged in this session, so there is nothing to score. %1$d passed over as the lock advanced and %2$d were not heard by the model.</string>
+    <string name="report_misses_title">Words that slipped</string>
+    <string name="report_misses_note">Words the model could not place at all are listed separately as unheard, and are not counted as mistakes.</string>
+
+    <!-- Session audio card -->
+    <string name="report_audio_title">Session audio</string>
+    <string name="report_audio_missing">This record names audio (\"%1$s\"), but the file is no longer on this device.</string>
+    <string name="report_pause">Pause</string>
+    <string name="report_play">Play the recitation</string>
+    <string name="report_audio_caption">kept on this device, never uploaded · red ticks are wrong verdicts</string>
+    <string name="report_mistake_map_cd">Mistake map: %1$d wrong verdicts across %2$d seconds</string>
+
+    <!-- Blame bands card -->
+    <string name="report_blame_title">Where blame lands</string>
+    <string name="report_band_first">first letter</string>
+    <string name="report_band_near_start">near the start</string>
+    <string name="report_band_early">early</string>
+    <string name="report_band_middle">middle</string>
+    <string name="report_band_late">late</string>
+    <string name="report_band_near_end">near the end</string>
+    <string name="report_band_last">last letter</string>
+    <string name="report_word_one">%1$d word</string>
+    <string name="report_word_many">%1$d words</string>
+    <string name="report_blame_footer">%1$d wrong words judged at their own blame position.</string>
+
+    <!-- Recitation log card -->
+    <string name="report_log_title">Recitation log</string>
+    <string name="report_log_subtitle">%1$d words, decided in order. The ayah\'s word is what was expected.</string>
+    <string name="report_show_first">show first</string>
+    <string name="report_show_all">show all</string>
+    <string name="report_all_words">all words</string>
+    <string name="report_wrong_only">wrong only</string>
+    <string name="report_no_text">(the record names no text for %1$d:%2$d)</string>
+    <string name="report_blame_first">blamed at the word\'s first letter</string>
+    <string name="report_blame_past_first">blamed past the first letter (older record: no finer position)</string>
+    <string name="report_blame_last">blamed at the word\'s last letter</string>
+    <string name="report_blame_half1">blamed in the word\'s first half</string>
+    <string name="report_blame_half2">blamed in the word\'s second half</string>
+    <string name="report_heard">heard\ </string>
+    <string name="report_stop_clip">Stop the clip</string>
+    <string name="report_hear_clip">Hear the audio before this verdict</string>
+    <string name="report_no_time">no decision time in this record</string>
+    <string name="report_log_footer">What was actually heard for each wrong word, sound by sound, is the desktop replay of this record (engine/replay/replay_export.py).</string>
+
+    <!-- SessionObserver.kt -->
+    <string name="obs_title">Observer</string>
+    <string name="obs_loading">Reading the walk…</string>
+    <string name="obs_gone">That session is no longer on the phone.\nOnly the ten most recent are kept.</string>
+    <string name="obs_no_walk">This record has no timed walk - it predates the frame ring or ended before the engine looked at the microphone.</string>
+    <string name="obs_pause">Pause</string>
+    <string name="obs_play">Play</string>
+    <string name="obs_playback_note">the session played back at the pace it happened</string>
+    <string name="obs_decisions_so_far">%1$d decisions so far</string>
+    <string name="obs_moves_line">%1$d lock moves · %2$d in the whole session</string>
+    <string name="obs_lock_title">Where the lock stood</string>
+    <string name="obs_lock_pos">lock %1$d:%2$d</string>
+    <string name="obs_next">next</string>
+    <string name="obs_here">here</string>
+    <string name="obs_no_frame">no frame yet at this moment</string>
+    <string name="obs_legend_clean">clean so far</string>
+    <string name="obs_legend_wrong">a word wrong</string>
+    <string name="obs_legend_pending">not judged yet</string>
+    <string name="obs_decisions_title">Decisions as they came</string>
+    <string name="obs_decisions_sub">Newest first. A verdict appears when the engine decided it.</string>
+    <string name="obs_nothing_decided">nothing decided yet at this moment</string>
+    <string name="obs_no_text">(the record names no text for %1$s)</string>
+    <string name="obs_heard_title">What the model heard</string>
+    <string name="obs_no_em_times">This record has no emission arrival times (written before emMs), so when a sound was heard cannot be placed. The count of sounds heard in the whole session is %1$d.</string>
+    <string name="obs_nothing_heard">nothing heard yet at this moment</string>
+    <string name="obs_units_heard">%1$d of %2$d units heard so far, as the engine received them (arrival times are poll-granular).</string>
+    <string name="obs_limits_title">What this seat cannot show</string>
+    <string name="obs_limits_audio">A record stores no audio, so this seat replays the session silently: what the model heard is replayed as the text stream above, not as sound.\ </string>
+    <string name="obs_limits_advisories">Advisories carry no time in the record (%1$d events in this session), so they are listed in the report but cannot be placed on this timeline.\ </string>
+    <string name="obs_limits_coverage">The lock\'s coverage figures are the engine\'s own account (next/here at each decision), not a re-derivation.</string>
+</resources>

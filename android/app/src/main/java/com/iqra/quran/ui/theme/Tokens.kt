@@ -1,6 +1,7 @@
 package com.iqra.quran.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.iqra.quran.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
@@ -31,19 +32,24 @@ import androidx.compose.ui.unit.dp
  * has to be recompiled to change.
  */
 
-/** The named themes a user can pick. Order is the order they appear in Settings. */
-enum class IqraTheme(val id: Int, val label: String, val blurb: String) {
+/**
+ * The named themes a user can pick. Order is the order they appear in Settings.
+ * The names are resource ids: the theme row is user-facing and the app speaks
+ * two languages. The id is the storage contract (ReaderPrefs.themeId); the
+ * enum name is never shown.
+ */
+enum class IqraTheme(val id: Int, val labelRes: Int, val blurbRes: Int) {
     /** Teal and gold on near-black. The original identity, and the default. */
-    NightGarden(0, "Night garden", "Teal and gold on near-black"),
+    NightGarden(0, R.string.theme_night_garden, R.string.theme_night_garden_blurb),
 
     /** Cooler and quieter: the same light, further away. */
-    InkAndSilver(1, "Ink and silver", "Cool slate with pale gold lettering"),
+    InkAndSilver(1, R.string.theme_ink_silver, R.string.theme_ink_silver_blurb),
 
     /** Warmer, more parchment. Gentler contrast for evening reading. */
-    Parchment(2, "Parchment", "Warm low-contrast, easy on the eyes at night"),
+    Parchment(2, R.string.theme_parchment, R.string.theme_parchment_blurb),
 
     /** Highest contrast. For bright light or a screen you are squinting at. */
-    HighContrast(3, "High contrast", "Maximum separation for bright rooms"),
+    HighContrast(3, R.string.theme_high_contrast, R.string.theme_high_contrast_blurb),
     ;
 
     companion object {
@@ -111,15 +117,23 @@ data class IqraColors(
  * Shapes. Every corner in the app comes from here.
  *
  * These are `Shape`s and not bare radii, because that is what every call site
- * actually wants - a `RoundedCornerShape`, not a `Dp` it has to wrap itself. The
- * first version of this object held Dp values, mirroring the old
+ * actually wants - a `RoundedCornerShape`, not a `Dp` it has to wrap itself.
+ * The first version of this object held Dp values, mirroring the old
  * `CardRadius = RoundedCornerShape(16.dp)` / `Pill = RoundedCornerShape(50)`
  * constants it replaced, and every consumer failed to compile with
  * "actual type is Dp, but Shape was expected".
+ *
+ * Before `chip` and `cta` existed, the app carried ten inline radii between
+ * 10 and 32dp for these two jobs alone - Settings chips at 16, Choose's mode
+ * chips at 12, its CTA at 28, three other "primary" treatments each with
+ * their own number. Two tokens now: a chip is 16, a full-width primary
+ * action is a 56dp-high pill (28 radius).
  */
 object IqraShape {
     val card = RoundedCornerShape(18.dp)    /** 50% on a shape makes a stadium, which is what "pill" has to mean. */
     val pill = RoundedCornerShape(percent = 50)
+    /** A selectable chip in a FlowRow: 16dp, the radius six of the app's chip implementations had already converged on. */
+    val chip = RoundedCornerShape(16.dp)
 }
 
 

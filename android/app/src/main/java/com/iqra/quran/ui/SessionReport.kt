@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.res.stringResource
+import com.iqra.quran.R
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -184,19 +186,20 @@ fun SessionReportScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = c.inkMuted)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), tint = c.inkMuted)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("Session report", fontSize = 17.sp, color = c.ink,
+                    Text(stringResource(R.string.report_title), fontSize = 17.sp, color = c.ink,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     val r0 = rec
                     if (r0 != null) {
                         val pos = r0.safePosition
                         Text(
                             pos?.let {
-                                val nm = data.surahInfo(it.first)?.nameEn ?: "Surah ${it.first}"
-                                "$nm · ayah ${it.second}"
-                            } ?: "Spanned a surah boundary",
+                                val nm = data.surahInfo(it.first)?.nameEn
+                                    ?: stringResource(R.string.report_surah_fallback, it.first)
+                                stringResource(R.string.report_position, nm, it.second)
+                            } ?: stringResource(R.string.report_spanned_boundary),
                             fontSize = 11.sp, color = c.inkFaint,
                         )
                     }
@@ -207,13 +210,12 @@ fun SessionReportScreen(
         val r = rec
         when {
             !loaded -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                Text("Reading the record...", color = c.inkFaint, fontSize = 13.sp)
+                Text(stringResource(R.string.report_loading), color = c.inkFaint, fontSize = 13.sp)
             }
 
             r == null -> Box(Modifier.fillMaxSize().padding(36.dp), Alignment.Center) {
                 Text(
-                    "That session is no longer on the phone.\n" +
-                        "Only the ten most recent are kept.",
+                    stringResource(R.string.report_gone),
                     color = c.inkMuted, fontSize = 13.sp, textAlign = TextAlign.Center,
                 )
             }
@@ -251,8 +253,11 @@ fun SessionReportScreen(
                             clip.setText(AnnotatedString(reportText(r, data)))
                             copied = true
                         }) {
-                            Text(if (copied) "Copied" else "Copy summary",
-                                color = c.accent, fontSize = 14.sp)
+                            Text(
+                                if (copied) stringResource(R.string.report_copied)
+                                else stringResource(R.string.report_copy_summary),
+                                color = c.accent, fontSize = 14.sp,
+                            )
                         }
                     }
                 }
@@ -263,24 +268,29 @@ fun SessionReportScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                "Engine detail",
+                                stringResource(R.string.report_engine_detail),
                                 fontSize = 11.sp, color = c.inkMuted,
                                 letterSpacing = 1.1.sp,
                                 modifier = Modifier.weight(1f),
                             )
                             Text(
-                                if (showDetail) "hide" else "show",
+                                if (showDetail) stringResource(R.string.report_hide)
+                                else stringResource(R.string.report_show),
                                 fontSize = 11.sp, color = c.accent,
                             )
                         }
                         if (showDetail) {
                             Spacer(Modifier.height(10.dp))
-                            DetailLine(c, "ended properly", if (r.ended) "yes" else "no, ended early")
-                            DetailLine(c, "reason", r.reason.ifEmpty { "-" })
-                            DetailLine(c, "lock advances", "${r.moves}")
-                            DetailLine(c, "lock reversals", "${r.reversals}")
-                            DetailLine(c, "audio polls", "${r.evaluations}")
-                            DetailLine(c, "unjudgeable ayat", "${r.unjudgeable}")
+                            DetailLine(
+                                c, stringResource(R.string.report_detail_ended),
+                                if (r.ended) stringResource(R.string.report_yes)
+                                else stringResource(R.string.report_no_ended_early),
+                            )
+                            DetailLine(c, stringResource(R.string.report_detail_reason), r.reason.ifEmpty { "-" })
+                            DetailLine(c, stringResource(R.string.report_detail_advances), "${r.moves}")
+                            DetailLine(c, stringResource(R.string.report_detail_reversals), "${r.reversals}")
+                            DetailLine(c, stringResource(R.string.report_detail_polls), "${r.evaluations}")
+                            DetailLine(c, stringResource(R.string.report_detail_unjudgeable), "${r.unjudgeable}")
                             // The failure that presents as silence. Every one of
                             // these words renders UNKNOWN - muted, no highlight -
                             // which looks exactly like a word the reciter has not
@@ -288,19 +298,22 @@ fun SessionReportScreen(
                             if (r.noWindowWords > 0) {
                                 DetailLine(
                                     c,
-                                    "words the engine could not hear",
-                                    "${r.noWindowWords} (${r.emptyWindows} empty windows)",
+                                    stringResource(R.string.report_detail_no_window),
+                                    stringResource(
+                                        R.string.report_no_window_value,
+                                        r.noWindowWords, r.emptyWindows,
+                                    ),
                                 )
                             }
-                            DetailLine(c, "trace frames", "${r.frames}")
+                            DetailLine(c, stringResource(R.string.report_detail_frames), "${r.frames}")
                             // Two different numbers, deliberately not merged:
                             // `recorded` is every word the engine gave a status
                             // to (including "no verdict"), `judged` is how many it
                             // actually decided. Labelling the first as "judged"
                             // is what made a session that tested nothing report a
                             // large score.
-                            DetailLine(c, "words with a status", "${r.recorded}")
-                            DetailLine(c, "words decided", "${r.judged}")
+                            DetailLine(c, stringResource(R.string.report_detail_recorded), "${r.recorded}")
+                            DetailLine(c, stringResource(R.string.report_stat_decided), "${r.judged}")
                             // An advisory is the engine saying "I noticed this but
                             // cannot judge it" - information for the reciter, never
                             // an accusation, so it lists apart from the score.
@@ -315,15 +328,14 @@ fun SessionReportScreen(
                                 val byKind = r.advisories.groupingBy { it.kind }.eachCount()
                                 byKind.keys.sorted().forEach { kind ->
                                     val n = r.advisories.filter { it.kind == kind }.sumOf { it.count }
-                                    val label = AdvisoryKind.entries.firstOrNull { it.name == kind }?.label ?: kind
+                                    val label = AdvisoryKind.entries.firstOrNull { it.name == kind }
+                                        ?.let { stringResource(it.labelRes) } ?: kind
                                     DetailLine(c, label, "$n")
                                 }
                             }
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "\"Audio polls\" is how many times the engine looked at " +
-                                    "the microphone, not a score. It is here because it " +
-                                    "diagnoses a session that produced nothing.",
+                                stringResource(R.string.report_audio_polls_note),
                                 fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                             )
                         }
@@ -346,16 +358,15 @@ private fun ObserverCard(c: IqraColors, onOpen: () -> Unit) {
     Panel(c) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Watch it again", fontSize = 13.sp, color = c.ink,
+                Text(stringResource(R.string.report_watch_again), fontSize = 13.sp, color = c.ink,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                 Text(
-                    "The session on a timeline: the lock's walk, every verdict at " +
-                        "the moment it was decided, and what the model heard.",
+                    stringResource(R.string.report_watch_again_blurb),
                     fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                 )
             }
             TextButton(onClick = onOpen) {
-                Text("Open", color = c.accent, fontSize = 14.sp)
+                Text(stringResource(R.string.report_open), color = c.accent, fontSize = 14.sp)
             }
         }
     }
@@ -407,7 +418,7 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
     // not the same claim as "a scope of zero words"; `judgedLine` prints the
     // bare count in that case rather than an invented denominator.
     val scopeWords = remember(r.perAyah) { r.perAyah.values.sumOf { it.getOrNull(4) ?: 0 } }
-    val judgedLine = if (scopeWords > 0) "${r.judged} of $scopeWords" else "${r.judged}"
+    val judgedLine = if (scopeWords > 0) stringResource(R.string.report_judged_of, r.judged, scopeWords) else "${r.judged}"
 
     val reached = r.judged + r.unknown
     val coverage = if (reached > 0) r.judged.toFloat() / reached else null
@@ -417,22 +428,22 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
     when (metric) {
         ReaderPrefs.Metric.ACCURACY -> {
             headlineValue = r.accuracy?.let { pct1(it) } ?: "—"
-            headlineLabel = "accuracy"
+            headlineLabel = stringResource(R.string.report_metric_accuracy)
             headlineFraction = r.accuracy
         }
         ReaderPrefs.Metric.COVERAGE -> {
             headlineValue = coverage?.let { pct1(it) } ?: "—"
-            headlineLabel = "coverage"
+            headlineLabel = stringResource(R.string.report_metric_coverage)
             headlineFraction = coverage
         }
         ReaderPrefs.Metric.DECIDED -> {
             headlineValue = judgedLine
-            headlineLabel = "words decided"
+            headlineLabel = stringResource(R.string.report_stat_decided)
             headlineFraction = null
         }
         ReaderPrefs.Metric.NET -> {
             headlineValue = "${r.correct} / ${r.wrong}"
-            headlineLabel = "correct / wrong"
+            headlineLabel = stringResource(R.string.report_metric_net)
             headlineFraction = null
         }
     }
@@ -472,15 +483,16 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
                 // those apart. `scopeWords` is the scope the session was chosen for,
                 // and is omitted rather than faked when the record does not carry it.
                 if (metric != ReaderPrefs.Metric.DECIDED) {
-                    Stat(c.ink, judgedLine, "words decided")
+                    Stat(c.ink, judgedLine, stringResource(R.string.report_stat_decided))
                     Spacer(Modifier.height(10.dp))
                 }
-                Stat(c.ink, r.durationSec?.let { formatSecs(it) } ?: "—", "duration")
+                Stat(c.ink, r.durationSec?.let { formatSecs(it) } ?: "—",
+                    stringResource(R.string.report_stat_duration))
                 Spacer(Modifier.height(10.dp))
                 Stat(
                     c.gold,
                     if (r.wpm > 1.0 && r.judged > 0) "%.0f".format(r.wpm) else "—",
-                    "words per minute",
+                    stringResource(R.string.report_stat_wpm),
                 )
             }
         }
@@ -495,8 +507,7 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.hairline))
             Spacer(Modifier.height(12.dp))
             Text(
-                "The engine never heard ${r.unknown} of these words. " +
-                    "Counting those, accuracy is ${pct1(full)}%.",
+                stringResource(R.string.report_unheard_note, r.unknown, "${pct1(full)}"),
                 fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
             )
         }
@@ -525,7 +536,7 @@ private fun AyahCard(r: PracticeLog.Record, c: IqraColors) {
         }
     }
     Panel(c) {
-        Text("Ayah by ayah", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+        Text(stringResource(R.string.report_ayah_by_ayah), fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
         Spacer(Modifier.height(12.dp))
         AyahStrip(
             outcomes = outcomes,
@@ -535,16 +546,16 @@ private fun AyahCard(r: PracticeLog.Record, c: IqraColors) {
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(10.dp))
-        Legend(c, c.wordGood, "clean", outcomes.count { it == 0 })
-        Legend(c, c.chartBad, "a word wrong", outcomes.count { it == 1 })
-        Legend(c, c.wordUnknown, "partly unheard", outcomes.count { it == 2 })
+        Legend(c, c.wordGood, stringResource(R.string.report_legend_clean), outcomes.count { it == 0 })
+        Legend(c, c.chartBad, stringResource(R.string.report_legend_wrong), outcomes.count { it == 1 })
+        Legend(c, c.wordUnknown, stringResource(R.string.report_legend_unheard), outcomes.count { it == 2 })
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.hairline))
         Spacer(Modifier.height(10.dp))
         entries.forEach { (key, v) ->
             val ayah = key.substringAfter(':').toIntOrNull() ?: 0
             Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                Text("ayah $ayah", fontSize = 11.sp, color = c.inkMuted,
+                Text(stringResource(R.string.report_ayah_n, ayah), fontSize = 11.sp, color = c.inkMuted,
                     modifier = Modifier.width(64.dp))
                 Counts(c, v)
             }
@@ -570,11 +581,11 @@ private fun Counts(c: IqraColors, v: IntArray) {
     Text(
         buildString {
             fun add(t: String) { if (isNotEmpty()) append(" · "); append(t) }
-            if (v[0] > 0) add("${v[0]} right")
-            if (v[1] > 0) add("${v[1]} wrong")
-            if (v[3] > 0) add("${v[3]} unheard")
-            if (v[2] > 0) add("${v[2]} passed over")
-            if (isEmpty()) append("nothing judged")
+            if (v[0] > 0) add(stringResource(R.string.report_counts_right, v[0]))
+            if (v[1] > 0) add(stringResource(R.string.report_counts_wrong, v[1]))
+            if (v[3] > 0) add(stringResource(R.string.report_counts_unheard, v[3]))
+            if (v[2] > 0) add(stringResource(R.string.report_counts_passed, v[2]))
+            if (isEmpty()) append(stringResource(R.string.report_counts_none))
         },
         fontSize = 11.sp, color = c.inkFaint,
     )
@@ -586,14 +597,14 @@ private fun BreakdownCard(r: PracticeLog.Record, c: IqraColors) {
     val full = r.accuracyWithUnknown
     val accF = acc
     Panel(c) {
-        Text("Verdicts", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+        Text(stringResource(R.string.report_verdicts), fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
         Spacer(Modifier.height(10.dp))
         if (acc != null) {
             CompareBars(
                 rows = listOfNotNull(
-                    accF?.takeIf { it > 0f }?.let { "Judged words" to it },
+                    accF?.takeIf { it > 0f }?.let { stringResource(R.string.report_bar_judged) to it },
                     full?.takeIf { it > 0f && (acc == null || it < acc - 0.001f) }
-                        ?.let { "Including unheard" to it },
+                        ?.let { stringResource(R.string.report_bar_incl_unheard) to it },
                 ),
                 valueFmt = { "${pct1(it)}%" },
                 primary = c.accent,
@@ -602,23 +613,21 @@ private fun BreakdownCard(r: PracticeLog.Record, c: IqraColors) {
                 labelColor = c.ink,
             )
         } else {
-            Text("Nothing was judged in this session.", fontSize = 12.sp, color = c.inkMuted)
+            Text(stringResource(R.string.report_nothing_judged), fontSize = 12.sp, color = c.inkMuted)
         }
         Spacer(Modifier.height(14.dp))
         Row {
-            Stat(c.wordGood, "${r.correct}", "correct")
+            Stat(c.wordGood, "${r.correct}", stringResource(R.string.report_stat_correct))
             Spacer(Modifier.width(20.dp))
-            Stat(c.chartBad, "${r.wrong}", "wrong")
+            Stat(c.chartBad, "${r.wrong}", stringResource(R.string.report_stat_wrong))
             Spacer(Modifier.width(20.dp))
-            Stat(c.inkFaint, "${r.skipped}", "passed over")
+            Stat(c.inkFaint, "${r.skipped}", stringResource(R.string.report_stat_passed))
             Spacer(Modifier.width(20.dp))
-            Stat(c.inkFaint, "${r.unknown}", "unheard")
+            Stat(c.inkFaint, "${r.unknown}", stringResource(R.string.report_stat_unheard))
         }
         Spacer(Modifier.height(10.dp))
         Text(
-            "\"Passed over\" means the lock moved without judging the word. " +
-                "\"Unheard\" means the model produced no phoneme for it. Neither " +
-                "is counted against you.",
+            stringResource(R.string.report_verdicts_note),
             fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
         )
     }
@@ -635,22 +644,21 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
                 // Not "nothing came out wrong". On a session where every word was
                 // passed over, that is praise for a session nobody attempted - the
                 // most misleading kind of report, because it reads as success.
-                if (r.judged > 0) "Nothing came out wrong" else "Nothing to report",
+                if (r.judged > 0) stringResource(R.string.report_misses_none_wrong)
+                else stringResource(R.string.report_misses_none),
                 fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                if (r.judged > 0) "No word in this session was judged wrong."
-                else "No word was judged in this session, so there is nothing to " +
-                    "score. ${r.skipped} passed over as the lock advanced and " +
-                    "${r.unknown} were not heard by the model.",
+                if (r.judged > 0) stringResource(R.string.report_misses_none_body)
+                else stringResource(R.string.report_misses_none_body2, r.skipped, r.unknown),
                 fontSize = 13.sp, lineHeight = 19.sp, color = c.ink,
             )
         }
         return
     }
     Panel(c) {
-        Text("Words that slipped", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+        Text(stringResource(R.string.report_misses_title), fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
         Spacer(Modifier.height(10.dp))
         misses.forEach { (key, v) ->
             val surah = key.substringBefore(':').toIntOrNull() ?: 0
@@ -661,21 +669,21 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
             val word = parts.getOrNull(idx - 1)
             Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                 Text(
-                    word ?: "(ayah $ayah)",
+                    word ?: stringResource(R.string.report_ayah_fallback, ayah),
                     fontSize = 16.sp, fontFamily = quranFont,
                     color = if (word != null) c.wordBad else c.inkMuted,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    data.surahInfo(surah)?.nameEn ?: "Surah $surah",
+                    data.surahInfo(surah)?.nameEn
+                        ?: stringResource(R.string.report_surah_fallback, surah),
                     fontSize = 11.sp, color = c.inkFaint,
                 )
             }
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Words the model could not place at all are listed separately as " +
-                "unheard, and are not counted as mistakes.",
+            stringResource(R.string.report_misses_note),
             fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
         )
     }
@@ -706,11 +714,11 @@ private fun SessionAudioCard(
     onSeek: (Int) -> Unit,
 ) {
     Panel(c) {
-        Text("Session audio", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+        Text(stringResource(R.string.report_audio_title), fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
         Spacer(Modifier.height(6.dp))
         if (wavFile == null) {
             Text(
-                "This record names audio (\"${r.audioFile}\"), but the file is no longer on this device.",
+                stringResource(R.string.report_audio_missing, r.audioFile ?: ""),
                 fontSize = 11.sp, color = c.inkFaint,
             )
             return@Panel
@@ -722,7 +730,8 @@ private fun SessionAudioCard(
             ) {
                 Icon(
                     if (playingKey == "session") Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    if (playingKey == "session") "Pause" else "Play the recitation",
+                    if (playingKey == "session") stringResource(R.string.report_pause)
+                    else stringResource(R.string.report_play),
                     tint = c.accent,
                     modifier = Modifier.size(30.dp),
                 )
@@ -734,7 +743,7 @@ private fun SessionAudioCard(
                     fontSize = 15.sp, color = c.ink, fontFamily = FontFamily.Monospace,
                 )
                 Text(
-                    "kept on this device, never uploaded · red ticks are wrong verdicts",
+                    stringResource(R.string.report_audio_caption),
                     fontSize = 10.sp, color = c.inkFaint,
                 )
             }
@@ -753,6 +762,11 @@ private fun SessionAudioCard(
             // scrubbing belongs to the slider below, which carries the 48.dp
             // target this strip should not duplicate.
             val playing = playingKey == "session"
+            // stringResource is composable-only, so resolve the description here,
+            // before the semantics block (which is not a composable context).
+            val mistakeMapDesc = stringResource(
+                R.string.report_mistake_map_cd, wrongs.size, durMs / 1000,
+            )
             Canvas(
                 Modifier
                     .fillMaxWidth()
@@ -760,8 +774,7 @@ private fun SessionAudioCard(
                     .clip(RoundedCornerShape(4.dp))
                     .background(c.hairline)
                     .semantics {
-                        contentDescription =
-                            "Mistake map: ${wrongs.size} wrong verdicts across ${durMs / 1000} seconds"
+                        contentDescription = mistakeMapDesc
                     },
             ) {
                 for ((t, firstLetter, _) in wrongs) {
@@ -820,17 +833,17 @@ private fun SessionAudioCard(
 private fun BlameBandsCard(r: PracticeLog.Record, c: IqraColors) {
     val fr = r.wordRows.mapNotNull { if (it.st == "WRONG") it.wu else null }
     val bands = listOf(
-        "first letter" to fr.count { it == 0 },
-        "near the start" to fr.count { it in 1..200 },
-        "early" to fr.count { it in 201..400 },
-        "middle" to fr.count { it in 401..600 },
-        "late" to fr.count { it in 601..800 },
-        "near the end" to fr.count { it in 801..999 },
-        "last letter" to fr.count { it >= 1000 },
+        stringResource(R.string.report_band_first) to fr.count { it == 0 },
+        stringResource(R.string.report_band_near_start) to fr.count { it in 1..200 },
+        stringResource(R.string.report_band_early) to fr.count { it in 201..400 },
+        stringResource(R.string.report_band_middle) to fr.count { it in 401..600 },
+        stringResource(R.string.report_band_late) to fr.count { it in 601..800 },
+        stringResource(R.string.report_band_near_end) to fr.count { it in 801..999 },
+        stringResource(R.string.report_band_last) to fr.count { it >= 1000 },
     ).filter { it.second > 0 }
     if (bands.isEmpty()) return
     Panel(c) {
-        Text("Where blame lands", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+        Text(stringResource(R.string.report_blame_title), fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
         Spacer(Modifier.height(6.dp))
         Row(
             Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
@@ -847,16 +860,18 @@ private fun BlameBandsCard(r: PracticeLog.Record, c: IqraColors) {
         Spacer(Modifier.height(8.dp))
         bands.forEach { (label, n) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
-                Text("$label", fontSize = 12.sp, color = c.ink, modifier = Modifier.weight(1f))
+                Text(label, fontSize = 12.sp, color = c.ink, modifier = Modifier.weight(1f))
                 Text(
-                    "$n ${if (n == 1) "word" else "words"}",
+                    stringResource(
+                        if (n == 1) R.string.report_word_one else R.string.report_word_many, n,
+                    ),
                     fontSize = 12.sp, color = c.inkFaint, fontFamily = FontFamily.Monospace,
                 )
             }
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "${fr.size} wrong words judged at their own blame position.",
+            stringResource(R.string.report_blame_footer, fr.size),
             fontSize = 10.sp, color = c.inkFaint,
         )
     }
@@ -905,19 +920,27 @@ private fun RecitationLogCard(
     Panel(c) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Recitation log", fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
+                Text(stringResource(R.string.report_log_title), fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
                 Text(
-                    "${r.wordRows.size} words, decided in order. The ayah's word is what was expected.",
+                    stringResource(R.string.report_log_subtitle, r.wordRows.size),
                     fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                 )
             }
             if (r.wordRows.size > rows.size || (timed.size + untimed.size) > 30) {
                 TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "show first" else "show all", fontSize = 11.sp, color = c.accent)
+                    Text(
+                        if (expanded) stringResource(R.string.report_show_first)
+                        else stringResource(R.string.report_show_all),
+                        fontSize = 11.sp, color = c.accent,
+                    )
                 }
             }
             TextButton(onClick = { wrongOnly = !wrongOnly }) {
-                Text(if (wrongOnly) "all words" else "wrong only", fontSize = 11.sp, color = c.accent)
+                Text(
+                    if (wrongOnly) stringResource(R.string.report_all_words)
+                    else stringResource(R.string.report_wrong_only),
+                    fontSize = 11.sp, color = c.accent,
+                )
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -949,7 +972,7 @@ private fun RecitationLogCard(
                         )
                         Column(Modifier.weight(1f)) {
                             Text(
-                                expected ?: "(the record names no text for " + surah + ":" + ayah + ")",
+                                expected ?: stringResource(R.string.report_no_text, surah, ayah),
                                 fontSize = 16.sp, fontFamily = quranFont,
                                 color = when (row.st) {
                                     "WRONG" -> c.wordBad; "CORRECT" -> c.ink
@@ -965,11 +988,11 @@ private fun RecitationLogCard(
                             if (row.st == "WRONG" && row.wu != null) {
                                 Text(
                                     when {
-                                        row.wu == 0 -> "blamed at the word's first letter"
-                                        r.v < 2 -> "blamed past the first letter (older record: no finer position)"
-                                        row.wu >= 1000 -> "blamed at the word's last letter"
-                                        row.wu <= 500 -> "blamed in the word's first half"
-                                        else -> "blamed in the word's second half"
+                                        row.wu == 0 -> stringResource(R.string.report_blame_first)
+                                        r.v < 2 -> stringResource(R.string.report_blame_past_first)
+                                        row.wu >= 1000 -> stringResource(R.string.report_blame_last)
+                                        row.wu <= 500 -> stringResource(R.string.report_blame_half1)
+                                        else -> stringResource(R.string.report_blame_half2)
                                     },
                                     fontSize = 10.sp, color = c.inkFaint,
                                 )
@@ -996,7 +1019,7 @@ private fun RecitationLogCard(
                                 if (heard.isNotEmpty()) {
                                     Row(Modifier.padding(top = 2.dp)) {
                                         Text(
-                                            "heard ",
+                                            stringResource(R.string.report_heard),
                                             fontSize = 10.sp, color = c.inkFaint,
                                             modifier = Modifier.padding(top = 3.dp),
                                         )
@@ -1027,15 +1050,15 @@ private fun RecitationLogCard(
                                     Icon(
                                         if (playingKey == key) Icons.Filled.Pause
                                         else Icons.Filled.PlayArrow,
-                                        if (playingKey == key) "Stop the clip"
-                                        else "Hear the audio before this verdict",
+                                        if (playingKey == key) stringResource(R.string.report_stop_clip)
+                                        else stringResource(R.string.report_hear_clip),
                                         tint = c.accent,
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
                             }
                             if (row.wt == null) {
-                                Text("no decision time in this record", fontSize = 10.sp, color = c.inkFaint)
+                                Text(stringResource(R.string.report_no_time), fontSize = 10.sp, color = c.inkFaint)
                             }
                         }
                     }
@@ -1050,8 +1073,7 @@ private fun RecitationLogCard(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "What was actually heard for each wrong word, sound by sound, is the " +
-                "desktop replay of this record (engine/replay/replay_export.py).",
+            stringResource(R.string.report_log_footer),
             fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
         )
     }

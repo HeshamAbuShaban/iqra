@@ -285,6 +285,13 @@ fun ActivityHeatmap(
 ) {
     val measurer = rememberTextMeasurer()
     val monthStyle = TextStyle(fontSize = 9.sp, color = frame)
+    // The configuration's locale, not Locale.getDefault(): below API 33 the
+    // app locale is applied by a configuration-context wrap and the process
+    // default still says the system language.
+    val monthNames = java.text.DateFormatSymbols(
+        androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+            ?: java.util.Locale.getDefault()
+    ).shortMonths
 
     Canvas(modifier) {
         val cs = cell.toPx()
@@ -343,8 +350,9 @@ fun ActivityHeatmap(
                 // Month label on the first day of a new month, when there is room.
                 val mm = ((k / 100) % 100).toInt()
                 if (d == 0 && mm != lastMonth && x > x0 + 2f) {
-                    val nm = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec").getOrNull(mm - 1)
+                    // Locale-aware short month name: an Arabic UI reads
+                    // يناير, not Jan.
+                    val nm = monthNames.getOrNull(mm - 1)
                     if (nm != null && x - lastMonthX > 26f) {
                         drawText(measurer.measure(nm, monthStyle), topLeft = Offset(x, -10f))
                         lastMonth = mm

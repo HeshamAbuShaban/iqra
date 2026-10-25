@@ -8,11 +8,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.iqra.quran.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +40,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import com.iqra.quran.ui.theme.IqraTheme
+import com.iqra.quran.ui.theme.IqraShape
 import com.iqra.quran.ui.theme.IqraPalettes
 import com.iqra.quran.ui.theme.LocalIqraColors
 import com.iqra.quran.ui.theme.liveColorsFor
@@ -71,6 +75,7 @@ fun SettingsScreen(
     onOpenData: () -> Unit = {},
     onOpenProgress: () -> Unit = {},
     onOpenLibrary: () -> Unit = {},
+    onOpenDiag: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     // The store's change tick, COLLECTED FOR REAL.
@@ -100,10 +105,10 @@ fun SettingsScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -119,7 +124,11 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
-            SettingsSection("Reading") {
+            SettingsSection(stringResource(R.string.language)) {
+                LanguageRow(tick)
+            }
+
+            SettingsSection(stringResource(R.string.settings_section_reading)) {
                 TextSizeRow(tick)
                 SettingDivider()
                 NightSettings(tick)
@@ -128,9 +137,8 @@ fun SettingsScreen(
                 // preference like text size, it mirrors every screen at once, and the
                 // recitation screen's control order depends on it.
                 SwitchRow(
-                    title = "Right to left layout",
-                    subtitle = "Mirrors the recitation and passage screens for " +
-                        "Arabic. Word order and the ayah gutter follow.",
+                    title = stringResource(R.string.settings_rtl_title),
+                    subtitle = stringResource(R.string.settings_rtl_subtitle),
                     checked = remember(tick) { ReaderPrefs.rightToLeft(ctx) },
                     onChange = { ReaderPrefs.setRightToLeft(ctx, it) },
                 )
@@ -140,7 +148,7 @@ fun SettingsScreen(
             // has the only continuously moving element in the app, and someone who
             // wants that still off while reading a page does not want it switched on
             // for a practice session either.
-            SettingsSection("Theme") {
+            SettingsSection(stringResource(R.string.settings_section_theme)) {
                 ThemeChooser(tick)
             }
 
@@ -150,34 +158,26 @@ fun SettingsScreen(
             // deciding it - it was only supplying the seed. Someone reading
             // tafseer in daylight and reciting in a dim room at night can want
             // two different answers, and before this there was one knob for both.
-            SettingsSection("Recitation screen") {
+            SettingsSection(stringResource(R.string.settings_section_recitation)) {
                 LiveThemeChooser(tick)
                 SettingDivider()
                 SwitchRow(
-                    title = "Animate the recitation light",
-                    subtitle = "The horizon on the recitation screen moves " +
-                        "continuously. Turn off for a still image.",
+                    title = stringResource(R.string.settings_live_animation_title),
+                    subtitle = stringResource(R.string.settings_live_animation_subtitle),
                     checked = remember(tick) { ReaderPrefs.liveAnimation(ctx) },
                     onChange = { ReaderPrefs.setLiveAnimation(ctx, it) },
                 )
                 SettingDivider()
                 SwitchRow(
-                    title = "Vibrate on a wrong word",
-                    subtitle = "A short buzz the first time each word is marked " +
-                        "wrong in a session, so the verdict reaches you when " +
-                        "your eyes are on the page. Unheard words and engine " +
-                        "notes never vibrate.",
+                    title = stringResource(R.string.settings_vibrate_title),
+                    subtitle = stringResource(R.string.settings_vibrate_subtitle),
                     checked = remember(tick) { ReaderPrefs.vibrateOnWrong(ctx) },
                     onChange = { ReaderPrefs.setVibrateOnWrong(ctx, it) },
                 )
                 SettingDivider()
                 SwitchRow(
-                    title = "Keep the screen on",
-                    subtitle = "Holds the screen awake everywhere in the app, " +
-                        "reciting included. A recitation usually runs past the " +
-                        "~30 s before Android dims the screen, and a screen that " +
-                        "goes dark mid-ayah looks like the session ended. " +
-                        "Turn off to save battery.",
+                    title = stringResource(R.string.settings_keep_awake_title),
+                    subtitle = stringResource(R.string.settings_keep_awake_subtitle),
                     checked = remember(tick) { ReaderPrefs.keepAwake(ctx) },
                     onChange = { ReaderPrefs.setKeepAwake(ctx, it) },
                 )
@@ -195,7 +195,7 @@ fun SettingsScreen(
             // can accuse someone of misreading their scripture owes them the
             // list of things it cannot see.
             // ----------------------------------------------------------------
-            SettingsSection("Recognition") {
+            SettingsSection(stringResource(R.string.settings_section_recognition)) {
                 Card(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     colors = CardDefaults.cardColors(
@@ -204,159 +204,142 @@ fun SettingsScreen(
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         Text(
-                            "What this engine cannot judge",
+                            stringResource(R.string.settings_model_card_title),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Spacer(Modifier.height(6.dp))
                         ModelCardGap(
-                            "Madd length",
-                            "9,706 of 51,395 madd sites are free choice, where Hafs " +
-                                "permits more than one length. The engine holds only " +
-                                "the canonical one.",
+                            stringResource(R.string.settings_madd_title),
+                            stringResource(R.string.settings_gap_madd_detail),
                         )
                         ModelCardGap(
-                            "Stopping on a waqf mark",
-                            "The expected text is one realisation: waqf at each ayah " +
-                                "end, continuing inside. The mushaf has 9,950 mid-ayah " +
-                                "stop marks. Stopping is legal and read as a mismatch.",
+                            stringResource(R.string.settings_waqf_title),
+                            stringResource(R.string.settings_gap_waqf_detail),
                         )
                         ModelCardGap(
-                            "Idgham boundaries",
-                            "A word-final sound merges into the next word. Where the " +
-                                "engine cannot separate them, no verdict is given.",
+                            stringResource(R.string.settings_gap_idgham_title),
+                            stringResource(R.string.settings_gap_idgham_detail),
                         )
                         ModelCardGap(
-                            "Silent letters and ta marbuta",
-                            "The exception lists for these are not in any data asset. " +
-                                "Those words cannot be judged.",
+                            stringResource(R.string.settings_gap_silent_title),
+                            stringResource(R.string.settings_gap_silent_detail),
                         )
                     }
                 }
 
                 Text(
-                    "Never accuse on",
+                    stringResource(R.string.settings_never_accuse_on),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
                 )
                 SwitchRow(
-                    title = "Madd length",
-                    subtitle = "Holding a madd for 2, 4 or 6 counts where more than " +
-                        "one is legal is never an error.",
+                    title = stringResource(R.string.settings_madd_title),
+                    subtitle = stringResource(R.string.settings_madd_never_subtitle),
                     checked = remember(tick) { ReaderPrefs.maddNeverAccuses(ctx) },
                     onChange = { ReaderPrefs.setMaddNeverAccuses(ctx, it) },
                 )
                 SettingDivider()
                 SwitchRow(
-                    title = "Stopping on a waqf mark",
-                    subtitle = "Pausing where the text shows a stop mark is a legal " +
-                        "recitation choice, not a mistake.",
+                    title = stringResource(R.string.settings_waqf_title),
+                    subtitle = stringResource(R.string.settings_waqf_never_subtitle),
                     checked = remember(tick) { ReaderPrefs.waqfNeverAccuses(ctx) },
                     onChange = { ReaderPrefs.setWaqfNeverAccuses(ctx, it) },
                 )
                 SettingDivider()
                 SwitchRow(
-                    title = "First ayah with nothing before it",
-                    subtitle = "When no previous ayah anchors the window, the audio in " +
-                        "front may be someone else's; the engine cannot prove it is " +
-                        "yours, so it is not accused.",
+                    title = stringResource(R.string.settings_unanchored_title),
+                    subtitle = stringResource(R.string.settings_unanchored_subtitle),
                     checked = remember(tick) { ReaderPrefs.unanchoredNeverAccuses(ctx) },
                     onChange = { ReaderPrefs.setUnanchoredNeverAccuses(ctx, it) },
                 )
                 SettingDivider()
                 Text(
-                    "What the engine may tell you",
+                    stringResource(R.string.settings_engine_may_tell),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
                 )
+                val alarmOptions = ReaderPrefs.AdvisoryAlarm.entries.map { stringResource(it.labelRes) }
                 ChoiceRow(
-                    label = "What counts as an engine note",
-                    options = ReaderPrefs.AdvisoryAlarm.entries.map { it.label },
-                    selected = remember(tick) { ReaderPrefs.advisoryAlarm(ctx).label },
+                    label = stringResource(R.string.settings_engine_note_label),
+                    options = alarmOptions,
+                    selected = stringResource(remember(tick) { ReaderPrefs.advisoryAlarm(ctx).labelRes }),
                     onSelect = { label ->
-                        ReaderPrefs.setAdvisoryAlarm(
-                            ctx,
-                            ReaderPrefs.AdvisoryAlarm.entries.first { it.label == label },
-                        )
+                        val i = alarmOptions.indexOf(label)
+                        if (i >= 0) ReaderPrefs.setAdvisoryAlarm(ctx, ReaderPrefs.AdvisoryAlarm.entries[i])
                     },
                 )
                 Text(
-                    remember(tick) { ReaderPrefs.advisoryAlarm(ctx).explain },
+                    stringResource(remember(tick) { ReaderPrefs.advisoryAlarm(ctx).explainRes }),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
                 Spacer(Modifier.height(6.dp))
+                val displayOptions = ReaderPrefs.AdvisoryDisplay.entries.map { stringResource(it.labelRes) }
                 ChoiceRow(
-                    label = "Where engine notes appear",
-                    options = ReaderPrefs.AdvisoryDisplay.entries.map { it.label },
-                    selected = remember(tick) { ReaderPrefs.advisoryDisplay(ctx).label },
+                    label = stringResource(R.string.settings_engine_notes_where),
+                    options = displayOptions,
+                    selected = stringResource(remember(tick) { ReaderPrefs.advisoryDisplay(ctx).labelRes }),
                     onSelect = { label ->
-                        ReaderPrefs.setAdvisoryDisplay(
-                            ctx,
-                            ReaderPrefs.AdvisoryDisplay.entries.first { it.label == label },
-                        )
+                        val i = displayOptions.indexOf(label)
+                        if (i >= 0) ReaderPrefs.setAdvisoryDisplay(ctx, ReaderPrefs.AdvisoryDisplay.entries[i])
                     },
                 )
                 Text(
-                    "How strict to be",
+                    stringResource(R.string.settings_how_strict),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
                 )
+                val strictnessOptions = ReaderPrefs.Strictness.entries.map { stringResource(it.labelRes) }
                 ChoiceRow(
-                    label = "Evidence needed before a word can be called wrong",
-                    options = ReaderPrefs.Strictness.entries.map { it.label },
-                    selected = remember(tick) { ReaderPrefs.strictness(ctx).label },
+                    label = stringResource(R.string.settings_evidence_label),
+                    options = strictnessOptions,
+                    selected = stringResource(remember(tick) { ReaderPrefs.strictness(ctx).labelRes }),
                     onSelect = { label ->
-                        ReaderPrefs.setStrictness(
-                            ctx,
-                            ReaderPrefs.Strictness.entries.first { it.label == label },
-                        )
+                        val i = strictnessOptions.indexOf(label)
+                        if (i >= 0) ReaderPrefs.setStrictness(ctx, ReaderPrefs.Strictness.entries[i])
                     },
                 )
                 Text(
-                    remember(tick) {
-                        "A word must have ${(ReaderPrefs.heardFloor(ctx) * 100).toInt()}% " +
-                            "of its own sounds heard before a mismatch counts against you. " +
-                            "Lower means more warnings."
-                    },
+                    stringResource(
+                        R.string.settings_heard_floor_explain,
+                        remember(tick) { (ReaderPrefs.heardFloor(ctx) * 100).toInt() },
+                    ),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
                 SettingDivider()
                 Text(
-                    "What \"accuracy\" means",
+                    stringResource(R.string.settings_accuracy_means),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
                 )
+                val metricOptions = ReaderPrefs.Metric.entries.map { stringResource(it.labelRes) }
                 ChoiceRow(
-                    label = "Shown in the session report",
-                    options = ReaderPrefs.Metric.entries.map { it.label },
-                    selected = remember(tick) { ReaderPrefs.metric(ctx).label },
+                    label = stringResource(R.string.settings_metric_shown_in),
+                    options = metricOptions,
+                    selected = stringResource(remember(tick) { ReaderPrefs.metric(ctx).labelRes }),
                     onSelect = { label ->
-                        ReaderPrefs.setMetric(
-                            ctx,
-                            ReaderPrefs.Metric.entries.first { it.label == label },
-                        )
+                        val i = metricOptions.indexOf(label)
+                        if (i >= 0) ReaderPrefs.setMetric(ctx, ReaderPrefs.Metric.entries[i])
                     },
                 )
                 Text(
-                    remember(tick) { ReaderPrefs.metric(ctx).explain },
+                    stringResource(remember(tick) { ReaderPrefs.metric(ctx).explainRes }),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
                 SettingDivider()
                 SwitchRow(
-                    title = "Recognition diagnostics",
-                    subtitle = "Show engine state in the session report: whether the " +
-                        "audio window is healthy, and when the decoder stalled. " +
-                        "Silence on screen is not a diagnosis.",
+                    title = stringResource(R.string.settings_diagnostics_title),
+                    subtitle = stringResource(R.string.settings_diagnostics_subtitle),
                     checked = remember(tick) { ReaderPrefs.diagnostics(ctx) },
                     onChange = { ReaderPrefs.setDiagnostics(ctx, it) },
                 )
@@ -366,14 +349,12 @@ fun SettingsScreen(
             // streamed fresh on every tap and thrown away. This section is the
             // control surface for what replaced it: who recites, whether the
             // audio is kept, and what the transport does with it.
-            SettingsSection("Reference audio") {
+            SettingsSection(stringResource(R.string.settings_section_reference_audio)) {
                 ReciterRow(audioTick) { audioTick++ }
                 SettingDivider()
                 SwitchRow(
-                    title = "Keep a copy for replay",
-                    subtitle = "The first play streams while the file saves in " +
-                        "the background, so replays read the local copy " +
-                        "instead of downloading the surah again.",
+                    title = stringResource(R.string.settings_keep_copy_title),
+                    subtitle = stringResource(R.string.settings_keep_copy_subtitle),
                     checked = remember(audioTick) { AudioPrefs.keepOffline(ctx) },
                     onChange = { AudioPrefs.setKeepOffline(ctx, it); audioTick++ },
                 )
@@ -384,16 +365,14 @@ fun SettingsScreen(
                 if (remember(audioTick) { AudioPrefs.keepOffline(ctx) }) {
                     SettingDivider()
                     SwitchRow(
-                        title = "Save only on Wi-Fi",
-                        subtitle = "Playback always streams regardless; this only " +
-                            "holds back the saved copy while on mobile data.",
+                        title = stringResource(R.string.settings_wifi_only_title),
+                        subtitle = stringResource(R.string.settings_wifi_only_subtitle),
                         checked = remember(audioTick) { AudioPrefs.wifiOnly(ctx) },
                         onChange = { AudioPrefs.setWifiOnly(ctx, it); audioTick++ },
                     )
                 } else {
                     Text(
-                        "Saving is off, so the Wi-Fi rule has nothing to apply to. " +
-                            "Turn on \"Keep a copy for replay\" to save downloads.",
+                        stringResource(R.string.settings_wifi_rule_off_note),
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp),
@@ -402,7 +381,7 @@ fun SettingsScreen(
                 SettingDivider()
                 val speedOptions = listOf(75, 100, 125, 150)
                 ChoiceRow(
-                    label = "Playback speed",
+                    label = stringResource(R.string.settings_playback_speed),
                     options = speedOptions.map { speedPctLabel(it) },
                     selected = remember(audioTick) {
                         speedPctLabel(AudioPrefs.speedPercent(ctx))
@@ -416,9 +395,8 @@ fun SettingsScreen(
                 )
                 SettingDivider()
                 SwitchRow(
-                    title = "Play the next surah when one ends",
-                    subtitle = "Al-Faatiha rolls into Al-Baqarah instead of " +
-                        "stopping at the last ayah.",
+                    title = stringResource(R.string.settings_auto_next_title),
+                    subtitle = stringResource(R.string.settings_auto_next_subtitle),
                     checked = remember(audioTick) { AudioPrefs.autoNext(ctx) },
                     onChange = { AudioPrefs.setAutoNext(ctx, it); audioTick++ },
                 )
@@ -426,35 +404,51 @@ fun SettingsScreen(
                 val downloads = remember(audioTick) { AudioStore.list(ctx) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Downloaded audio", fontSize = 15.sp)
+                        Text(stringResource(R.string.settings_downloaded_audio), fontSize = 15.sp)
                         Text(
                             when (downloads.size) {
-                                0 -> "Nothing saved yet"
-                                1 -> "1 surah · ${fmtMb(downloads.sumOf { it.bytes })}"
-                                else -> "${downloads.size} surahs · " +
-                                    fmtMb(downloads.sumOf { it.bytes })
+                                0 -> stringResource(R.string.settings_nothing_saved)
+                                1 -> stringResource(
+                                    R.string.settings_one_surah_size,
+                                    fmtMb(downloads.sumOf { it.bytes }),
+                                )
+                                else -> stringResource(
+                                    R.string.settings_n_surahs_size,
+                                    downloads.size,
+                                    fmtMb(downloads.sumOf { it.bytes }),
+                                )
                             },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
                     }
-                    TextButton(onClick = onOpenLibrary, enabled = downloads.isNotEmpty()) {
-                        Text("Manage")
+                    // Always enabled: the library's own empty state explains
+                    // what saving is, and it was unreachable in exactly that
+                    // state - the one time a reader needed the explanation.
+                    TextButton(onClick = onOpenLibrary) {
+                        Text(stringResource(R.string.settings_manage))
                     }
                 }
             }
 
-            SettingsSection("Your data") {
+            SettingsSection(stringResource(R.string.settings_section_your_data)) {
                 val statuses = remember { AssetPaths.allStatuses(ctx) }
                 val missing = statuses.filter { !it.present }
                 val presentBytes = statuses.filter { it.present }.sumOf { it.actualBytes }
 
                 Text(
                     if (missing.isEmpty()) {
-                        "All ${statuses.size} data files are present · " +
-                            "${fmtMb(presentBytes)}"
+                        stringResource(
+                            R.string.settings_data_all_present,
+                            statuses.size,
+                            fmtMb(presentBytes),
+                        )
                     } else {
-                        "${missing.size} of ${statuses.size} data files missing"
+                        stringResource(
+                            R.string.settings_data_missing_count,
+                            missing.size,
+                            statuses.size,
+                        )
                     },
                     fontSize = 13.sp,
                     color = if (missing.isEmpty()) {
@@ -465,7 +459,7 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(onClick = onOpenData, modifier = Modifier.fillMaxWidth()) {
-                    Text("Manage data files")
+                    Text(stringResource(R.string.settings_manage_data_files))
                 }
 
                 SettingDivider()
@@ -475,19 +469,19 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Practice history", fontSize = 15.sp)
+                        Text(stringResource(R.string.settings_practice_history), fontSize = 15.sp)
                         Text(
                             when (log.size) {
-                                0 -> "Nothing recorded yet"
-                                1 -> "1 session"
-                                else -> "${log.size} sessions kept"
+                                0 -> stringResource(R.string.settings_nothing_recorded)
+                                1 -> stringResource(R.string.settings_one_session)
+                                else -> stringResource(R.string.settings_n_sessions, log.size)
                             },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
                     }
                     if (log.isNotEmpty()) {
-                        TextButton(onClick = onOpenProgress) { Text("View") }
+                        TextButton(onClick = onOpenProgress) { Text(stringResource(R.string.settings_view)) }
                         TextButton(onClick = { confirmClear = true }) {
                             Icon(
                                 Icons.Filled.Delete, null,
@@ -495,7 +489,7 @@ fun SettingsScreen(
                                 modifier = Modifier.size(18.dp),
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text("Clear", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.settings_clear), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -510,7 +504,7 @@ fun SettingsScreen(
                 val sessionsPrefs = remember { ctx.getSharedPreferences("iqra_sessions", 0) }
                 val keepChoices = listOf(5, 10, 25, 50, 100)
                 ChoiceRow(
-                    label = "Sessions kept on this device",
+                    label = stringResource(R.string.settings_sessions_kept_label),
                     options = keepChoices.map { "$it" },
                     selected = remember(dataTick.intValue) {
                         val k = sessionsPrefs.getInt("keep", 10)
@@ -524,21 +518,15 @@ fun SettingsScreen(
                     },
                 )
                 Text(
-                    "When the count is passed, the oldest sessions and their " +
-                        "audio are deleted for good. Statistics built from " +
-                        "them stay forever.",
+                    stringResource(R.string.settings_retention_note),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
                 Spacer(Modifier.height(8.dp))
                 SwitchRow(
-                    title = "Keep the audio of each session",
-                    subtitle = "While you recite, the session's own sound is " +
-                        "written next to its record, so the report can play " +
-                        "what the model heard. It never leaves this device " +
-                        "and is deleted with its session. Turn off to keep " +
-                        "records without audio.",
+                    title = stringResource(R.string.settings_keep_audio_title),
+                    subtitle = stringResource(R.string.settings_keep_audio_subtitle),
                     checked = remember(dataTick.intValue) { sessionsPrefs.getBoolean("capture", true) },
                     onChange = {
                         sessionsPrefs.edit().putBoolean("capture", it).apply()
@@ -551,30 +539,68 @@ fun SettingsScreen(
                     (wavs?.size ?: 0) to (wavs?.sumOf { it.length() } ?: 0L)
                 }
                 Text(
-                    if (wavStats.first == 0) "No session audio on disk."
-                    else "Session audio on disk: ${fmtMb(wavStats.second)} across " +
-                        "${wavStats.first} recording${if (wavStats.first == 1) "" else "s"}.",
+                    when {
+                        wavStats.first == 0 -> stringResource(R.string.settings_no_session_audio)
+                        wavStats.first == 1 -> stringResource(
+                            R.string.settings_session_audio_disk_one,
+                            fmtMb(wavStats.second),
+                        )
+                        else -> stringResource(
+                            R.string.settings_session_audio_disk,
+                            fmtMb(wavStats.second),
+                            wavStats.first,
+                        )
+                    },
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
 
-            SettingsSection("About") {
+            SettingsSection(stringResource(R.string.settings_section_about)) {
                 // Read, not written. "0.1.0" was a hardcoded string, so the
                 // About screen showed the same version for every install while
                 // the record's build tag moved independently - two claims about
                 // which build was running, neither checkable against the other.
-                KeyValue("Version", "${BuildConfig.VERSION_NAME} · #${BuildConfig.VERSION_CODE}")
-                KeyValue("Mushaf", "604 pages · Madinah")
-                KeyValue("Recognition", "on-device only")
+                KeyValue(
+                    stringResource(R.string.settings_version),
+                    "${BuildConfig.VERSION_NAME} · #${BuildConfig.VERSION_CODE}",
+                )
+                KeyValue(stringResource(R.string.settings_mushaf), stringResource(R.string.settings_mushaf_value))
+                KeyValue(
+                    stringResource(R.string.settings_section_recognition),
+                    stringResource(R.string.settings_ondevice_value),
+                )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Nothing you recite leaves the device. There is no account, " +
-                        "no server and no network access at runtime.",
+                    stringResource(R.string.settings_privacy_note),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )
+                Spacer(Modifier.height(6.dp))
+                // The engine check moved here from the home header: it is a
+                // diagnostic surface, and a labelled row says what it is where
+                // a fifth unlabeled icon did not.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(onClick = onOpenDiag)
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.MonitorHeart,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        stringResource(R.string.reader_diag_title),
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
 
             Spacer(Modifier.height(32.dp))
@@ -584,21 +610,20 @@ fun SettingsScreen(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("Clear practice history?") },
+            title = { Text(stringResource(R.string.settings_clear_history_title)) },
             text = {
                 Text(
-                    "This deletes the ${log.size} recorded sessions and the " +
-                        "statistics built from them. It cannot be undone."
+                    stringResource(R.string.settings_clear_history_text, log.size)
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     PracticeLog.clear(ctx)
                     confirmClear = false
-                }) { Text("Clear", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.settings_clear), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -616,7 +641,7 @@ private fun TextSizeRow(tick: Int) {
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Text size", fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Text(stringResource(R.string.settings_text_size), fontSize = 15.sp, modifier = Modifier.weight(1f))
         Text(
             "$percent%",
             fontSize = 13.sp,
@@ -657,8 +682,8 @@ private fun NightSettings(tick: Int) {
     val ctx = LocalContext.current
     val night = remember(tick) { ReaderPrefs.nightMode(ctx) }
     SwitchRow(
-        title = "Night mode",
-        subtitle = "Inverts the page so the mushaf is light text on dark.",
+        title = stringResource(R.string.settings_night_mode),
+        subtitle = stringResource(R.string.settings_night_mode_subtitle),
         checked = night,
         onChange = { ReaderPrefs.setNightMode(ctx, it) },
     )
@@ -673,12 +698,12 @@ private fun NightSettings(tick: Int) {
     if (night) {
         Spacer(Modifier.height(4.dp))
         NumberSlider(
-            "Text brightness",
+            stringResource(R.string.settings_text_brightness),
             remember(tick) { ReaderPrefs.textBrightness(ctx) },
             0..255,
         ) { ReaderPrefs.setTextBrightness(ctx, it) }
         NumberSlider(
-            "Background brightness",
+            stringResource(R.string.settings_bg_brightness),
             remember(tick) { ReaderPrefs.backgroundBrightness(ctx) },
             0..64,
         ) { ReaderPrefs.setBackgroundBrightness(ctx, it) }
@@ -764,7 +789,7 @@ private fun ReciterRow(tick: Int, onChanged: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Reciter", fontSize = 15.sp)
+            Text(stringResource(R.string.settings_reciter), fontSize = 15.sp)
             Text(
                 current.name,
                 fontSize = 12.sp,
@@ -772,7 +797,7 @@ private fun ReciterRow(tick: Int, onChanged: () -> Unit) {
             )
         }
         Text(
-            "Change",
+            stringResource(R.string.action_change),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -780,7 +805,7 @@ private fun ReciterRow(tick: Int, onChanged: () -> Unit) {
     if (pick) {
         AlertDialog(
             onDismissRequest = { pick = false },
-            title = { Text("Reciter") },
+            title = { Text(stringResource(R.string.settings_reciter)) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Reciters.ALL.forEach { r ->
@@ -811,7 +836,7 @@ private fun ReciterRow(tick: Int, onChanged: () -> Unit) {
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { pick = false }) { Text("Cancel") }
+                TextButton(onClick = { pick = false }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -894,7 +919,7 @@ private fun ChoiceRow(
                 val on = opt == selected
                 Box(
                     Modifier
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(IqraShape.chip)
                         .background(
                             if (on) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.surfaceVariant
@@ -904,6 +929,61 @@ private fun ChoiceRow(
                 ) {
                     Text(
                         opt,
+                        fontSize = 12.sp,
+                        color = if (on) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The app language. Keyed on the stored tag rather than the displayed label,
+ * because one of the labels is a native name that must not change shape with
+ * the locale. On 33+ the system store is the operative locale and the system
+ * recreates the activity itself; below that [AppLocales.apply] says whether
+ * the recreate is owed here.
+ */
+@Composable
+private fun LanguageRow(tick: Int) {
+    val ctx = LocalContext.current
+    val current = remember(tick) { AppLocales.stored(ctx) }
+    val options = listOf(
+        AppLocales.SYSTEM to stringResource(R.string.language_system),
+        AppLocales.ENGLISH to stringResource(R.string.language_english),
+        AppLocales.ARABIC to stringResource(R.string.language_arabic),
+    )
+    Column(Modifier.padding(vertical = 6.dp)) {
+        Text(
+            stringResource(R.string.language_subtitle),
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            options.forEach { (tag, native) ->
+                val on = tag == current
+                Box(
+                    Modifier
+                        .clip(IqraShape.chip)
+                        .background(
+                            if (on) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .clickable {
+                            val owesRecreate = AppLocales.apply(ctx, tag)
+                            if (owesRecreate) (ctx as? android.app.Activity)?.recreate()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Text(
+                        native,
                         fontSize = 12.sp,
                         color = if (on) MaterialTheme.colorScheme.onPrimary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1001,12 +1081,12 @@ private fun LiveThemeChooser(tick: Int) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "Same as the app",
+                    stringResource(R.string.settings_live_follow_app),
                     fontSize = 14.sp, color = live.ink,
                     fontWeight = if (follow) FontWeight.SemiBold else FontWeight.Normal,
                 )
                 Text(
-                    "Follows ${appTheme.name} - currently selected",
+                    stringResource(R.string.settings_live_follows_theme, appTheme.name),
                     fontSize = 11.sp, color = live.inkFaint,
                 )
             }
@@ -1046,11 +1126,11 @@ private fun LiveThemeChooser(tick: Int) {
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        t.name,
+                        stringResource(t.labelRes),
                         fontSize = 14.sp, color = live.ink,
                         fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                     )
-                    Text(t.blurb, fontSize = 11.sp, color = live.inkFaint)
+                    Text(stringResource(t.blurbRes), fontSize = 11.sp, color = live.inkFaint)
                 }
             }
         }
@@ -1129,12 +1209,12 @@ private fun ThemeChooser(tick: Int) {
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        t.label,
+                        stringResource(t.labelRes),
                         fontSize = 14.sp,
                         color = live.ink,
                         fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                     )
-                    Text(t.blurb, fontSize = 11.sp, color = live.inkFaint)
+                    Text(stringResource(t.blurbRes), fontSize = 11.sp, color = live.inkFaint)
                 }
             }
         }
