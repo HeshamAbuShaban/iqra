@@ -74,3 +74,34 @@ private const val PDI = '\u2069'
 fun ltr(s: String): String =
     if (s.any { it in '\u0600'..'\u08FF' || it in '\uFB50'..'\uFDFF' || it in '\uFE70'..'\uFEFF' }) s
     else "$LRI$s$PDI"
+
+
+/**
+ * Folds Arabic text for matching, not for display.
+ *
+ * The surah names are stored fully vocalised (سُورَةُ ٱلْفَاتِحَةِ), so a
+ * substring match against what a person types — الفاتحة — never fires: every
+ * haraka and the wasla form of the alef stand between the query and the name.
+ * This strips the marks, folds the alef variants and the hamza carriers onto
+ * their base letters, and folds alif maqsura onto ya. Both sides of a match
+ * go through it; the displayed text is never replaced by its fold.
+ */
+fun arabicFold(s: String): String = buildString(s.length) {
+    for (raw in s) {
+        val c = when (raw) {
+            '\u064E', '\u064F', '\u0650', '\u0651', '\u0652', '\u0653',
+            '\u0654', '\u0655', '\u0656', '\u0657', '\u0658', '\u0659',
+            '\u065A', '\u065B', '\u065C', '\u065D', '\u065E', '\u065F',
+            '\u0670', '\u06D6', '\u06D7', '\u06D8', '\u06D9', '\u06DA',
+            '\u06DB', '\u06DC', '\u06DF', '\u06E0', '\u06E1', '\u06E2',
+            '\u06E3', '\u06E4', '\u06E7', '\u06E8', '\u06EA', '\u06EB',
+            '\u06EC', '\u06ED', '\u0640' -> null
+            '\u0623', '\u0624', '\u0625', '\u0622', '\u0671' -> '\u0627'
+            '\u0626' -> '\u064A'
+            '\u0649' -> '\u064A'
+            '\u0629' -> '\u0647'
+            else -> raw
+        }
+        if (c != null) append(c)
+    }
+}

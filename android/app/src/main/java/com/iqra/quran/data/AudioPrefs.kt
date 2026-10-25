@@ -29,6 +29,15 @@ object AudioPrefs {
     fun setSpeedPercent(ctx: Context, v: Int) =
         write(ctx) { putInt("speedPct", v.coerceIn(SPEED_MIN, SPEED_MAX)) }
 
+    /**
+     * The surah last played, for the home "continue listening" slot. 0 = none.
+     * Written by the UI at the two places playback is chosen from (the play
+     * sheet and the audio library), because the choice to spend internet is
+     * made there and the resume slot should remember exactly that choice.
+     */
+    fun lastPlayedSurah(ctx: Context): Int = prefs(ctx).getInt("lastPlayed", 0)
+    fun setLastPlayedSurah(ctx: Context, s: Int) = write(ctx) { putInt("lastPlayed", s) }
+
     /** Roll into the next surah when one finishes. */
     fun autoNext(ctx: Context): Boolean = prefs(ctx).getBoolean("autoNext", false)
     fun setAutoNext(ctx: Context, v: Boolean) = write(ctx) { putBoolean("autoNext", v) }

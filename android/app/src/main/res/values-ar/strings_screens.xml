@@ -127,4 +127,8 @@
     <string name="night_effective">الفعلية %1$d</string>
     <string name="night_text">سطوع النص</string>
     <string name="night_bg">سطوع الخلفية</string>
+    <string name="home_slot_recite">أكمل التسميع</string>
+    <string name="home_slot_recite_detail">%1$s · آية %2$d</string>
+    <string name="home_slot_listen">استمع مجدداً</string>
+    <string name="home_slot_listen_detail">سورة %1$s</string>
 </resources>

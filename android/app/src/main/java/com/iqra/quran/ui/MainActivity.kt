@@ -403,9 +403,13 @@ private fun SearchSheet(
 ) {
     var text by remember { mutableStateOf("") }
     val results = remember(text) { if (text.trim().length >= 2) query(text.trim()) else emptyList() }
+    // The app theme, not the reader's light scheme: this sheet opens over the
+    // page but it is app chrome, and a cream panel over a dark theme read as
+    // a different app wearing the same name.
+    val c = LocalIqraColors.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = c.surfaceHigh,
     ) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
             OutlinedTextField(
@@ -428,19 +432,19 @@ private fun SearchSheet(
                 Text(
                     "Type at least two letters.",
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    color = c.inkMuted,
                 )
             } else if (results.isEmpty()) {
                 Text(
                     "No ayah matches \u2018$text\u2019.",
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    color = c.inkMuted,
                 )
             } else {
                 Text(
                     "${results.size} ${if (results.size == 1) "ayah" else "ayat"}",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    color = c.inkMuted,
                 )
                 Spacer(Modifier.height(6.dp))
                 LazyColumn(Modifier.height(320.dp)) {
@@ -458,12 +462,12 @@ private fun SearchSheet(
                             Text(
                                 "${hit.surah}:${hit.ayah}",
                                 fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = c.accent,
                             )
-                            Text(body, fontFamily = quranFont, fontSize = 17.sp, lineHeight = 24.sp)
+                            Text(body, fontFamily = quranFont, fontSize = 17.sp, lineHeight = 24.sp, color = c.ink)
                         }
                         HorizontalDivider(
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                            color = c.hairline,
                         )
                     }
                 }
@@ -710,6 +714,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                 // the reciter first so playback resolves to the file that was
                 // tapped, then open its mushaf page with the transport up.
                 AudioPrefs.setReciter(appCtx, reciterId)
+                AudioPrefs.setLastPlayedSurah(appCtx, surah)
                 goReader(surah, null, null)
                 vm.togglePlaySurah(surah)
             },
@@ -749,6 +754,8 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onOpenAyah = { surah, page, ayah -> goReader(surah, page, ayah) },
             onSettings = { screenName = "settings" },
             onProgress = { screenName = "progress" },
+            onRecite = { s, p, a -> goReader(s, p, a) },
+            onListen = { s, p -> goReader(s, p, null) },
             // Opens the door, not the session. Choosing what to train on is a
             // question this card should not answer on the reader's behalf.
             onTest = { _, _ -> screenName = "choose" },
@@ -1822,9 +1829,12 @@ fun ReaderScreen(
                         Column(Modifier.weight(1f)) {
                             ExpectedWordsLine(standWords, statusMap, currentKey, playIndex, playHead, Modifier.fillMaxWidth(), advisories = advisoryMap, hide = hide)
                             // How far through the surah the recitation has come.
-                            // Shown in hide mode so a memoriser sees the same
-                            // progress they would with the words revealed.
-                            if (hide && scopeProgress.isNotEmpty()) {
+                            // Was hide-only; a reciter with the words visible has
+                            // the same question (where am I in this surah) and
+                            // the strip answers it without a percentage, which
+                            // would read as a score of the reciter.
+                            if (scopeProgress.isNotEmpty()) {
+                                Spacer(Modifier.height(3.dp))
                                 ScopeProgressStrip(scopeProgress, Modifier.fillMaxWidth())
                             }
                         }
@@ -1861,6 +1871,11 @@ fun ReaderScreen(
                         showGoto = false
                     }
                 }
+                // The dialog, like the sheets below it, is app chrome: wrap it
+                // in the app's own scheme so it stops inheriting the reader's
+                // light colours on a dark theme.
+                val c = LocalIqraColors.current
+                MaterialTheme(colorScheme = iqraScheme(c)) {
                 AlertDialog(
                     // Every exit clears the field: it used to be cleared only
                     // inside `go`, so cancelling or dismissing left the last
@@ -1892,9 +1907,30 @@ fun ReaderScreen(
                                 keyboardActions = KeyboardActions(onDone = { go() }),
                                 placeholder = { Text("1 – ${mushaf.size}") },
                             )
+                            // Move-to preview: the number is meaningless until
+                            // you know what lives there. The surah (or surahs,
+                            // on the 51 two-surah pages) on the typed page,
+                            // live as you type.
+                            gotoText.toIntOrNull()?.takeIf { it in 1..mushaf.size }?.let { target ->
+                                val names = data?.surahList()
+                                    ?.filter { target >= it.startPage && target <= it.endPage }
+                                    ?.joinToString(" · ") { it.name }
+                                if (!names.isNullOrEmpty()) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(
+                                        names,
+                                        fontSize = 15.sp,
+                                        fontFamily = quranFont,
+                                        color = c.gold,
+                                        textAlign = TextAlign.End,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
                         }
                     },
                 )
+                }
             }
             if (repeatKey != null) {
                 Surface(
@@ -1949,15 +1985,17 @@ fun ReaderScreen(
                 val selAyahBookmarked = remember(selectedAyah, ayahTick) {
                     AyahBookmarks.isBookmarked(sheetCtx, selSurah, selAyah)
                 }
+                val c = LocalIqraColors.current
                 ModalBottomSheet(
                     onDismissRequest = { vm.clearSelection() },
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = c.surfaceHigh,
                 ) {
-                    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+                    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
                         Text(
                             if (rangeIsMulti && rangeEndAyah != null) "Ayahs $selAyah–$rangeEndAyah"
                             else "Ayah $selSurah:$selAyah",
                             fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                            color = c.ink,
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
@@ -1965,9 +2003,10 @@ fun ReaderScreen(
                             fontFamily = quranFont,
                             fontSize = 20.sp,
                             textAlign = TextAlign.End,
+                            color = c.ink,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(10.dp))
                         SheetAction(Icons.Filled.Mic, "Practice from here") {
                             vm.clearSelection()
                             vm.anchorToVerse(selSurah, selAyah)
@@ -2055,12 +2094,12 @@ fun ReaderScreen(
 @Composable
 private fun SheetAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = accentColor)
         Spacer(Modifier.width(14.dp))
-        Text(label, fontSize = 16.sp)
+        Text(label, fontSize = 15.sp, color = LocalIqraColors.current.ink)
     }
 }
 
@@ -2069,18 +2108,18 @@ private fun SheetAction(icon: ImageVector, label: String, onClick: () -> Unit) {
 private fun SheetSectionHeader(label: String) {
     Text(
         label,
-        fontSize = 11.sp,
-        letterSpacing = 1.1.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+        fontSize = 10.sp,
+        letterSpacing = 1.2.sp,
+        color = LocalIqraColors.current.inkFaint,
+        modifier = Modifier.padding(top = 8.dp, bottom = 1.dp),
     )
 }
 
 @Composable
 private fun SheetDivider() {
     HorizontalDivider(
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-        modifier = Modifier.padding(top = 10.dp),
+        color = LocalIqraColors.current.hairline,
+        modifier = Modifier.padding(top = 8.dp),
     )
 }
 
@@ -2096,24 +2135,25 @@ private fun BookmarkRow(
     detail: String,
     onToggle: () -> Unit,
 ) {
+    val c = LocalIqraColors.current
     Row(
-        Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             if (filled) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
             null,
-            tint = if (filled) goldColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (filled) goldColor else c.inkFaint,
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp)
-            Text(detail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
+            Text(title, fontSize = 15.sp, color = c.ink)
+            Text(detail, fontSize = 11.sp, color = c.inkMuted)
         }
         Text(
             if (filled) "Saved" else "Save",
             fontSize = 12.sp,
-            color = if (filled) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (filled) accentColor else c.inkMuted,
         )
     }
 }
@@ -2142,19 +2182,20 @@ private fun ReferencePlaySheet(
     var ayah by remember { mutableIntStateOf(startAtAyah.coerceIn(1, ayahCount)) }
     var speed by remember { mutableIntStateOf(AudioPrefs.speedPercent(ctx)) }
     val seekable = remember(reciterId) { AyahTimings.isSupported(reciterId) }
+    val c = LocalIqraColors.current
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surfaceHigh) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            Text("Listen to the recitation", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text("Listen to the recitation", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = c.ink)
             Spacer(Modifier.height(4.dp))
             Text(
                 "Reference recitation of surah $surah - a reciter's voice, not yours. " +
                     "Nothing you play here is judged as your recitation.",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp, color = c.inkMuted,
             )
             Spacer(Modifier.height(14.dp))
 
-            Text("Reciter", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Reciter", fontSize = 12.sp, color = c.inkMuted)
             Spacer(Modifier.height(6.dp))
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -2166,8 +2207,8 @@ private fun ReferencePlaySheet(
                         Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(
-                                if (on) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
+                                if (on) c.accent
+                                else c.surface
                             )
                             .clickable { reciterId = r.id }
                             .padding(horizontal = 12.dp, vertical = 7.dp)
@@ -2175,8 +2216,8 @@ private fun ReferencePlaySheet(
                         Text(
                             r.name,
                             fontSize = 12.sp,
-                            color = if (on) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (on) c.ground
+                            else c.inkMuted,
                         )
                     }
                 }
@@ -2185,7 +2226,7 @@ private fun ReferencePlaySheet(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Start from ayah", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Start from ayah", fontSize = 12.sp, color = c.inkMuted)
                     Text(
                         if (ayah == 1) "the beginning" else "ayah $ayah",
                         fontSize = 15.sp,
@@ -2202,11 +2243,11 @@ private fun ReferencePlaySheet(
             Text(
                 if (seekable) "This reciter has per-ayah timings, so playback starts at the chosen ayah."
                 else "This reciter has no per-ayah timings, so playback starts at the surah's beginning.",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp, color = c.inkMuted,
             )
             Spacer(Modifier.height(14.dp))
 
-            Text("Speed", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Speed", fontSize = 12.sp, color = c.inkMuted)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(75, 100, 125, 150).forEach { pct ->
@@ -2215,8 +2256,8 @@ private fun ReferencePlaySheet(
                         Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(
-                                if (on) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
+                                if (on) c.accent
+                                else c.surface
                             )
                             .clickable { speed = pct }
                             .padding(horizontal = 14.dp, vertical = 7.dp)
@@ -2224,8 +2265,8 @@ private fun ReferencePlaySheet(
                         Text(
                             if (pct % 100 == 0) "${pct / 100}×" else "${pct / 100.0}×",
                             fontSize = 12.sp,
-                            color = if (on) MaterialTheme.colorScheme.onPrimary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (on) c.ground
+                            else c.inkMuted,
                         )
                     }
                 }
@@ -2237,6 +2278,7 @@ private fun ReferencePlaySheet(
                 onClick = {
                     AudioPrefs.setReciter(ctx, reciterId)
                     AudioPrefs.setSpeedPercent(ctx, speed)
+                    AudioPrefs.setLastPlayedSurah(ctx, surah)
                     when {
                         isPlayingThis -> vm.togglePlaySurah(surah)
                         ayah == 1 -> vm.togglePlaySurah(surah)

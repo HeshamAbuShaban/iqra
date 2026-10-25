@@ -138,12 +138,13 @@ private fun ChooseContent(
 
     val filtered = remember(query.text, surahs) {
         val q = query.text.trim()
+        val qAr = arabicFold(q)
         if (q.isEmpty()) surahs
         else surahs.filter {
             it.number.toString() == q ||
                 it.nameEn.contains(q, true) ||
-                it.name.contains(q) ||
-                it.ayahCount.toString() == q
+                it.ayahCount.toString() == q ||
+                (qAr.isNotEmpty() && arabicFold(it.name).contains(qAr))
         }
     }
 

@@ -32,6 +32,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Headphones
+import com.iqra.quran.data.AudioPrefs
+import com.iqra.quran.data.PracticeLog
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ViewList
@@ -100,6 +103,11 @@ fun HomeScreen(
     onTest: (Int, Int) -> Unit = { _, _ -> },
     onProgress: () -> Unit = {},
     onResume: () -> Unit = {},
+    // The two further resume doors. Read resumes the page; recite resumes the
+    // last recorded position with its anchor; listen resumes the last surah
+    // whose playback was chosen. All three remember a different act.
+    onRecite: (Int, Int, Int) -> Unit = { _, _, _ -> },
+    onListen: (Int, Int) -> Unit = { _, _ -> },
 ) {
     val data = vm.data.collectAsStateWithLifecycle().value ?: return
     var tab by rememberSaveable { mutableStateOf(HomeTab.Surahs) }
@@ -179,12 +187,19 @@ fun HomeScreen(
         )
 
         val trimmed = q.trim()
-        val surahHits = remember(trimmed, surahs) {
-            if (trimmed.isBlank()) emptyList() else surahs.filter {
-                it.number.toString() == trimmed ||
-                    it.name.contains(trimmed) ||
-                    it.nameEn.contains(trimmed, ignoreCase = true) ||
-                    it.nameEn.startsWith(trimmed, ignoreCase = true)
+        // The stored names are fully vocalised, so the Arabic side of the
+        // match is folded (marks stripped, alef variants unified) on both
+        // sides - see arabicFold. The English side is a plain case-fold.
+        val qAr = remember(trimmed) { arabicFold(trimmed) }
+        val surahHits = remember(trimmed, qAr, surahs) {
+            if (trimmed.isBlank()) emptyList() else {
+                val qEn = trimmed.lowercase()
+                val qNum = trimmed.toIntOrNull()
+                surahs.filter {
+                    it.number == qNum ||
+                        it.nameEn.lowercase().contains(qEn) ||
+                        (qAr.isNotEmpty() && arabicFold(it.name).contains(qAr))
+                }
             }
         }
         val ayahHits = remember(trimmed) { if (trimmed.isBlank()) emptyList() else vm.searchAyat(trimmed) }
@@ -194,6 +209,7 @@ fun HomeScreen(
                 surahHits = surahHits,
                 ayahHits = ayahHits,
                 data = data,
+                lastRead = lastRead,
                 onOpen = onOpen,
                 onOpenAyah = onOpenAyah,
             )
@@ -202,7 +218,7 @@ fun HomeScreen(
 
         HomeTabRow(tab) { tab = it }
         when (tab) {
-            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs, onTest)
+            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs, onTest, onRecite, onListen)
             HomeTab.Juz -> JuzList(vm, data, onOpen)
             HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen, onOpenAyah)
         }
@@ -214,6 +230,7 @@ private fun SearchResults(
     surahHits: List<com.iqra.quran.data.SurahInfo>,
     ayahHits: List<com.iqra.quran.data.AyahSearch.Hit>,
     data: com.iqra.quran.data.QuranData,
+    lastRead: Pair<Int, Int>?,
     onOpen: (Int, Int) -> Unit,
     onOpenAyah: (Int, Int, Int) -> Unit,
 ) {
@@ -229,7 +246,7 @@ private fun SearchResults(
         if (surahHits.isNotEmpty()) {
             item { SectionHeader(stringResource(R.string.home_section_surahs), surahHits.size, false) }
             items(surahHits, key = { "s${it.number}" }) { s ->
-                SurahRow(s) { n, p -> onOpen(n, p) }
+                SurahRow(s, lastRead) { n, p -> onOpen(n, p) }
             }
         }
         if (ayahHits.isNotEmpty()) {
@@ -321,6 +338,8 @@ fun SurahIndex(
     surahs: List<com.iqra.quran.data.SurahInfo> =
         data.surahList(),
     onTest: (Int, Int) -> Unit = { _, _ -> },
+    onRecite: (Int, Int, Int) -> Unit = { _, _, _ -> },
+    onListen: (Int, Int) -> Unit = { _, _ -> },
 ) {
     // `surahs` arrives prebuilt from HomeScreen. The default keeps this
     // composable usable on its own without forcing every caller to remember it.
@@ -380,13 +399,14 @@ fun SurahIndex(
                             }
                         }
                     }
+                    item { ResumeSlots(vm, surahs, onRecite, onListen) }
                     if (meccan.isNotEmpty()) {
                         item { SectionHeader(stringResource(R.string.home_section_meccan), meccan.size, false) }
-                        items(meccan, key = { it.number }) { SurahRow(it, onOpen) }
+                        items(meccan, key = { it.number }) { SurahRow(it, lastRead, onOpen) }
                     }
                     if (madani.isNotEmpty()) {
                         item { SectionHeader(stringResource(R.string.home_section_madani), madani.size, true) }
-                        items(madani, key = { it.number }) { SurahRow(it, onOpen) }
+                        items(madani, key = { it.number }) { SurahRow(it, lastRead, onOpen) }
                     }
                     if (filtered.isEmpty()) {
                         item { EmptyHint(stringResource(R.string.home_empty_surah_match)) }
@@ -413,10 +433,11 @@ fun SurahIndex(
                             }
                         }
                     }
+                    item { ResumeSlots(vm, surahs, onRecite, onListen) }
                     items(gridRows, key = { it.first().number }) { row ->
                         Row(Modifier.fillMaxWidth()) {
                             row.forEach { s ->
-                                Box(Modifier.weight(1f)) { SurahGridCell(s, onOpen) }
+                                Box(Modifier.weight(1f)) { SurahGridCell(s, lastRead, onOpen) }
                             }
                             repeat(3 - row.size) { Box(Modifier.weight(1f)) {} }
                         }
@@ -453,6 +474,82 @@ fun ContinueCard(
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The two further resume doors beneath Continue.
+ *
+ * Reading, reciting and listening are three different acts that end in
+ * different places, and one "continue" could only remember one of them. The
+ * recite slot resumes the latest recorded session's own position - the lock's
+ * spot, not the page top - and the listen slot resumes the surah whose
+ * playback was last chosen. A slot with nothing behind it renders nothing, so
+ * a fresh install sees only the read door.
+ */
+@Composable
+fun ResumeSlots(
+    vm: PracticeViewModel,
+    surahs: List<com.iqra.quran.data.SurahInfo>,
+    onRecite: (Int, Int, Int) -> Unit,
+    onListen: (Int, Int) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val lastRecite = remember {
+        PracticeLog.summarise(ctx).recent
+            .firstOrNull { it.safePosition != null }?.safePosition
+    }
+    val lastListen = remember { AudioPrefs.lastPlayedSurah(ctx) }
+    if (lastRecite != null) {
+        val (surah, ayah) = lastRecite
+        val info = surahs.firstOrNull { it.number == surah }
+        if (info != null) {
+            val page = vm.pageOfVerse(surah, ayah) ?: info.startPage
+            SlotCard(
+                icon = Icons.Filled.Mic,
+                title = stringResource(R.string.home_slot_recite),
+                detail = stringResource(R.string.home_slot_recite_detail, info.nameEn, ayah),
+            ) { onRecite(surah, page, ayah) }
+        }
+    }
+    if (lastListen in 1..114) {
+        val info = surahs.firstOrNull { it.number == lastListen }
+        if (info != null) {
+            SlotCard(
+                icon = Icons.Filled.Headphones,
+                title = stringResource(R.string.home_slot_listen),
+                detail = stringResource(R.string.home_slot_listen_detail, info.nameEn),
+            ) { onListen(info.number, info.startPage) }
+        }
+    }
+}
+
+@Composable
+private fun SlotCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+) {
+    Card(
+        Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        shape = IqraShape.card,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.secondary)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text(detail, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -543,11 +640,20 @@ fun SectionHeader(title: String, count: Int, madani: Boolean) {
 }
 
 @Composable
-fun SurahRow(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
+fun SurahRow(
+    s: com.iqra.quran.data.SurahInfo,
+    lastRead: Pair<Int, Int>? = null,
+    onOpen: (Int, Int) -> Unit,
+) {
     val madani = s.revelationType == "Madani"
     val accent = if (madani) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    // The row resumes, it does not restart: tapping the surah you were last
+    // reading opened its FIRST page, and the page you were actually on was
+    // reachable only by hunting for it. The continue card knew better; the
+    // rows now agree with it.
+    val openPage = if (lastRead?.first == s.number) lastRead.second else s.startPage
     Card(
-        Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onOpen(s.number, s.startPage) },
+        Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onOpen(s.number, openPage) },
         shape = IqraShape.card,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -580,11 +686,16 @@ fun SurahRow(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
 }
 
 @Composable
-fun SurahGridCell(s: com.iqra.quran.data.SurahInfo, onOpen: (Int, Int) -> Unit) {
+fun SurahGridCell(
+    s: com.iqra.quran.data.SurahInfo,
+    lastRead: Pair<Int, Int>? = null,
+    onOpen: (Int, Int) -> Unit,
+) {
     val madani = s.revelationType == "Madani"
     val accent = if (madani) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    val openPage = if (lastRead?.first == s.number) lastRead.second else s.startPage
     Column(
-        Modifier.padding(6.dp).fillMaxWidth().clickable { onOpen(s.number, s.startPage) }
+        Modifier.padding(6.dp).fillMaxWidth().clickable { onOpen(s.number, openPage) }
             .clip(IqraShape.card).background(MaterialTheme.colorScheme.surface).padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
