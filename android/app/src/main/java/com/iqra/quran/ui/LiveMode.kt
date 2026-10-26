@@ -185,15 +185,17 @@ private fun LiveModeContent(
     val gateReason by vm.gateReason.collectAsStateWithLifecycle()
     val decoderState by vm.decoderState.collectAsStateWithLifecycle()
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
-    val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
     val needs = remember { vm.policyNeeds() }
+    val paused by vm.paused.collectAsStateWithLifecycle()
     var micDb by remember { mutableStateOf(0f) }
     var micN by remember { mutableStateOf(0) }
     LaunchedEffect(lensOn) {
         if (!lensOn) return@LaunchedEffect
         while (true) {
-            micDb = vm.micLevel()
-            micN = vm.micSampleCount()
+            // Zero when the engine holds, like the tone brightness below: the
+            // wave must not undulate for audio nothing is listening to.
+            micDb = if (paused) 0f else vm.micLevel()
+            micN = if (paused) 0 else vm.micSampleCount()
             delay(250)
         }
     }
@@ -217,7 +219,7 @@ private fun LiveModeContent(
     // The ENGINE's pause, not a local flag. `vm.paused` is written by
     // `setPaused` and read back by the poll loop, so the icon and the thing
     // that is actually not judging can never disagree.
-    val paused by vm.paused.collectAsStateWithLifecycle()
+
     var finished by remember { mutableStateOf(false) }
     var showExit by remember { mutableStateOf(false) }
 
@@ -676,7 +678,6 @@ private fun LiveModeContent(
                         next = policy.next, here = policy.here, back = policy.back,
                         needs = needs,
                         micDb = micDb, micN = micN,
-                        wpm = wpm,
                         statusMap = statusMap,
                         scopeProgress = scopeProgress,
                     )
@@ -1083,7 +1084,6 @@ private fun EngineLens(
     needs: Triple<Float, Float, Float>,
     micDb: Float,
     micN: Int,
-    wpm: Double,
     statusMap: Map<String, WordStatus>,
     scopeProgress: List<ScopeAyah>,
 ) {
@@ -1154,8 +1154,8 @@ private fun EngineLens(
             LensBar(lcG, stringResource(R.string.lens_back), back, needs.third, Modifier.weight(1f), tick = true)
         }
         Text(
-            stringResource(R.string.lens_policy_note,
-                "%.2f".format(needs.first), "%.2f".format(needs.third)),
+            ltr(stringResource(R.string.lens_policy_note,
+                "%.2f".format(needs.first), "%.2f".format(needs.third))),
             fontSize = 9.sp,
             color = lcG.inkFaint,
         )
@@ -1168,7 +1168,7 @@ private fun EngineLens(
                 if (gateClosed > 0L) "$gateClosed" else null,
             )
             Text(
-                bits.joinToString("  ·  "),
+                ltr(bits.joinToString("  ·  ")),
                 fontSize = 10.sp,
                 color = lcG.gold,
                 maxLines = 2,
@@ -1181,7 +1181,6 @@ private fun EngineLens(
             LensCount(lcG, "✕", "${decided.second}", lcG.chartBad, Modifier.weight(1f))
             LensCount(lcG, "?", "$unknown", lcG.inkMuted, Modifier.weight(1f))
             LensCount(lcG, stringResource(R.string.lens_heard), "$heard/$total", lcG.ink, Modifier.weight(1.4f))
-            LensCount(lcG, stringResource(R.string.practice_wpm_short), "%.0f".format(wpm), lcG.ink, Modifier.weight(1f))
         }
 
         // ---- the feed ----
@@ -1196,7 +1195,7 @@ private fun EngineLens(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            when (st) { WordStatus.CORRECT -> "✓"; else -> "✕" },
+                            ltr(when (st) { WordStatus.CORRECT -> "✓"; else -> "✕" }),
                             fontSize = 11.sp,
                             color = when (st) { WordStatus.CORRECT -> lcG.wordGood; else -> lcG.chartBad },
                         )
@@ -1207,7 +1206,7 @@ private fun EngineLens(
                             color = lcG.inkFaint,
                         )
                         Text(
-                            String.format(java.util.Locale.US, "%tT", java.util.Date(at)),
+                            ltr(String.format(java.util.Locale.US, "%tT", java.util.Date(at))),
                             fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             color = lcG.inkFaint,
@@ -1237,7 +1236,7 @@ private fun LensChip(c: IqraColors, label: String, value: String, tint: Color) {
 private fun LensMic(c: IqraColors, micDb: Float, micN: Int) {
     Surface(shape = RoundedCornerShape(8.dp), color = c.surfaceHigh) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 5.dp).width(74.dp)) {
-            Text(stringResource(R.string.lens_mic), fontSize = 8.sp, letterSpacing = 0.8.sp, color = c.inkFaint)
+            Text(ltr(stringResource(R.string.lens_mic)), fontSize = 8.sp, letterSpacing = 0.8.sp, color = c.inkFaint)
             Canvas(Modifier.fillMaxWidth().height(6.dp).padding(vertical = 1.dp)) {
                 val level = (micDb * 4f).coerceIn(0f, 1f)
                 drawRoundRect(
@@ -1253,7 +1252,7 @@ private fun LensMic(c: IqraColors, micDb: Float, micN: Int) {
                     androidx.compose.ui.geometry.CornerRadius(3f, 3f),
                 )
             }
-            Text("$micN", fontSize = 8.sp, fontFamily = FontFamily.Monospace, color = c.inkFaint)
+            Text(ltr("$micN"), fontSize = 8.sp, fontFamily = FontFamily.Monospace, color = c.inkFaint)
         }
     }
 }
@@ -1277,7 +1276,7 @@ private fun LensBar(
             Text(label, fontSize = 9.sp, letterSpacing = 0.8.sp, color = c.inkFaint)
             Spacer(Modifier.weight(1f))
             Text(
-                if (coverage < 0f) "—" else "%.0f%%".format(coverage * 100f),
+                ltr(if (coverage < 0f) "—" else "%.0f%%".format(coverage * 100f)),
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
                 color = if (threshold != null && coverage >= threshold) c.gold else c.ink,
