@@ -2222,14 +2222,21 @@ private fun JumpPicker(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
                 )
             }
+            // A scrollable Column, not a lazy list: the menu sizes itself from
+            // its content's intrinsic measurement, which a SubcomposeLayout
+            // (LazyColumn) cannot answer - the dialog crashed the app on the
+            // picker's first open.
             DropdownMenu(
                 expanded = open,
                 onDismissRequest = { open = false },
-                modifier = Modifier.heightIn(max = 340.dp),
                 containerColor = c.surfaceHigh,
             ) {
-                LazyColumn(state = rememberLazyListState(initialFirstVisibleItemIndex = selected.coerceAtMost(count - 1))) {
-                    items(count) { i ->
+                Column(
+                    Modifier
+                        .heightIn(max = 340.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    repeat(count) { i ->
                         DropdownMenuItem(
                             text = {
                                 Text(
