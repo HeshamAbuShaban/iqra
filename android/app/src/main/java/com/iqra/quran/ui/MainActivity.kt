@@ -562,7 +562,7 @@ private fun ExpectedWordsLine(
 }
 
 @Composable
-private fun PulseDot(color: Color = wrongColor, label: String? = null) {
+internal fun PulseDot(color: Color = wrongColor, label: String? = null) {
     val t = rememberInfiniteTransition(label = "pulse")
     val a by t.animateFloat(
         0.35f, 1f,
@@ -668,6 +668,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
         "observer" -> Screen.Observer(screenReport)
         "choose" -> Screen.Choose
         "library" -> Screen.Library
+        "console" -> Screen.Console
         else -> Screen.Picker
     }
     val goReader: (Int, Int?, Int?) -> Unit = { s, p, a ->
@@ -692,6 +693,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             "report" -> screenName = reportFrom
             "observer" -> screenName = "report"
             "library" -> screenName = "settings"
+            "console" -> screenName = if (vm.recording.value) "live" else "settings"
             else -> screenName = "picker"
         }
     }
@@ -704,6 +706,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onOpenProgress = { screenName = "progress" },
             onOpenLibrary = { screenName = "library" },
             onOpenDiag = { screenName = "diag" },
+            onOpenConsole = { screenName = "console" },
         )
         Screen.Library -> AudioLibraryScreen(
             onBack = { screenName = "settings" },
@@ -781,6 +784,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
                     onRequestMic { vm.startRecite(pg, screen.surah to screen.startAyah) }
                 },
                 onExit = { screenName = "picker" },
+                onOpenEngine = { screenName = "console" },
                 // Finishing a session goes straight to its report. `stopRecite`
                 // flushes the record synchronously before tearing the session down,
                 // so the file is on disk by the time this runs. Landing on a list
@@ -797,6 +801,11 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             )
         }
         is Screen.Diag -> DiagScreen(vm) { screenName = "picker" }
+        Screen.Console -> EngineConsoleScreen(vm) {
+            // Opened from a running session goes back to it; from Settings
+            // stays in Settings.
+            screenName = if (vm.recording.value) "live" else "settings"
+        }
         is Screen.Reader -> {
             val pages = mushaf
             if (pages == null) {
@@ -838,6 +847,7 @@ sealed interface Screen {
     /** Standalone door for the recitation test. Asks what to train on. */
     data object Choose : Screen
     /** Recitation test from memory. Count 0 means "to the end of the surah". */
+    data object Console : Screen
     data class Live(val surah: Int, val startAyah: Int, val count: Int) : Screen
 }
 

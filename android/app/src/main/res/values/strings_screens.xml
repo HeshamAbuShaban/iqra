@@ -148,4 +148,18 @@
     <string name="lens_policy_note">NEXT ≥ %1$s advances the lock · BACK ≥ %2$s retreats</string>
     <string name="lens_heard">heard</string>
     <string name="practice_wpm_short">wpm</string>
+    <string name="console_listening">listening</string>
+    <string name="console_rec">REC</string>
+    <string name="console_title">Engine console</string>
+    <string name="console_heard_title">WHAT THE MODEL HEARD</string>
+    <string name="console_heard_empty">nothing yet — the session has not spoken</string>
+    <string name="console_heard_meta">%1$d units in the session log · base %2$d · newest at %3$d ms</string>
+    <string name="console_reading_title">THE READING, WITH ITS SPOTS</string>
+    <string name="console_no_session">no recitation running</string>
+    <string name="console_spot_waqf">waqf junction</string>
+    <string name="console_spot_final">unsounded final</string>
+    <string name="console_spot_low">thin evidence</string>
+    <string name="console_calc_title">THE CALCULATION</string>
+    <string name="console_events_title">EVENT RING</string>
+    <string name="console_counts_title">THE SESSION SO FAR</string>
 </resources>

@@ -147,4 +147,18 @@
     <string name="lens_policy_note">التالية ≥ %1$s يقرّب التتبع · السابقة ≥ %2$s يرجّعه</string>
     <string name="lens_heard">سُمِع</string>
     <string name="practice_wpm_short">كلمة/د</string>
+    <string name="console_listening">يستمع</string>
+    <string name="console_rec">تسجيل</string>
+    <string name="console_title">وحدة تحكم المحرك</string>
+    <string name="console_heard_title">ما سمعه النموذج</string>
+    <string name="console_heard_empty">لا شيء بعد — الجلسة لم تنطق</string>
+    <string name="console_heard_meta">وحدة في سجل الجلسة: %1$d · الأساس %2$d · الأحدث عند %3$d م.ث</string>
+    <string name="console_reading_title">التلاوة، وبقعها</string>
+    <string name="console_no_session">لا تسميع جارٍ</string>
+    <string name="console_spot_waqf">موضع وقف</string>
+    <string name="console_spot_final">نهاية غير مسموعة</string>
+    <string name="console_spot_low">دليل رقيق</string>
+    <string name="console_calc_title">الحساب</string>
+    <string name="console_events_title">حلقة الأحداث</string>
+    <string name="console_counts_title">الجلسة حتى الآن</string>
 </resources>

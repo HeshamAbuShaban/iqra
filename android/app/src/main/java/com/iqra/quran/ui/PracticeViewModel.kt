@@ -1362,6 +1362,30 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     private val emissionLog = ArrayList<String>()
 
     /**
+     * The live tail of [emissionLog], for the engine console.
+     *
+     * This is the additive piece of the console's contract: the recogniser
+     * publishes what it heard and the console renders it, so a future engine
+     * only has to keep this flow alive to keep the whole surface working. The
+     * copy is the last [48] symbols - a bounded, per-poll snapshot -
+     * and it is emitted only when a poll actually appended something, so a
+     * quiet microphone costs nothing. The hot path itself is untouched: the
+     * log, its arrivals and the base stay exactly as the windows index them.
+     */
+    data class HeardUnits(
+        val units: List<String>,
+        /** Absolute index of units[0] in the session log (post-trim base). */
+        val base: Int,
+        /** Size of the full session log, not just the tail. */
+        val total: Int,
+        /** Session clock (ms since sessionStartedAtMs) of the newest unit. */
+        val newestMs: Long,
+    )
+
+    private val _heardUnits = MutableStateFlow(HeardUnits(emptyList(), 0, 0, 0L))
+    val heardUnits: StateFlow<HeardUnits> = _heardUnits
+
+    /**
      * Arrival time of each symbol in [emissionLog], on `wt`'s clock (ms since
      * [sessionStartedAtMs]). Poll-granular by construction: every symbol a poll
      * newly produced is stamped with that poll's clock reading, because the
@@ -1469,6 +1493,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             emissionMs.addAll(keptMs)
             emissionBase += drop
         }
+        _heardUnits.value = HeardUnits(
+            emissionLog.subList(maxOf(0, emissionLog.size - 48), emissionLog.size).toList(),
+            emissionBase,
+            emissionLog.size,
+            nowMs,
+        )
     }
 
     private fun clearEmissionLog() {
@@ -1476,6 +1506,9 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         emissionMs.clear()
         emissionBase = 0
         streamConsumed = 0
+        // The console must not show the previous session's tail while the new
+        // one has not spoken yet.
+        _heardUnits.value = HeardUnits(emptyList(), 0, 0, 0L)
         ayahArrival.clear()
         // And the span ends, which index into that log. Leaving them would make
         // the next session's first window start after a position from a

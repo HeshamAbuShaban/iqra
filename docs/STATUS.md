@@ -2200,3 +2200,20 @@ remembered in ReaderPrefs) that shows the recogniser working: pipeline chips
 against their gold threshold ticks, session counts, and each verdict as it
 lands. It reads only already-published state; nothing in PracticeViewModel
 moved. A lock that sits still now shows its cause — a bar short of its tick.
+
+**The engine console (build #285+).** The live instruments moved off the
+recitation screen onto their own surface — `EngineConsoleScreen`, reachable
+from the recite screen's heart icon (back returns to the running session) and
+from Settings → About. Five bands, all reading published state at poll
+cadence with no sampling of engine internals: what the model heard (the
+phoneme tail, newly published as `heardUnits` — the one additive piece on the
+recogniser's surface, ~15 lines, hot path untouched, and the seam a future
+engine keeps to keep the dashboard alive), the reading with its measured
+spots (waqf junctions, unsounded finals, thin evidence — amber, never red,
+from the advisory channel), the coverage trio against their thresholds with
+the live why-line, the engine's own event ring, and the session counts. The
+in-Live band and its pref are gone; the recite screen is byte-identical in
+behaviour to its shipping state except the heart now navigates. Letter-level
+tajweed colouring remains gated on the measured letter→class table
+(docs/TAJWEED_AND_MEMORISATION.md) — the console renders the spots the
+engine can already prove.
