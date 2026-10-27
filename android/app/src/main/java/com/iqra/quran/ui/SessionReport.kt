@@ -97,6 +97,7 @@ fun SessionReportScreen(
     data: QuranData,
     recordName: String,
     onOpenObserver: () -> Unit,
+    onOpenConsole: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val c = LocalIqraColors.current
@@ -239,6 +240,7 @@ fun SessionReportScreen(
                 }
                 if (r.frames > 0 || r.wordRows.any { it.wt != null }) {
                     item { ObserverCard(c, onOpenObserver) }
+                    item { ConsoleCard(c, onOpenConsole) }
                 }
                 if (r.perAyah.isNotEmpty()) item { AyahCard(r, c) }
                 item { BreakdownCard(r, c) }
@@ -362,6 +364,31 @@ private fun ObserverCard(c: IqraColors, onOpen: () -> Unit) {
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                 Text(
                     stringResource(R.string.report_watch_again_blurb),
+                    fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
+                )
+            }
+            TextButton(onClick = onOpen) {
+                Text(stringResource(R.string.report_open), color = c.accent, fontSize = 14.sp)
+            }
+        }
+    }
+}
+
+/**
+ * The session console, reached where the session just ended: the scrubbed
+ * night, the alignment of any word, the session's own timeline - over THIS
+ * record's data while it is still the freshest thing on the screen. Back
+ * from the console returns here.
+ */
+@Composable
+private fun ConsoleCard(c: IqraColors, onOpen: () -> Unit) {
+    Panel(c) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.console_report_card), fontSize = 13.sp, color = c.ink,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                Text(
+                    stringResource(R.string.console_report_card_blurb),
                     fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                 )
             }

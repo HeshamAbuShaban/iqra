@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -71,17 +72,54 @@ import kotlin.math.min
  * block the poll loop, and a future engine that keeps this narrow surface
  * keeps the whole dashboard.
  */
+/**
+ * The night's data, from whichever truth is open: the running session's
+ * samples and verdict flow, or a finished session's own record. What the
+ * record does not carry (mic envelope, lock walk, gate history) is absent in
+ * record mode; its envelope is the model's own emission density - what it
+ * actually received per second, which is the truer activity anyway.
+ */
+private data class NightData(
+    val spanMs: Long,
+    val env: List<Pair<Long, Float>>,
+    val walk: List<Pair<Long, Int>>?,
+    val mist: List<Pair<Long, Boolean>>?,
+    val stars: List<Triple<Long, WordStatus, String>>,
+)
+
 @Composable
 fun EngineConsoleScreen(
     vm: PracticeViewModel,
+    recordName: String? = null,
     onBack: () -> Unit,
 ) {
     val lcG = LocalIqraColors.current
+    val ctx = LocalContext.current
+    // TWO modes, one screen. LIVE watches the running session's published
+    // state; RECORD replays a finished session from its own record - the
+    // console is reachable from the report, and a report's session is over:
+    // its live state is cleared, its record is the truth. What the record
+    // cannot replay (the lock walk, the gate history) is honestly absent
+    // rather than invented.
+    val rec = remember(recordName) {
+        recordName?.let { com.iqra.quran.data.PracticeLog.record(ctx, it) }
+    }
+    val statusMapR = remember(rec) {
+        rec?.wordRows?.filter { it.st != "SKIPPED" }?.associate { it.key to it.st } ?: emptyMap()
+    }
+    val advisoryMapR = remember(rec) {
+        rec?.advisories?.associate { it.key to it } ?: emptyMap()
+    }
+
     val recording by vm.recording.collectAsStateWithLifecycle()
     val sessionSound by vm.sessionSound.collectAsStateWithLifecycle()
     val heard by vm.heardUnits.collectAsStateWithLifecycle()
-    val statusMap by vm.statusMap.collectAsStateWithLifecycle()
-    val advisoryMap by vm.advisoryMap.collectAsStateWithLifecycle()
+    val liveStatus by vm.statusMap.collectAsStateWithLifecycle()
+    val liveAdvisory by vm.advisoryMap.collectAsStateWithLifecycle()
+    val statusOf: Map<String, WordStatus> = if (rec != null) {
+        statusMapR.mapValues { runCatching { WordStatus.valueOf(it.value) }.getOrDefault(WordStatus.UNKNOWN) }
+    } else liveStatus
+    val spots: Set<String> = if (rec != null) advisoryMapR.keys else liveAdvisory.keys
     val scopeProgress by vm.scopeProgress.collectAsStateWithLifecycle()
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
@@ -118,9 +156,55 @@ fun EngineConsoleScreen(
         }
     }
 
+    val night: NightData = if (rec != null) {
+        remember(rec) {
+            val ems = rec.emMs
+            val span = ems.lastOrNull() ?: 1L
+            val bins = IntArray(((span / 250) + 1).toInt().coerceAtLeast(1))
+            ems.forEach { ms ->
+                val b = (ms / 250).toInt()
+                if (b in bins.indices) bins[b]++
+            }
+            val maxB = (bins.maxOrNull() ?: 1).coerceAtLeast(1)
+            NightData(
+                spanMs = span,
+                env = bins.mapIndexed { i, n -> Pair(i * 250L, n.toFloat() / maxB) },
+                walk = null, mist = null,
+                stars = rec.wordRows.mapNotNull { r ->
+                    r.wt?.let { Triple(it.toLong(),
+                        runCatching { WordStatus.valueOf(r.st) }.getOrDefault(WordStatus.UNKNOWN), r.key) }
+                },
+            )
+        }
+    } else {
+        NightData(
+            spanMs = maxOf(1L, nowMs),
+            env = env.toList(),
+            walk = lockTrace.toList(),
+            mist = gateTrace.toList(),
+            stars = verdicts.map { Triple(it.atMs, it.status, it.key) },
+        )
+    }
+    val nightSrc = if (rec != null) "record: emissions · wordRows[].wt" else "verdictTimeline · mic envelope"
+
     var selKey by remember { mutableStateOf<String?>(null) }
-    val scopeAyahs = remember(scopeProgress) { scopeProgress.map { it.ayah } }
-    val wordsByAyah = remember(scopeProgress, scopeSurah) {
+    val mushaf by vm.mushaf.collectAsStateWithLifecycle()
+    val recordSurah = rec?.surahNow ?: 0
+    val scopeAyahs: List<Int> = if (rec != null) {
+        remember(rec) {
+            rec.wordRows.mapNotNull { it.key.split(":").getOrNull(1)?.toIntOrNull() }.distinct()
+        }
+    } else scopeProgress.map { it.ayah }
+    val wordsByAyah: Map<Int, List<com.iqra.quran.data.MushafWord>> = if (rec != null) {
+        // The engine's active word list is empty when idle; the record mode
+        // reads its words straight off the mushaf pages of the record's surah.
+        remember(rec, mushaf, recordSurah) {
+            val pages = mushaf.orEmpty()
+            if (pages.isEmpty()) emptyMap()
+            else com.iqra.quran.data.Mushaf.wordsForSurah(pages, recordSurah)
+                .groupBy { it.verse }
+        }
+    } else {
         scopeProgress.associate { it.ayah to vm.standWordsFor(it.ayah) }
     }
 
@@ -168,6 +252,7 @@ fun EngineConsoleScreen(
                     if (scopeAyahs.isEmpty()) {
                         EmptyNote(lcG, stringResource(R.string.console_no_session))
                     } else {
+                        val lineSurah = if (rec != null) recordSurah else scopeSurah
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             scopeAyahs.takeLast(5).forEach { ayah ->
                                 val ws = wordsByAyah[ayah].orEmpty()
@@ -183,16 +268,16 @@ fun EngineConsoleScreen(
                                         modifier = Modifier.width(26.dp),
                                     )
                                     ws.forEach { w ->
-                                        val key = "$scopeSurah:$ayah:${w.wordInVerse}"
-                                        val st = statusMap[key]
-                                        val spot = advisoryMap[key]
+                                        val key = "$lineSurah:$ayah:${w.wordInVerse}"
+                                        val st = statusOf[key]
+                                        val spot = key in spots
                                         val sel = key == selKey
                                         Text(
                                             w.text,
                                             fontFamily = quranFont,
                                             fontSize = 23.sp,
                                             color = when {
-                                                spot != null -> lcG.gold
+                                                spot -> lcG.gold
                                                 st == WordStatus.WRONG -> lcG.wordBad
                                                 st == WordStatus.CORRECT -> lcG.ink
                                                 key == currentKey -> lcG.goldBright
@@ -227,13 +312,59 @@ fun EngineConsoleScreen(
                         EmptyNote(lcG, stringResource(R.string.console_pick_word))
                     } else {
                         val parts = sel.split(":")
-                        val al = remember(sel, heard, scopeProgress) {
-                            runCatching {
-                                vm.ayahAlignmentFor(parts[0].toInt(), parts[1].toInt())
-                            }.getOrNull()
+                        if (rec != null) {
+                            // RECORD: the window is the stream as of the word's
+                            // own decision instant; the stitch is the console's
+                            // light prefix walk, labelled as such.
+                            val row = rec.wordRows.firstOrNull { it.key == sel }
+                            val alR = remember(sel) {
+                                runCatching {
+                                    // The table loads with the engine's first
+                                    // session; a console opened straight from a
+                                    // report (fresh process) loads it here. All
+                                    // idempotent, none start a stream.
+                                    val app = ctx.applicationContext
+                                    com.iqra.quran.ml.PhonemeMapper.ensureTable(
+                                        com.iqra.quran.data.AssetPaths.file(app, "ordered_quran_phonemes.json"))
+                                    runCatching {
+                                        com.iqra.quran.ml.PhonemeMapper.ensureWordTable(
+                                            app.assets.open("word_aligned_phonemes.json"))
+                                    }
+                                    com.iqra.quran.ml.PhonemeMapper.ensureUnits(
+                                        com.iqra.quran.data.AssetPaths.file(app, "tokens.txt"))
+                                    val exp = com.iqra.quran.ml.PhonemeMapper.expected(
+                                        parts[0].toInt(), parts[1].toInt())
+                                    if (exp == null) null else {
+                                        val wtMs = (row?.wt ?: 0).toLong()
+                                        val heardSlice = rec.emissions
+                                            .zip(rec.emMs)
+                                            .filter { it.second <= wtMs }
+                                            .map { it.first }
+                                        val matched = BooleanArray(heardSlice.size)
+                                        var ei = 0
+                                        for (j in heardSlice.indices) {
+                                            if (ei < exp.units.size && heardSlice[j] == exp.units[ei]) {
+                                                matched[j] = true; ei++
+                                            }
+                                        }
+                                        PracticeViewModel.AyahAlignment(
+                                            exp.units, exp.unitWord, heardSlice,
+                                            IntArray(heardSlice.size) { -1 },
+                                            emptyList(), FloatArray(0),
+                                        )
+                                    }
+                                }.getOrNull()
+                            }
+                            JudgementHeroRecord(lcG, sel, row, alR)
+                        } else {
+                            val al = remember(sel, heard, scopeProgress) {
+                                runCatching {
+                                    vm.ayahAlignmentFor(parts[0].toInt(), parts[1].toInt())
+                                }.getOrNull()
+                            }
+                            val wordIdx = parts.getOrNull(2)?.toIntOrNull() ?: 0
+                            JudgementHero(lcG, sel, al, wordIdx)
                         }
-                        val wordIdx = parts.getOrNull(2)?.toIntOrNull() ?: 0
-                        JudgementHero(lcG, sel, al, wordIdx)
                     }
                 }
             }
@@ -242,7 +373,7 @@ fun EngineConsoleScreen(
             item {
                 ConsoleBand(lcG, stringResource(R.string.console_pulse_title), "scopeProgress · policyLive") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        AccuracyRing(lcG, statusMap, Modifier.size(88.dp))
+                        AccuracyRing(lcG, statusOf, Modifier.size(88.dp))
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             CoverageBar(lcG, stringResource(R.string.lens_next), policy.next, needs.first, true)
@@ -277,7 +408,7 @@ fun EngineConsoleScreen(
                         )
                     }
                     Spacer(Modifier.height(12.dp))
-                    CountsRow(lcG, statusMap, scopeProgress)
+                    CountsRow(lcG, statusOf, scopeProgress)
                 }
             }
 
@@ -309,40 +440,71 @@ fun EngineConsoleScreen(
                         }
                     }
                     Spacer(Modifier.height(10.dp))
-                    val activeAyah = activeVerse
-                    if (activeAyah != null && recording) {
-                        val al = remember(activeAyah, heard, scopeProgress) {
-                            runCatching { vm.ayahAlignmentFor(scopeSurah, activeAyah) }.getOrNull()
+                    if (rec != null) {
+                        // RECORD: the raw tail is the record's own last units,
+                        // and the transcript is every word the session landed,
+                        // in recitation order.
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            rec.emissions.takeLast(24).forEach { u ->
+                                Text(u, fontFamily = quranFont, fontSize = 15.sp,
+                                    color = lcG.inkMuted.copy(alpha = 0.7f))
+                            }
                         }
-                        if (al != null) {
-                            TranscriptRow(lcG, al)
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            rec.wordRows.forEach { r ->
+                                val st = runCatching { WordStatus.valueOf(r.st) }.getOrDefault(WordStatus.UNKNOWN)
+                                Text(
+                                    // the expected word, from the table when it can be
+                                    vmTextOf(vm, r.key, st),
+                                    fontFamily = quranFont,
+                                    fontSize = 21.sp,
+                                    color = when (st) {
+                                        WordStatus.CORRECT -> lcG.ink
+                                        WordStatus.WRONG -> lcG.wordBad
+                                        else -> lcG.inkMuted.copy(alpha = 0.5f)
+                                    },
+                                )
+                            }
+                        }
+                    } else {
+                        val activeAyah = activeVerse
+                        if (activeAyah != null && recording) {
+                            val al = remember(activeAyah, heard, scopeProgress) {
+                                runCatching { vm.ayahAlignmentFor(scopeSurah, activeAyah) }.getOrNull()
+                            }
+                            if (al != null) {
+                                TranscriptRow(lcG, al)
+                            } else {
+                                EmptyNote(lcG, stringResource(R.string.console_heard_empty))
+                            }
                         } else {
                             EmptyNote(lcG, stringResource(R.string.console_heard_empty))
                         }
-                    } else {
-                        EmptyNote(lcG, stringResource(R.string.console_heard_empty))
                     }
                 }
             }
 
             // ---- the night ----
             item {
-                ConsoleBand(lcG, stringResource(R.string.console_night_title), "verdictTimeline · mic envelope") {
+                ConsoleBand(lcG, stringResource(R.string.console_night_title), nightSrc) {
                     var scrubT by remember { mutableLongStateOf(0L) }
                     var playing by remember { mutableStateOf(false) }
                     LaunchedEffect(playing) {
                         while (playing) {
-                            scrubT = (scrubT + 700).coerceAtMost(nowMs)
-                            if (scrubT >= nowMs && !recording) playing = false
+                            scrubT = (scrubT + 700).coerceAtMost(night.spanMs)
+                            if (scrubT >= night.spanMs && rec != null) playing = false
                             delay(70)
                         }
                     }
-                    val viewT = if (scrubT in 1..(nowMs - 1)) scrubT else nowMs
-                    NightCanvas(
-                        lcG, env.toList(), lockTrace.toList(), gateTrace.toList(),
-                        verdicts, viewT,
-                        Modifier.fillMaxWidth().height(150.dp),
-                    )
+                    val viewT = if (scrubT in 1..(night.spanMs - 1)) scrubT else night.spanMs
+                    NightCanvas(lcG, night, viewT, Modifier.fillMaxWidth().height(150.dp))
                     Spacer(Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { playing = !playing }, Modifier.size(34.dp)) {
@@ -353,8 +515,8 @@ fun EngineConsoleScreen(
                             )
                         }
                         Slider(
-                            value = if (nowMs > 0) (viewT.toFloat() / nowMs) else 0f,
-                            onValueChange = { scrubT = (it * nowMs).toLong() },
+                            value = if (night.spanMs > 0) (viewT.toFloat() / night.spanMs) else 0f,
+                            onValueChange = { scrubT = (it * night.spanMs).toLong() },
                             modifier = Modifier.weight(1f),
                         )
                         Text(
@@ -362,6 +524,11 @@ fun EngineConsoleScreen(
                             fontSize = 11.sp, fontFamily = FontFamily.Monospace,
                             color = lcG.gold,
                         )
+                    }
+                    if (rec != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(stringResource(R.string.console_record_note),
+                            fontSize = 9.sp, color = lcG.inkFaint)
                     }
                 }
             }
@@ -382,8 +549,11 @@ private fun JudgementHero(
         EmptyNote(c, stringResource(R.string.console_heard_empty))
         return
     }
-    val st = al.statuses.getOrElse(wordIdx) { WordStatus.UNKNOWN }
-    val cov = al.coverage.getOrElse(wordIdx) { -1f }
+    // The key's word index is 1-based; the table's wordOf and the mapper's
+    // emitWord are 0-based.
+    val wi = (wordIdx - 1).coerceAtLeast(0)
+    val st = al.statuses.getOrElse(wi) { WordStatus.UNKNOWN }
+    val cov = al.coverage.getOrElse(wi) { -1f }
     val ringC = when (st) {
         WordStatus.CORRECT -> c.wordGood
         WordStatus.WRONG -> c.wordBad
@@ -424,13 +594,13 @@ private fun JudgementHero(
         }
     }
     Spacer(Modifier.height(12.dp))
-    val lo = al.wordOf.indexOf(wordIdx).takeIf { it >= 0 } ?: 0
+    val lo = al.wordOf.indexOf(wi).takeIf { it >= 0 } ?: 0
     var hi = al.wordOf.size
     for (i in lo until al.wordOf.size) {
-        if (al.wordOf[i] != wordIdx) { hi = i; break }
+        if (al.wordOf[i] != wi) { hi = i; break }
     }
     val expUnits = al.expected.subList(lo, min(hi, al.wordOf.size))
-    val heardIdx = al.emitWord.indices.filter { al.emitWord.getOrNull(it) == wordIdx }
+    val heardIdx = al.emitWord.indices.filter { al.emitWord.getOrNull(it) == wi }
     val heardUnits = heardIdx.map { al.heard[it] }
     BeadRow(c, stringResource(R.string.console_expected), expUnits, c.ink, false)
     Spacer(Modifier.height(7.dp))
@@ -462,6 +632,111 @@ private fun BeadRow(c: IqraColors, label: String, units: List<String>, tint: Col
             }
         }
     }
+}
+
+/**
+ * The record-mode hero: expected units from the word-aligned table, the
+ * heard tail as of the word's own decision instant, and the console's light
+ * prefix stitch - labelled as an approximation, because the engine's own
+ * traceback lives in the replay tools, not in the record.
+ */
+@Composable
+private fun JudgementHeroRecord(
+    c: IqraColors,
+    key: String,
+    row: com.iqra.quran.data.PracticeLog.Record.WordRow?,
+    al: PracticeViewModel.AyahAlignment?,
+) {
+    if (al == null) {
+        EmptyNote(c, stringResource(R.string.console_heard_empty))
+        return
+    }
+    val st: WordStatus = if (row == null) WordStatus.UNKNOWN
+    else runCatching { WordStatus.valueOf(row.st) }.getOrDefault(WordStatus.UNKNOWN)
+    val ringC = when (st) {
+        WordStatus.CORRECT -> c.wordGood
+        WordStatus.WRONG -> c.wordBad
+        else -> c.inkMuted
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        val frac by animateFloatAsState(
+            if (st == WordStatus.CORRECT) 1f else if (st == WordStatus.WRONG) 0.8f else 0.45f,
+            tween(900), label = "sealR",
+        )
+        Canvas(Modifier.size(74.dp)) {
+            drawArc(Color.White.copy(alpha = 0.08f), 0f, 360f, false,
+                style = Stroke(6f, cap = StrokeCap.Round))
+            drawArc(ringC, 0f, 360f * frac, false,
+                style = Stroke(6f, cap = StrokeCap.Round))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(key, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = c.inkFaint)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                when (st) {
+                    WordStatus.CORRECT -> "✓ " + stringResource(R.string.console_v_ok)
+                    WordStatus.WRONG -> "✕ " + stringResource(R.string.console_v_bad)
+                    else -> "؟ " + stringResource(R.string.console_v_unknown)
+                },
+                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ringC,
+                modifier = Modifier.background(ringC.copy(alpha = 0.12f), RoundedCornerShape(9.dp))
+                    .padding(horizontal = 10.dp, vertical = 3.dp),
+            )
+            row?.wu?.let { wu ->
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    stringResource(R.string.console_blame_unit, if (wu == 0) 1 else 2),
+                    fontSize = 10.sp, color = c.inkMuted,
+                )
+            }
+            row?.wt?.let {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    stringResource(R.string.console_decided_at, it / 1000f),
+                    fontSize = 10.sp, color = c.gold,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    // expected run: the word's own units via wordOf ownership (0-based)
+    val wi = ((key.split(":").getOrNull(2)?.toIntOrNull() ?: 1) - 1).coerceAtLeast(0)
+    val lo = al.wordOf.indexOf(wi).takeIf { it >= 0 } ?: 0
+    var hi = al.wordOf.size
+    for (i in lo until al.wordOf.size) {
+        if (al.wordOf[i] != wi) { hi = i; break }
+    }
+    val expUnits = al.expected.subList(lo, min(hi, al.wordOf.size))
+    // The heard neighbourhood: the record has no ayah window, so find the
+    // word's own first unit in the stream (last occurrence) and show around
+    // it - the sounds the word came out of, not the whole session's tail.
+    val heardShown = if (expUnits.isEmpty() || al.heard.isEmpty()) al.heard.takeLast(8)
+    else {
+        val first = expUnits.first()
+        val j = al.heard.indexOfLast { it == first }
+        if (j < 0) al.heard.takeLast(8)
+        else al.heard.subList(
+            maxOf(0, j - 1),
+            minOf(al.heard.size, j + expUnits.size + 1),
+        )
+    }
+    BeadRow(c, stringResource(R.string.console_expected), expUnits, c.ink, false)
+    Spacer(Modifier.height(7.dp))
+    BeadRow(c, stringResource(R.string.console_heard_lbl), heardShown, c.inkMuted, true)
+    Spacer(Modifier.height(6.dp))
+    Text(stringResource(R.string.console_stitch_note), fontSize = 9.sp, color = c.inkFaint)
+}
+
+@Composable
+private fun vmTextOf(vm: PracticeViewModel, key: String, st: WordStatus): String {
+    val p = key.split(":")
+    val surah = p.getOrNull(0)?.toIntOrNull() ?: return "…"
+    val ayah = p.getOrNull(1)?.toIntOrNull() ?: return "…"
+    val wiv = p.getOrNull(2)?.toIntOrNull() ?: return "…"
+    val w = remember(key) { runCatching { vm.standWordsFor(ayah) }.getOrNull() }
+    return w?.firstOrNull { it.wordInVerse == wiv && it.surah == surah }?.text
+        ?: st.let { "…" }
 }
 
 // ---- transcript ----
@@ -591,14 +866,12 @@ private fun CountsRow(
 @Composable
 private fun NightCanvas(
     c: IqraColors,
-    env: List<Pair<Long, Float>>,
-    lockTrace: List<Pair<Long, Int>>,
-    gateTrace: List<Pair<Long, Boolean>>,
-    verdicts: List<PracticeViewModel.VerdictPoint>,
+    night: NightData,
     viewT: Long,
     modifier: Modifier = Modifier,
 ) {
-    val span = maxOf(1L, env.lastOrNull()?.first ?: 1L)
+    val env = night.env
+    val span = night.spanMs
     Canvas(modifier) {
         val h = size.height
         val w = size.width
@@ -611,17 +884,19 @@ private fun NightCanvas(
             ),
             topLeft = Offset(0f, h * 0.45f), size = Size(w, h * 0.55f),
         )
-        // gate mist
-        var mistStart = -1L
-        gateTrace.forEach { (t, closed) ->
-            if (closed && mistStart < 0) mistStart = t
-            if (!closed && mistStart >= 0) {
-                drawRect(
-                    c.wordBad.copy(alpha = 0.07f),
-                    topLeft = Offset(xOf(mistStart), 0f),
-                    size = Size(xOf(t) - xOf(mistStart), h),
-                )
-                mistStart = -1L
+        // gate mist (live only; a record carries no gate history)
+        night.mist?.let { mist ->
+            var mistStart = -1L
+            mist.forEach { (t, closed) ->
+                if (closed && mistStart < 0) mistStart = t
+                if (!closed && mistStart >= 0) {
+                    drawRect(
+                        c.wordBad.copy(alpha = 0.07f),
+                        topLeft = Offset(xOf(mistStart), 0f),
+                        size = Size(xOf(t) - xOf(mistStart), h),
+                    )
+                    mistStart = -1L
+                }
             }
         }
         // envelope wave up to viewT
@@ -639,27 +914,29 @@ private fun NightCanvas(
             }
             drawPath(crest, c.accent.copy(alpha = 0.5f), style = Stroke(1.5f))
         }
-        // lock path
-        val lockPts = lockTrace.filter { it.first <= viewT }
-        val maxAyah = (lockTrace.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
-        var prev: Offset? = null
-        lockPts.forEach { (t, ayah) ->
-            val p = Offset(xOf(t), h * 0.5f - (ayah.toFloat() / maxAyah) * h * 0.26f)
-            prev?.let { drawLine(c.gold.copy(alpha = 0.4f), it, p, strokeWidth = 1.2f) }
-            drawCircle(c.gold.copy(alpha = 0.7f), 1.8f, p)
-            prev = p
+        // lock path (live only; the record carries no frame walk)
+        night.walk?.let { walk ->
+            val lockPts = walk.filter { it.first <= viewT }
+            val maxAyah = (walk.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
+            var prev: Offset? = null
+            lockPts.forEach { (t, ayah) ->
+                val p = Offset(xOf(t), h * 0.5f - (ayah.toFloat() / maxAyah) * h * 0.26f)
+                prev?.let { drawLine(c.gold.copy(alpha = 0.4f), it, p, strokeWidth = 1.2f) }
+                drawCircle(c.gold.copy(alpha = 0.7f), 1.8f, p)
+                prev = p
+            }
         }
         // verdict stars
-        verdicts.filter { it.atMs <= viewT }.forEach { v ->
-            val x = xOf(v.atMs)
-            val y = h * 0.24f - (v.atMs % 977) / 977f * h * 0.1f
+        night.stars.filter { it.first <= viewT }.forEach { (at, status, _) ->
+            val x = xOf(at)
+            val y = h * 0.24f - (at % 977) / 977f * h * 0.1f
             drawCircle(
-                when (v.status) {
+                when (status) {
                     WordStatus.CORRECT -> c.goldBright.copy(alpha = 0.9f)
                     WordStatus.WRONG -> c.wordBad
                     else -> c.inkMuted.copy(alpha = 0.6f)
                 },
-                if (v.status == WordStatus.WRONG) 3.4f else 2f,
+                if (status == WordStatus.WRONG) 3.4f else 2f,
                 Offset(x, y),
             )
         }

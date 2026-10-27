@@ -9,7 +9,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MonitorHeart
-import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -77,7 +76,6 @@ fun SettingsScreen(
     onOpenProgress: () -> Unit = {},
     onOpenLibrary: () -> Unit = {},
     onOpenDiag: () -> Unit = {},
-    onOpenConsole: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     // The store's change tick, COLLECTED FOR REAL.
@@ -580,30 +578,10 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )
                 Spacer(Modifier.height(6.dp))
-                // The engine surfaces moved here from the home header: a
-                // labelled row says what they are where a fifth unlabeled
-                // icon did not. The console is the live dashboard; the raw
-                // check is the engine-side instrument.
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable(onClick = onOpenConsole)
-                        .padding(horizontal = 10.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.MonitorHeart,
-                        null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        stringResource(R.string.console_title),
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+                // The engine check lives here: a labelled row says what it is
+                // where an unlabeled icon did not. The console is NOT here —
+                // it is a watching instrument, wired where the watching
+                // happens (the recite screen and the report).
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -613,7 +591,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Filled.Receipt,
+                        Icons.Filled.MonitorHeart,
                         null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

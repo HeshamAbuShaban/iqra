@@ -2243,3 +2243,23 @@ behaviour through the refactor's variable (the time is still taken at the
 first-terminal latch), fault shape unchanged. Known follow-up: per-unit
 blame bridges (the replay's depth) stay in the replay tools; the live hero
 shows coverage share + verdict seal until the alignment trace is published.
+
+**Placement and wiring, corrected (build #299).** The console had been filed
+under Settings — a watching instrument in the changing-things place, three
+taps from where it is needed. Rewired to the two moments it serves:
+**mid-session**, from the recite screen's heart (back returns to the running
+session); **post-session**, from the session report's own card ("مرصد هذه
+الجلسة"), where the session just ended and its data is freshest. And the
+post-session console reads **the record itself** (`recordName` wired from the
+report; `PracticeLog.record`), not the cleared live state: stars from
+`wordRows[].wt`, the envelope from emission density (what the engine actually
+received per second), the heard stream and transcript from `emissions`, the
+selected word's units from the word-aligned table loaded on demand. What the
+record does not carry — the lock walk, the gate history — is absent in record
+mode and labelled as such. The live mode keeps everything. Verified end to
+end on the device: live path (session → heart → console → back → session
+alive) and record path (practice → report → card → console over record #272:
+٩٧٪ ring, ٢٦٧/٩/٥٥ counts, the night's stars and density wave, the hero on
+67:26:1 with the word's own sounds). The record's word index is 1-based,
+the table's `unitWord`/mapper's `emitWord` are 0-based — the console converts
+once, at the key boundary.

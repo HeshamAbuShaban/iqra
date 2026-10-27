@@ -693,7 +693,12 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             "report" -> screenName = reportFrom
             "observer" -> screenName = "report"
             "library" -> screenName = "settings"
-            "console" -> screenName = if (vm.recording.value) "live" else "settings"
+            "console" -> screenName = when {
+                vm.recording.value -> "live"
+                reportFrom != "picker" -> reportFrom
+                screenReport.isNotEmpty() -> "report"
+                else -> "picker"
+            }
             else -> screenName = "picker"
         }
     }
@@ -706,7 +711,6 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             onOpenProgress = { screenName = "progress" },
             onOpenLibrary = { screenName = "library" },
             onOpenDiag = { screenName = "diag" },
-            onOpenConsole = { screenName = "console" },
         )
         Screen.Library -> AudioLibraryScreen(
             onBack = { screenName = "settings" },
@@ -744,6 +748,7 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             SessionReportScreen(
                 d, screenReport,
                 onOpenObserver = { screenName = "observer" },
+                onOpenConsole = { screenName = "console" },
             ) { screenName = reportFrom }
         }
         // The observer reads the same record file as the report, back into it.
@@ -801,10 +806,20 @@ fun App(vm: PracticeViewModel, onRequestMic: (() -> Unit) -> Unit) {
             )
         }
         is Screen.Diag -> DiagScreen(vm) { screenName = "picker" }
-        Screen.Console -> EngineConsoleScreen(vm) {
-            // Opened from a running session goes back to it; from Settings
-            // stays in Settings.
-            screenName = if (vm.recording.value) "live" else "settings"
+        Screen.Console -> EngineConsoleScreen(
+            vm,
+            // From the report, the console replays that record; from the
+            // recite screen, it watches the running session.
+            recordName = if (vm.recording.value) null else screenReport.ifEmpty { null },
+        ) {
+            // Back goes where the watching started: the running session, or
+            // the report the session just became.
+            screenName = when {
+                vm.recording.value -> "live"
+                reportFrom != "picker" -> reportFrom
+                screenReport.isNotEmpty() -> "report"
+                else -> "picker"
+            }
         }
         is Screen.Reader -> {
             val pages = mushaf

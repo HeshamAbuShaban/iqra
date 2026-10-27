@@ -177,4 +177,10 @@
     <string name="console_heard_lbl">heard</string>
     <string name="console_units_share">%1$s%% of the word\u2019s units matched</string>
     <string name="console_legend">gold = current word or an advisory spot · red = wrong · dim = unheard · tap a word for its alignment</string>
+    <string name="console_report_card">This session\u2019s console</string>
+    <string name="console_report_card_blurb">The session night, any word\u2019s alignment — over this record while it is the freshest thing here.</string>
+    <string name="console_record_note">Replaying this session\u2019s record: what reached the engine, and its verdicts at their instants. The lock walk and gate history live only in the running session.</string>
+    <string name="console_blame_unit">Blame at unit %1$d of the word</string>
+    <string name="console_decided_at">Decided at second %1$.1f of the session</string>
+    <string name="console_stitch_note">The stitch is approximate - the full alignment trace lives in the replay tools</string>
 </resources>
