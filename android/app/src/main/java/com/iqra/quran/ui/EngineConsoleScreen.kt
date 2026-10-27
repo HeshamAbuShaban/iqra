@@ -1,8 +1,11 @@
 package com.iqra.quran.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,22 +14,30 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,30 +47,29 @@ import com.iqra.quran.ui.theme.IqraColors
 import com.iqra.quran.ui.theme.IqraShape
 import com.iqra.quran.ui.theme.LocalIqraColors
 import kotlinx.coroutines.delay
+import kotlin.math.min
 
 /**
- * The engine console: what the recogniser heard, what it decided, and what it
- * is waiting for - as one live surface, at poll cadence.
+ * The engine console v2 — the confirmed design: the reciter's view first.
  *
- * THE CONTRACT. This screen reads only published state. Every value below is
- * a StateFlow or a plain getter on [PracticeViewModel]; nothing polls the
- * engine's internals and nothing here can block the poll loop. That is what
- * makes the screen engine-portable: a future recogniser that keeps the same
- * narrow surface (heardUnits, statusMap, advisoryMap, policyLive, gateReason,
- * decoderState, diagLog) keeps this whole dashboard working with zero changes
- * here. The one piece built for it is `heardUnits` - the model's own phoneme
- * tail, published per poll.
+ * ليل الجلسة is the timeline: the recitation's own envelope as a breathing
+ * wave, each verdict a star lit at its true decision instant, the lock's walk
+ * a dotted moon-path, gate-closed stretches red mist. Everything is
+ * interactive against the data that actually exists: the scrubber replays the
+ * accumulated session, the envelope and lock trace are sampled by THIS screen
+ * from published state, the stars come from the engine's own verdict timeline.
  *
- * LATENCY. Everything updates at the poll's own cadence because the flows
- * themselves update there; the console adds no sampling, no timers, no work
- * between the recogniser and the screen.
+ * The judgment hero reads one ayah's real alignment (expected units from the
+ * word-aligned table, heard units from the ayah's window, the mapper's own
+ * per-unit charge) — the DP made visible, with the honest empty state when no
+ * window exists. The transcript stitches the same heard units into words as
+ * they are matched, so the segmented stream reads as recitation.
  *
- * THE TAJWEED SPOTS. The engine does not yet carry a letter-to-class table
- * (docs/TAJWEED_AND_MEMORISATION.md tracks that gap), so the spots shown here
- * are the ones the engine has MEASURED and already reports: waqf junctions it
- * declined to judge, word-final letters the register does not require
- * sounded, windows it could not anchor, evidence below the floor. They are
- * coloured on the words they belong to - honest amber, never red.
+ * Engine contract: every value here is published state or a read-only
+ * accessor (`verdictTimeline`, `heardUnits`, `ayahAlignmentFor`,
+ * `policyLive`, `gateReason`, `decoderState`, `diagLog`). Nothing here can
+ * block the poll loop, and a future engine that keeps this narrow surface
+ * keeps the whole dashboard.
  */
 @Composable
 fun EngineConsoleScreen(
@@ -67,7 +77,6 @@ fun EngineConsoleScreen(
     onBack: () -> Unit,
 ) {
     val lcG = LocalIqraColors.current
-    val ctx = LocalContext.current
     val recording by vm.recording.collectAsStateWithLifecycle()
     val sessionSound by vm.sessionSound.collectAsStateWithLifecycle()
     val heard by vm.heardUnits.collectAsStateWithLifecycle()
@@ -75,201 +84,284 @@ fun EngineConsoleScreen(
     val advisoryMap by vm.advisoryMap.collectAsStateWithLifecycle()
     val scopeProgress by vm.scopeProgress.collectAsStateWithLifecycle()
     val currentKey by vm.currentKey.collectAsStateWithLifecycle()
+    val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
+    val scopeSurah by vm.scopeSurah.collectAsStateWithLifecycle()
     val policy by vm.policyLive.collectAsStateWithLifecycle()
     val gateReason by vm.gateReason.collectAsStateWithLifecycle()
     val decoderState by vm.decoderState.collectAsStateWithLifecycle()
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
     val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
+    val verdicts by vm.verdictTimeline.collectAsStateWithLifecycle()
     val diag by vm.diagLog.collectAsStateWithLifecycle()
-    val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
-    val scopeSurah by vm.scopeSurah.collectAsStateWithLifecycle()
     val needs = remember { vm.policyNeeds() }
-    var micDb by remember { mutableStateOf(0f) }
-    var micN by remember { mutableStateOf(0) }
+
+    // ---- console-side session sampling: the night's own instrument ----
+    var nowMs by remember { mutableLongStateOf(0L) }
+    var micNow by remember { mutableFloatStateOf(0f) }
+    val env = remember { mutableStateListOf<Pair<Long, Float>>() }
+    val lockTrace = remember { mutableStateListOf<Pair<Long, Int>>() }
+    val gateTrace = remember { mutableStateListOf<Pair<Long, Boolean>>() }
     LaunchedEffect(Unit) {
         while (true) {
-            micDb = vm.micLevel()
-            micN = vm.micSampleCount()
-            delay(250)
+            val t = vm.sessionNowMs()
+            nowMs = t
+            micNow = if (recording) vm.micLevel() else 0f
+            if (recording && (env.isEmpty() || t - env.last().first >= 250)) {
+                env.add(t to micNow)
+                if (env.size > 1400) env.removeAt(0)
+                lockTrace.add(t to (activeVerse ?: 0))
+                if (lockTrace.size > 1400) lockTrace.removeAt(0)
+                gateTrace.add(t to gateReason.isNotEmpty())
+                if (gateTrace.size > 1400) gateTrace.removeAt(0)
+            }
+            delay(120)
         }
     }
-    // The scope's own words, for the reading column: keyed on the words
-    // version so a surah handoff re-reads, and frozen between versions.
-    val wordsVersion by vm.wordsVersion.collectAsStateWithLifecycle()
+
+    var selKey by remember { mutableStateOf<String?>(null) }
+    val scopeAyahs = remember(scopeProgress) { scopeProgress.map { it.ayah } }
+    val wordsByAyah = remember(scopeProgress, scopeSurah) {
+        scopeProgress.associate { it.ayah to vm.standWordsFor(it.ayah) }
+    }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back),
-                        tint = MaterialTheme.colorScheme.onSurface)
+        LazyColumn(
+            Modifier.padding(pad).fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // ---- header ----
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back),
+                            tint = lcG.ink)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            when {
+                                !recording -> stringResource(R.string.console_idle_state)
+                                gateReason.isNotEmpty() -> stringResource(R.string.console_state_gate)
+                                else -> stringResource(R.string.console_state_listening)
+                            },
+                            fontSize = 16.sp, color = if (recording) lcG.ink else lcG.inkMuted,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            engineLabel.ifEmpty { stringResource(R.string.lens_idle) } +
+                                if (sessionSound) "  ·  " + stringResource(R.string.console_rec) else "",
+                            fontSize = 11.sp,
+                            color = if (sessionSound) lcG.gold else lcG.inkFaint,
+                        )
+                    }
+                    BreathingDot(recording)
+                    Spacer(Modifier.width(12.dp))
                 }
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.console_title), fontSize = 17.sp,
-                        color = lcG.ink, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        engineLabel.ifEmpty { stringResource(R.string.lens_idle) } +
-                            if (sessionSound) "  ·  " + stringResource(R.string.console_rec) else "",
-                        fontSize = 11.sp, color = if (sessionSound) lcG.gold else lcG.inkFaint,
-                    )
-                }
-                PulseDot(
-                    color = if (recording) accentColor else lcG.inkFaint,
-                    label = if (recording) stringResource(R.string.console_listening) else null,
-                )
-                Spacer(Modifier.width(12.dp))
             }
 
-            LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                // ---- what the model heard ----
-                item {
-                    ConsolePanel(lcG, stringResource(R.string.console_heard_title)) {
+            // ---- the reading: words landing ----
+            item {
+                ConsoleBand(lcG, stringResource(R.string.console_reading_title), "statusMap + advisoryMap") {
+                    if (scopeAyahs.isEmpty()) {
+                        EmptyNote(lcG, stringResource(R.string.console_no_session))
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            scopeAyahs.takeLast(5).forEach { ayah ->
+                                val ws = wordsByAyah[ayah].orEmpty()
+                                Row(
+                                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "$ayah",
+                                        fontSize = 10.sp, fontFamily = FontFamily.Monospace,
+                                        color = if (ayah == activeVerse) lcG.gold else lcG.inkFaint,
+                                        modifier = Modifier.width(26.dp),
+                                    )
+                                    ws.forEach { w ->
+                                        val key = "$scopeSurah:$ayah:${w.wordInVerse}"
+                                        val st = statusMap[key]
+                                        val spot = advisoryMap[key]
+                                        val sel = key == selKey
+                                        Text(
+                                            w.text,
+                                            fontFamily = quranFont,
+                                            fontSize = 23.sp,
+                                            color = when {
+                                                spot != null -> lcG.gold
+                                                st == WordStatus.WRONG -> lcG.wordBad
+                                                st == WordStatus.CORRECT -> lcG.ink
+                                                key == currentKey -> lcG.goldBright
+                                                else -> lcG.inkMuted.copy(alpha = 0.55f)
+                                            },
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(9.dp))
+                                                .clickable { selKey = if (sel) null else key }
+                                                .background(
+                                                    when {
+                                                        sel -> lcG.gold.copy(alpha = 0.14f)
+                                                        key == currentKey -> lcG.gold.copy(alpha = 0.06f)
+                                                        else -> Color.Transparent
+                                                    },
+                                                )
+                                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        LegendRow(lcG)
+                    }
+                }
+            }
+
+            // ---- the judgment hero ----
+            item {
+                val sel = selKey
+                ConsoleBand(lcG, stringResource(R.string.console_judge_title), "word_aligned_phonemes × ayah window") {
+                    if (sel == null) {
+                        EmptyNote(lcG, stringResource(R.string.console_pick_word))
+                    } else {
+                        val parts = sel.split(":")
+                        val al = remember(sel, heard, scopeProgress) {
+                            runCatching {
+                                vm.ayahAlignmentFor(parts[0].toInt(), parts[1].toInt())
+                            }.getOrNull()
+                        }
+                        val wordIdx = parts.getOrNull(2)?.toIntOrNull() ?: 0
+                        JudgementHero(lcG, sel, al, wordIdx)
+                    }
+                }
+            }
+
+            // ---- pulse: ring + trio + lanterns + counts ----
+            item {
+                ConsoleBand(lcG, stringResource(R.string.console_pulse_title), "scopeProgress · policyLive") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AccuracyRing(lcG, statusMap, Modifier.size(88.dp))
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                            CoverageBar(lcG, stringResource(R.string.lens_next), policy.next, needs.first, true)
+                            CoverageBar(lcG, stringResource(R.string.lens_here), policy.here, null, false)
+                            CoverageBar(lcG, stringResource(R.string.lens_back), policy.back, needs.third, true)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(R.string.lens_policy_note,
+                            "%.2f".format(needs.first), "%.2f".format(needs.third)),
+                        fontSize = 9.sp, color = lcG.inkFaint,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Lantern(lcG, stringResource(R.string.lens_gate),
+                            gateReason.ifEmpty { stringResource(R.string.lens_open) },
+                            gateReason.isEmpty(), lcG.wordGood, lcG.wordBad)
+                        Lantern(lcG, stringResource(R.string.lens_vad),
+                            when (policy.vadSpeech) {
+                                true -> stringResource(R.string.lens_speech)
+                                false -> stringResource(R.string.lens_silence)
+                                null -> stringResource(R.string.lens_idle)
+                            },
+                            policy.vadSpeech == true, lcG.wordGood, lcG.inkMuted)
+                        Lantern(lcG, stringResource(R.string.lens_decoder),
+                            decoderState.ifEmpty { stringResource(R.string.lens_idle) },
+                            decoderState.isEmpty(), lcG.inkMuted, lcG.inkMuted)
+                        Lantern(
+                            lcG, stringResource(R.string.practice_wpm_short),
+                            "%.0f".format(wpm), recording, lcG.inkMuted, lcG.inkMuted,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    CountsRow(lcG, statusMap, scopeProgress)
+                }
+            }
+
+            // ---- breath + transcript ----
+            item {
+                ConsoleBand(lcG, stringResource(R.string.console_breath_title), "heardUnits × alignment") {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        heard.units.forEachIndexed { i, u ->
+                            val newest = i == heard.units.lastIndex
+                            Text(
+                                u,
+                                fontFamily = quranFont,
+                                fontSize = 17.sp,
+                                color = if (newest) lcG.goldBright else lcG.inkMuted.copy(alpha = 0.7f),
+                                modifier = Modifier
+                                    .background(
+                                        if (newest) lcG.gold.copy(alpha = 0.12f) else Color.Transparent,
+                                        RoundedCornerShape(8.dp),
+                                    )
+                                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                            )
+                        }
                         if (heard.units.isEmpty()) {
                             Text(stringResource(R.string.console_heard_empty),
                                 fontSize = 12.sp, color = lcG.inkFaint)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    val activeAyah = activeVerse
+                    if (activeAyah != null && recording) {
+                        val al = remember(activeAyah, heard, scopeProgress) {
+                            runCatching { vm.ayahAlignmentFor(scopeSurah, activeAyah) }.getOrNull()
+                        }
+                        if (al != null) {
+                            TranscriptRow(lcG, al)
                         } else {
-                            Row(
-                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                heard.units.forEachIndexed { i, u ->
-                                    Text(
-                                        u,
-                                        fontSize = 13.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = if (i == heard.units.lastIndex) lcG.gold else lcG.inkMuted,
-                                        modifier = Modifier
-                                            .background(
-                                                if (i == heard.units.lastIndex) lcG.gold.copy(alpha = 0.12f)
-                                                else Color.Transparent,
-                                                RoundedCornerShape(5.dp),
-                                            )
-                                            .padding(horizontal = 3.dp, vertical = 1.dp),
-                                    )
-                                }
-                            }
-                            Text(
-                                stringResource(R.string.console_heard_meta, heard.total, heard.base, heard.newestMs),
-                                fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = lcG.inkFaint,
+                            EmptyNote(lcG, stringResource(R.string.console_heard_empty))
+                        }
+                    } else {
+                        EmptyNote(lcG, stringResource(R.string.console_heard_empty))
+                    }
+                }
+            }
+
+            // ---- the night ----
+            item {
+                ConsoleBand(lcG, stringResource(R.string.console_night_title), "verdictTimeline · mic envelope") {
+                    var scrubT by remember { mutableLongStateOf(0L) }
+                    var playing by remember { mutableStateOf(false) }
+                    LaunchedEffect(playing) {
+                        while (playing) {
+                            scrubT = (scrubT + 700).coerceAtMost(nowMs)
+                            if (scrubT >= nowMs && !recording) playing = false
+                            delay(70)
+                        }
+                    }
+                    val viewT = if (scrubT in 1..(nowMs - 1)) scrubT else nowMs
+                    NightCanvas(
+                        lcG, env.toList(), lockTrace.toList(), gateTrace.toList(),
+                        verdicts, viewT,
+                        Modifier.fillMaxWidth().height(150.dp),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { playing = !playing }, Modifier.size(34.dp)) {
+                            Icon(
+                                if (playing) Icons.Filled.Close else Icons.Filled.PlayArrow,
+                                stringResource(R.string.live_resume),
+                                tint = lcG.inkMuted,
                             )
                         }
-                    }
-                }
-
-                // ---- the reading, with its spots ----
-                item {
-                    ConsolePanel(lcG, stringResource(R.string.console_reading_title)) {
-                        if (scopeProgress.isEmpty()) {
-                            Text(stringResource(R.string.console_no_session),
-                                fontSize = 12.sp, color = lcG.inkFaint)
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                val limit = scopeProgress.takeLast(6)
-                                limit.forEach { sa ->
-                                    val isCurrent = sa.ayah == activeVerse
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            "${sa.ayah}",
-                                            fontSize = 10.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = if (isCurrent) lcG.gold else lcG.inkFaint,
-                                            modifier = Modifier.width(22.dp),
-                                        )
-                                        WordRow(lcG, vm, wordsVersion, sa, scopeSurah, statusMap, advisoryMap)
-                                    }
-                                    if (isCurrent && sa.words > 0) {
-                                        Canvas(
-                                            Modifier.fillMaxWidth().padding(start = 22.dp).height(3.dp)
-                                        ) {
-                                            val frac = (sa.heard.toFloat() / sa.words).coerceIn(0f, 1f)
-                                            drawRoundRect(
-                                                lcG.surfaceHigh, Offset.Zero, Size(size.width, size.height),
-                                                CornerRadius(1.5f, 1.5f),
-                                            )
-                                            drawRoundRect(
-                                                lcG.accent, Offset.Zero,
-                                                Size(size.width * frac, size.height),
-                                                CornerRadius(1.5f, 1.5f),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            AdvisoryLegend(lcG)
-                        }
-                    }
-                }
-
-                // ---- the calculation ----
-                item {
-                    ConsolePanel(lcG, stringResource(R.string.console_calc_title)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            LensBar(lcG, stringResource(R.string.lens_next), policy.next, needs.first, Modifier.weight(1f), tick = true)
-                            LensBar(lcG, stringResource(R.string.lens_here), policy.here, null, Modifier.weight(1f), tick = false)
-                            LensBar(lcG, stringResource(R.string.lens_back), policy.back, needs.third, Modifier.weight(1f), tick = true)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            stringResource(R.string.lens_policy_note,
-                                "%.2f".format(needs.first), "%.2f".format(needs.third)),
-                            fontSize = 9.sp, color = lcG.inkFaint,
+                        Slider(
+                            value = if (nowMs > 0) (viewT.toFloat() / nowMs) else 0f,
+                            onValueChange = { scrubT = (it * nowMs).toLong() },
+                            modifier = Modifier.weight(1f),
                         )
-                        if (policy.stallNote.isNotEmpty() || policy.held.isNotEmpty() || gateReason.isNotEmpty()) {
-                            Text(
-                                listOfNotNull(
-                                    gateReason.takeIf { it.isNotEmpty() },
-                                    policy.held.takeIf { it.isNotEmpty() },
-                                    policy.stallNote.takeIf { it.isNotEmpty() },
-                                ).joinToString("  ·  "),
-                                fontSize = 10.sp, color = lcG.gold, maxLines = 2,
-                            )
-                        }
-                    }
-                }
-
-                // ---- the event ring ----
-                item {
-                    ConsolePanel(lcG, stringResource(R.string.console_events_title)) {
-                        if (diag.isEmpty()) {
-                            Text(stringResource(R.string.console_heard_empty),
-                                fontSize = 12.sp, color = lcG.inkFaint)
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                                diag.takeLast(12).reversed().forEach { line ->
-                                    Text(
-                                        line,
-                                        fontSize = 9.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = lcG.inkMuted,
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ---- counts ----
-                item {
-                    ConsolePanel(lcG, stringResource(R.string.console_counts_title)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            LensCount(lcG, "✓", "${statusMap.count { it.value == WordStatus.CORRECT }}", lcG.wordGood, Modifier.weight(1f))
-                            LensCount(lcG, "✕", "${statusMap.count { it.value == WordStatus.WRONG }}", lcG.chartBad, Modifier.weight(1f))
-                            LensCount(lcG, "؟", "${statusMap.count { it.value == WordStatus.UNKNOWN }}", lcG.inkMuted, Modifier.weight(1f))
-                            LensCount(lcG, stringResource(R.string.lens_heard),
-                                "${scopeProgress.sumOf { it.heard }}/${scopeProgress.sumOf { it.words }}",
-                                lcG.ink, Modifier.weight(1.4f))
-                            LensCount(lcG, stringResource(R.string.practice_wpm_short),
-                                "%.0f".format(wpm), lcG.ink, Modifier.weight(1f))
-                        }
+                        Text(
+                            "%.1f s".format(viewT / 1000f),
+                            fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                            color = lcG.gold,
+                        )
                     }
                 }
             }
@@ -277,85 +369,345 @@ fun EngineConsoleScreen(
     }
 }
 
-/** One scope ayah's words, verdict-coloured, with the advisory spots marked. */
+// ---- hero ----
+
 @Composable
-private fun WordRow(
+private fun JudgementHero(
     c: IqraColors,
-    vm: PracticeViewModel,
-    wordsVersion: Int,
-    sa: ScopeAyah,
-    scopeSurah: Int,
-    statusMap: Map<String, WordStatus>,
-    advisoryMap: Map<String, Advisory>,
+    key: String,
+    al: PracticeViewModel.AyahAlignment?,
+    wordIdx: Int,
 ) {
-    val words = remember(sa.ayah, wordsVersion) { vm.standWordsFor(sa.ayah) }
-    // Word-level colouring in the reader's grammar, plus the amber spot an
-    // advisory puts on the exact word it belongs to.
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        words.forEach { w ->
-            val key = "$scopeSurah:${sa.ayah}:${w.wordInVerse}"
-            val st = statusMap[key]
-            val spot = advisoryMap[key]
+    if (al == null) {
+        EmptyNote(c, stringResource(R.string.console_heard_empty))
+        return
+    }
+    val st = al.statuses.getOrElse(wordIdx) { WordStatus.UNKNOWN }
+    val cov = al.coverage.getOrElse(wordIdx) { -1f }
+    val ringC = when (st) {
+        WordStatus.CORRECT -> c.wordGood
+        WordStatus.WRONG -> c.wordBad
+        else -> c.inkMuted
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        val frac by animateFloatAsState(
+            if (cov < 0f) 0.45f else cov.coerceIn(0f, 1f),
+            tween(900), label = "seal",
+        )
+        Canvas(Modifier.size(74.dp)) {
+            drawArc(Color.White.copy(alpha = 0.08f), 0f, 360f, false,
+                style = Stroke(6f, cap = StrokeCap.Round))
+            drawArc(ringC, 0f, 360f * frac, false,
+                style = Stroke(6f, cap = StrokeCap.Round))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(key, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = c.inkFaint)
+            Spacer(Modifier.height(4.dp))
             Text(
-                w.text,
+                when (st) {
+                    WordStatus.CORRECT -> "✓ " + stringResource(R.string.console_v_ok)
+                    WordStatus.WRONG -> "✕ " + stringResource(R.string.console_v_bad)
+                    else -> "؟ " + stringResource(R.string.console_v_unknown)
+                },
+                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ringC,
+                modifier = Modifier.background(ringC.copy(alpha = 0.12f), RoundedCornerShape(9.dp))
+                    .padding(horizontal = 10.dp, vertical = 3.dp),
+            )
+            if (cov >= 0f) {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    stringResource(R.string.console_units_share, "%.0f".format(cov * 100f)),
+                    fontSize = 10.sp, color = c.inkMuted,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    val lo = al.wordOf.indexOf(wordIdx).takeIf { it >= 0 } ?: 0
+    var hi = al.wordOf.size
+    for (i in lo until al.wordOf.size) {
+        if (al.wordOf[i] != wordIdx) { hi = i; break }
+    }
+    val expUnits = al.expected.subList(lo, min(hi, al.wordOf.size))
+    val heardIdx = al.emitWord.indices.filter { al.emitWord.getOrNull(it) == wordIdx }
+    val heardUnits = heardIdx.map { al.heard[it] }
+    BeadRow(c, stringResource(R.string.console_expected), expUnits, c.ink, false)
+    Spacer(Modifier.height(7.dp))
+    BeadRow(c, stringResource(R.string.console_heard_lbl), heardUnits, c.inkMuted, true)
+}
+
+@Composable
+private fun BeadRow(c: IqraColors, label: String, units: List<String>, tint: Color, muted: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label, fontSize = 9.sp, letterSpacing = 0.8.sp, color = c.inkFaint,
+            modifier = Modifier.width(66.dp),
+        )
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            if (units.isEmpty()) Text("—", fontSize = 15.sp, color = c.inkFaint)
+            units.forEach { u ->
+                Text(
+                    u,
+                    fontFamily = quranFont,
+                    fontSize = 18.sp,
+                    color = tint.copy(alpha = if (muted) 0.8f else 1f),
+                    modifier = Modifier
+                        .background(c.surfaceHigh, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+// ---- transcript ----
+
+@Composable
+private fun TranscriptRow(c: IqraColors, al: PracticeViewModel.AyahAlignment) {
+    val words = remember(al) {
+        val byWord = LinkedHashMap<Int, StringBuilder>()
+        al.expected.forEachIndexed { i, u ->
+            val w = al.wordOf.getOrElse(i) { -1 }
+            byWord.getOrPut(w) { StringBuilder() }.append(u)
+        }
+        byWord
+    }
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        words.forEach { (wi, sb) ->
+            val st = al.statuses.getOrElse(wi) { WordStatus.UNKNOWN }
+            Text(
+                sb.toString(),
                 fontFamily = quranFont,
-                fontSize = 19.sp,
-                color = when {
-                    spot != null -> c.gold
-                    st == WordStatus.CORRECT -> c.ink
-                    st == WordStatus.WRONG -> c.chartBad
-                    else -> c.inkMuted
+                fontSize = 22.sp,
+                color = when (st) {
+                    WordStatus.CORRECT -> c.ink
+                    WordStatus.WRONG -> c.wordBad
+                    else -> c.inkMuted.copy(alpha = 0.5f)
                 },
             )
         }
     }
-    // The spots: one dot per advisory class present on this ayah.
-    val spots = advisoryMap.entries
-        .filter { it.key.startsWith("$scopeSurah:${sa.ayah}:") }
-        .map { it.value.kind }
-        .distinct()
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        spots.forEach { k ->
-            Box(
-                Modifier.size(7.dp).background(
-                    when (k) {
-                        AdvisoryKind.MISSED_RULING_POSSIBLE -> c.gold
-                        AdvisoryKind.UNMODELLED_FINAL -> c.gold.copy(alpha = 0.7f)
-                        AdvisoryKind.LOW_EVIDENCE -> c.inkMuted
-                        else -> c.inkFaint
-                    },
-                    CircleShape,
-                ),
+}
+
+// ---- meters ----
+
+@Composable
+private fun AccuracyRing(c: IqraColors, statusMap: Map<String, WordStatus>, size: Modifier) {
+    val decided = statusMap.count { it.value == WordStatus.CORRECT || it.value == WordStatus.WRONG }
+    val good = statusMap.count { it.value == WordStatus.CORRECT }
+    val frac = if (decided == 0) 0f else good.toFloat() / decided
+    val anim by animateFloatAsState(frac, tween(900), label = "acc")
+    Box(size, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val sw = 7f
+            drawArc(Color.White.copy(alpha = 0.07f), 0f, 360f, false, style = Stroke(sw, cap = StrokeCap.Round))
+            drawArc(c.accent, 0f, 360f * anim, false, style = Stroke(sw, cap = StrokeCap.Round))
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "%.0f%%".format(frac * 100f),
+                fontSize = 18.sp, color = c.ink, fontFamily = FontFamily.Monospace,
             )
+            Text(stringResource(R.string.metric_accuracy), fontSize = 8.5.sp, color = c.inkFaint)
         }
     }
 }
 
 @Composable
-private fun AdvisoryLegend(c: IqraColors) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        LegendDot(c, c.gold, stringResource(R.string.console_spot_waqf))
-        LegendDot(c, c.gold.copy(alpha = 0.7f), stringResource(R.string.console_spot_final))
-        LegendDot(c, c.inkMuted, stringResource(R.string.console_spot_low))
-    }
-}
-
-@Composable
-private fun LegendDot(c: IqraColors, colour: Color, label: String) {
+private fun CoverageBar(c: IqraColors, label: String, coverage: Float, threshold: Float?, tick: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(6.dp).background(colour, CircleShape))
-        Spacer(Modifier.width(4.dp))
-        Text(label, fontSize = 9.sp, color = c.inkMuted)
+        Text(label, fontSize = 9.sp, letterSpacing = 0.8.sp, color = c.inkFaint, modifier = Modifier.width(52.dp))
+        Box(Modifier.weight(1f).height(7.dp)) {
+            Canvas(Modifier.fillMaxSize()) {
+                drawRoundRect(c.surfaceHigh, Offset.Zero, size, CornerRadius(3.5f, 3.5f))
+                if (coverage >= 0f) {
+                    drawRoundRect(
+                        c.accent, Offset.Zero,
+                        Size(size.width * coverage.coerceIn(0f, 1f), size.height),
+                        CornerRadius(3.5f, 3.5f),
+                    )
+                }
+                if (tick && threshold != null) {
+                    drawRoundRect(
+                        c.gold, Offset(size.width * threshold - 1f, -2f),
+                        Size(2f, size.height + 4f), CornerRadius(1f, 1f),
+                    )
+                }
+            }
+        }
+        Text(
+            if (coverage < 0f) "—" else "%.0f%%".format(coverage * 100f),
+            fontSize = 10.sp, fontFamily = FontFamily.Monospace,
+            color = if (threshold != null && coverage >= threshold) c.gold else c.ink,
+            modifier = Modifier.width(38.dp),
+        )
     }
 }
 
 @Composable
-private fun ConsolePanel(c: IqraColors, title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun Lantern(
+    c: IqraColors, label: String, value: String, healthy: Boolean,
+    good: Color, dim: Color, modifier: Modifier = Modifier,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(10.dp)
+                .then(if (healthy) Modifier.border(2.dp, good.copy(alpha = 0.25f), CircleShape) else Modifier)
+                .background(if (healthy) good else dim, CircleShape),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(value, fontSize = 10.sp, color = c.inkMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, fontSize = 8.sp, color = c.inkFaint, maxLines = 1)
+    }
+}
+
+@Composable
+private fun CountsRow(
+    c: IqraColors,
+    statusMap: Map<String, WordStatus>,
+    scopeProgress: List<ScopeAyah>,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LensCount(c, "✓", "${statusMap.count { it.value == WordStatus.CORRECT }}", c.wordGood, Modifier.weight(1f))
+        LensCount(c, "✕", "${statusMap.count { it.value == WordStatus.WRONG }}", c.wordBad, Modifier.weight(1f))
+        LensCount(c, "؟", "${statusMap.count { it.value == WordStatus.UNKNOWN }}", c.inkMuted, Modifier.weight(1f))
+        LensCount(
+            c, stringResource(R.string.lens_heard),
+            "${scopeProgress.sumOf { it.heard }}/${scopeProgress.sumOf { it.words }}",
+            c.ink, Modifier.weight(1.4f),
+        )
+    }
+}
+
+// ---- the night ----
+
+@Composable
+private fun NightCanvas(
+    c: IqraColors,
+    env: List<Pair<Long, Float>>,
+    lockTrace: List<Pair<Long, Int>>,
+    gateTrace: List<Pair<Long, Boolean>>,
+    verdicts: List<PracticeViewModel.VerdictPoint>,
+    viewT: Long,
+    modifier: Modifier = Modifier,
+) {
+    val span = maxOf(1L, env.lastOrNull()?.first ?: 1L)
+    Canvas(modifier) {
+        val h = size.height
+        val w = size.width
+        val xOf = { t: Long -> (t.toFloat() / span) * w }
+        drawRect(
+            Brush.verticalGradient(
+                0f to Color.Transparent,
+                0.5f to c.accent.copy(alpha = 0.05f),
+                1f to c.accent.copy(alpha = 0.12f),
+            ),
+            topLeft = Offset(0f, h * 0.45f), size = Size(w, h * 0.55f),
+        )
+        // gate mist
+        var mistStart = -1L
+        gateTrace.forEach { (t, closed) ->
+            if (closed && mistStart < 0) mistStart = t
+            if (!closed && mistStart >= 0) {
+                drawRect(
+                    c.wordBad.copy(alpha = 0.07f),
+                    topLeft = Offset(xOf(mistStart), 0f),
+                    size = Size(xOf(t) - xOf(mistStart), h),
+                )
+                mistStart = -1L
+            }
+        }
+        // envelope wave up to viewT
+        val pts = env.filter { it.first <= viewT }
+        if (pts.isNotEmpty()) {
+            val fill = androidx.compose.ui.graphics.Path()
+            fill.moveTo(0f, h)
+            pts.forEach { (t, lv) -> fill.lineTo(xOf(t), h * 0.74f - lv * h * 0.3f) }
+            fill.lineTo(xOf(pts.last().first), h); fill.close()
+            drawPath(fill, c.accent.copy(alpha = 0.14f))
+            val crest = androidx.compose.ui.graphics.Path()
+            pts.forEachIndexed { i, (t, lv) ->
+                val p = Offset(xOf(t), h * 0.74f - lv * h * 0.3f)
+                if (i == 0) crest.moveTo(p.x, p.y) else crest.lineTo(p.x, p.y)
+            }
+            drawPath(crest, c.accent.copy(alpha = 0.5f), style = Stroke(1.5f))
+        }
+        // lock path
+        val lockPts = lockTrace.filter { it.first <= viewT }
+        val maxAyah = (lockTrace.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
+        var prev: Offset? = null
+        lockPts.forEach { (t, ayah) ->
+            val p = Offset(xOf(t), h * 0.5f - (ayah.toFloat() / maxAyah) * h * 0.26f)
+            prev?.let { drawLine(c.gold.copy(alpha = 0.4f), it, p, strokeWidth = 1.2f) }
+            drawCircle(c.gold.copy(alpha = 0.7f), 1.8f, p)
+            prev = p
+        }
+        // verdict stars
+        verdicts.filter { it.atMs <= viewT }.forEach { v ->
+            val x = xOf(v.atMs)
+            val y = h * 0.24f - (v.atMs % 977) / 977f * h * 0.1f
+            drawCircle(
+                when (v.status) {
+                    WordStatus.CORRECT -> c.goldBright.copy(alpha = 0.9f)
+                    WordStatus.WRONG -> c.wordBad
+                    else -> c.inkMuted.copy(alpha = 0.6f)
+                },
+                if (v.status == WordStatus.WRONG) 3.4f else 2f,
+                Offset(x, y),
+            )
+        }
+        // now cursor
+        val nx = xOf(viewT)
+        drawLine(c.goldBright.copy(alpha = 0.8f), Offset(nx, 0f), Offset(nx, h), strokeWidth = 1f)
+        drawCircle(c.goldBright, 3f, Offset(nx, h * 0.74f))
+    }
+}
+
+// ---- furniture ----
+
+@Composable
+private fun ConsoleBand(c: IqraColors, title: String, src: String, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(IqraShape.card).background(c.surface).padding(12.dp),
+        Modifier.fillMaxWidth().clip(IqraShape.card).background(c.surface).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Text(title, fontSize = 10.sp, letterSpacing = 1.1.sp, color = c.inkFaint)
-        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(title, fontSize = 10.sp, letterSpacing = 1.2.sp, color = c.inkFaint)
+            Text(src, fontSize = 8.sp, fontFamily = FontFamily.Monospace, color = c.inkFaint.copy(alpha = 0.6f))
+        }
+        Spacer(Modifier.height(9.dp))
         content()
     }
+}
+
+@Composable
+private fun EmptyNote(c: IqraColors, text: String) {
+    Text(text, fontSize = 12.sp, color = c.inkFaint)
+}
+
+@Composable
+private fun LegendRow(c: IqraColors) {
+    Spacer(Modifier.height(6.dp))
+    Text(stringResource(R.string.console_legend), fontSize = 9.sp, color = c.inkFaint)
+}
+
+@Composable
+private fun BreathingDot(active: Boolean) {
+    val a by animateFloatAsState(if (active) 1f else 0.35f, tween(600), label = "dot")
+    Box(
+        Modifier
+            .size(11.dp)
+            .graphicsLayer { alpha = a }
+            .background(
+                if (active) Color(0xFF2BB6A0) else Color(0xFF5E716A),
+                CircleShape,
+            )
+            .border(2.dp, if (active) Color(0x332BB6A0) else Color.Transparent, CircleShape),
+    )
 }

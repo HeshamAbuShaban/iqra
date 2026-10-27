@@ -77,7 +77,7 @@ def main() -> int:
         ("the record times each word's first verdict",
          re.search(r'append\(",\\\"wt\\\":"', vm) is not None),
         ("the time is taken when the verdict first becomes terminal",
-         re.search(r"sessionTerminalAt\[key\] = System\.currentTimeMillis\(\) - sessionStartedAtMs", vm) is not None),
+         re.search(r"val atMs = System\.currentTimeMillis\(\) - sessionStartedAtMs[\s\S]{0,120}sessionTerminalAt\[key\] = atMs", vm) is not None),
         ("a word that is re-judged does not get a new time",
          re.search(r"if \(prev != WordStatus\.CORRECT && prev != WordStatus\.WRONG\) \{[\s\S]{0,400}?sessionTerminalCount\+\+[\s\S]{0,400}?sessionTerminalAt\[key\]", vm) is not None),
         # WHAT was heard. `wu` says where in a word the blame landed and `wt`

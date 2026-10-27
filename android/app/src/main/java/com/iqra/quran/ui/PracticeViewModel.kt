@@ -622,6 +622,26 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Word key -> ms from session start at which it first earned a verdict. */
     private val sessionTerminalAt = HashMap<String, Long>()
 
+    /**
+     * The verdict timeline for the engine console: every decided word at its
+     * own decision instant, newest last. Published from the same latch that
+     * stamps `wt` into the record, so the console's timeline and the record's
+     * timeline are one timeline.
+     *
+     * Console contract piece (see EngineConsoleScreen): a future engine keeps
+     * this flow alive and the night view keeps working. Bounded by the same
+     * session archive the record writes.
+     */
+    data class VerdictPoint(
+        val key: String,
+        val status: WordStatus,
+        /** ms since session start, the record's own `wt` clock. */
+        val atMs: Long,
+    )
+
+    private val _verdictTimeline = MutableStateFlow<List<VerdictPoint>>(emptyList())
+    val verdictTimeline: StateFlow<List<VerdictPoint>> = _verdictTimeline
+
     private fun archiveVerdict(key: String, v: WordStatus) {
         val prev = sessionArchive[key]
         // A real verdict is sticky: once a word has been decided, a later
@@ -649,10 +669,59 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 // earning a verdict, and reading it next to the word's own
                 // arrival separates "the engine is slow" from "the engine
                 // decided early and the PAINT was late".
-                sessionTerminalAt[key] = System.currentTimeMillis() - sessionStartedAtMs
+                val atMs = System.currentTimeMillis() - sessionStartedAtMs
+                sessionTerminalAt[key] = atMs
+                _verdictTimeline.value = _verdictTimeline.value +
+                    VerdictPoint(key, v, atMs)
             }
         }
     }
+
+    /**
+     * One ayah's judgment made visible, for the engine console: the expected
+     * units from the word-aligned table, the heard units from the ayah's own
+     * window, and the mapper's own per-unit and per-word results. Reads only
+     * state the engine already computed - the console never triggers an
+     * alignment the engine would not have run, and the read costs one DP over
+     * the same window the poll just judged.
+     *
+     * Returns null when the ayah has no window (nothing arrived): the console
+     * shows the honest empty state, never a guess.
+     */
+    data class AyahAlignment(
+        /** The flat expected units, in mushaf order. */
+        val expected: List<String>,
+        /** expected[i] belongs to word wordOf[i] (0-based in the ayah). */
+        val wordOf: IntArray,
+        /** The window's heard units, in arrival order. */
+        val heard: List<String>,
+        /** heard[i] was charged to word emitWord[i] (-1 = unmatched). */
+        val emitWord: IntArray,
+        /** The alignment's own per-word verdicts for this ayah. */
+        val statuses: List<WordStatus>,
+        /** Per-word matched-unit share, -1 = no evidence. */
+        val coverage: FloatArray,
+    )
+
+    fun ayahAlignmentFor(surah: Int, ayah: Int): AyahAlignment? {
+        val exp = com.iqra.quran.ml.PhonemeMapper.expected(surah, ayah) ?: return null
+        val obs = ayahObs(surah, ayah) ?: return null
+        if (obs.isEmpty()) return null
+        val res = com.iqra.quran.ml.PhonemeMapper.align(obs, exp)
+        return AyahAlignment(
+            expected = exp.units,
+            wordOf = exp.unitWord,
+            heard = obs,
+            emitWord = res.emitWord,
+            statuses = res.statuses,
+            coverage = res.wordCoverage,
+        )
+    }
+
+    /** The session clock the record's `wt` and the frame ring run on. 0 = no session. */
+    fun sessionNowMs(): Long =
+        if (!recording.value) 0L
+        else SystemClock.elapsedRealtime() - sessionStartMono
 
     /**
      * Latch for the surah-end page advance. Set when the reader has been taken
@@ -2789,6 +2858,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         sessionAdvisories.clear()
         wrongStartOf.clear()
         sessionTerminalAt.clear()
+        _verdictTimeline.value = emptyList()
         _advisoryMap.value = emptyMap()
         // Arrivals and the emission log are SESSION state: an arrival index from
         // the previous session points into a log that no longer holds those

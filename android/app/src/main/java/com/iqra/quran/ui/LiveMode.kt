@@ -1015,54 +1015,6 @@ private fun LiveWord(text: String, status: WordStatus?, isCurrent: Boolean, hide
 
 
 @Composable
-internal fun LensBar(
-    c: IqraColors,
-    label: String,
-    coverage: Float,
-    threshold: Float?,
-    modifier: Modifier = Modifier,
-    tick: Boolean,
-) {
-    Column(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, fontSize = 9.sp, letterSpacing = 0.8.sp, color = c.inkFaint)
-            Spacer(Modifier.weight(1f))
-            Text(
-                ltr(if (coverage < 0f) "—" else "%.0f%%".format(coverage * 100f)),
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                color = if (threshold != null && coverage >= threshold) c.gold else c.ink,
-            )
-        }
-        Spacer(Modifier.height(3.dp))
-        Canvas(Modifier.fillMaxWidth().height(6.dp)) {
-            drawRoundRect(
-                c.surfaceHigh,
-                androidx.compose.ui.geometry.Offset.Zero,
-                androidx.compose.ui.geometry.Size(size.width, size.height),
-                androidx.compose.ui.geometry.CornerRadius(3f, 3f),
-            )
-            if (coverage >= 0f) {
-                drawRoundRect(
-                    c.accent,
-                    androidx.compose.ui.geometry.Offset.Zero,
-                    androidx.compose.ui.geometry.Size(size.width * coverage.coerceIn(0f, 1f), size.height),
-                    androidx.compose.ui.geometry.CornerRadius(3f, 3f),
-                )
-            }
-            if (tick && threshold != null) {
-                drawRoundRect(
-                    c.gold,
-                    androidx.compose.ui.geometry.Offset(size.width * threshold - 1f, -2f),
-                    androidx.compose.ui.geometry.Size(2f, size.height + 4f),
-                    androidx.compose.ui.geometry.CornerRadius(1f, 1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
 internal fun LensCount(c: IqraColors, label: String, value: String, tint: Color, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = tint)

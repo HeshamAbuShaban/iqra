@@ -161,4 +161,19 @@
     <string name="console_calc_title">الحساب</string>
     <string name="console_events_title">حلقة الأحداث</string>
     <string name="console_counts_title">الجلسة حتى الآن</string>
+    <string name="console_idle_state">المحرك خامل</string>
+    <string name="console_state_gate">البوابة سمعت صمتاً — لا شيء يصل</string>
+    <string name="console_state_listening">المحرك يسمعك</string>
+    <string name="console_judge_title">الحكم على الكلمة — صوتٌ مقابل صوت</string>
+    <string name="console_pick_word">انقر كلمة من التلاوة لترى محاذاتها</string>
+    <string name="console_pulse_title">نبض الجلسة</string>
+    <string name="console_breath_title">نَفَس النموذج — ما وصل للتوّ</string>
+    <string name="console_night_title">ليل الجلسة — كل حكم نجمٌ يُضاء في وقته</string>
+    <string name="console_v_ok">صحيح</string>
+    <string name="console_v_bad">خطأ</string>
+    <string name="console_v_unknown">غير محسوم</string>
+    <string name="console_expected">المتوقَّع</string>
+    <string name="console_heard_lbl">المسموع</string>
+    <string name="console_units_share">%1$s٪ من وحدات الكلمة طابقت</string>
+    <string name="console_legend">الذهب الكلمة الحالية أو موضع ملاحظة · الأحمر خطأ · الباهت لم يُسمَع · انقر كلمة لمحاذاتها</string>
 </resources>

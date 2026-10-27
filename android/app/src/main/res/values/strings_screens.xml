@@ -162,4 +162,19 @@
     <string name="console_calc_title">THE CALCULATION</string>
     <string name="console_events_title">EVENT RING</string>
     <string name="console_counts_title">THE SESSION SO FAR</string>
+    <string name="console_idle_state">Engine idle</string>
+    <string name="console_state_gate">The gate heard silence — nothing is reaching it</string>
+    <string name="console_state_listening">The engine hears you</string>
+    <string name="console_judge_title">The judgment — sound against sound</string>
+    <string name="console_pick_word">Tap a word of the recitation to see its alignment</string>
+    <string name="console_pulse_title">The session pulse</string>
+    <string name="console_breath_title">The model\u2019s breath — what just arrived</string>
+    <string name="console_night_title">The session night — every verdict a star lit at its own instant</string>
+    <string name="console_v_ok">correct</string>
+    <string name="console_v_bad">wrong</string>
+    <string name="console_v_unknown">no verdict</string>
+    <string name="console_expected">expected</string>
+    <string name="console_heard_lbl">heard</string>
+    <string name="console_units_share">%1$s%% of the word\u2019s units matched</string>
+    <string name="console_legend">gold = current word or an advisory spot · red = wrong · dim = unheard · tap a word for its alignment</string>
 </resources>

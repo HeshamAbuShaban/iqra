@@ -2217,3 +2217,29 @@ behaviour to its shipping state except the heart now navigates. Letter-level
 tajweed colouring remains gated on the measured letter→class table
 (docs/TAJWEED_AND_MEMORISATION.md) — the console renders the spots the
 engine can already prove.
+
+**The console v2 — the confirmed design (build #292).** The visual prototype
+was confirmed against the representative session shape and ported to
+`EngineConsoleScreen` as the reciter's instrument: the reading band (words
+landing in their verdict colours, tap-for-alignment), the judgment hero
+(expected units from the word-aligned table above, heard units from the
+ayah's own window below, the mapper's own per-unit charge, the verdict seal
+animated to the word's coverage), the session pulse (accuracy ring, the
+coverage trio against their gold ticks, health lanterns), the model's breath
+(the heard tail as beads, newest glowing) with the **transcript row** — the
+same units stitched into words as they are matched, the documented "recited
+transcript" made live — and **ليل الجلسة**: the night timeline whose
+envelope, lock path and gate mist are sampled by the console itself from
+published state, whose stars are the engine's own verdict timeline
+(`verdictTimeline`, additive, published at the `wt` latch so the night and
+the record share one timeline), and whose scrubber replays the accumulated
+session interactively.
+
+Additive engine surface, all read-or-emit-only: `verdictTimeline`,
+`ayahAlignmentFor` (one read-only DP over the same window the poll just
+judged), `sessionNowMs`, `heardUnits`. The hot path is untouched. Gate
+checks: `device_blame_parity`'s terminal-latch assertion re-pointed to the
+behaviour through the refactor's variable (the time is still taken at the
+first-terminal latch), fault shape unchanged. Known follow-up: per-unit
+blame bridges (the replay's depth) stay in the replay tools; the live hero
+shows coverage share + verdict seal until the alignment trace is published.
