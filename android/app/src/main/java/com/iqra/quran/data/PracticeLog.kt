@@ -210,6 +210,7 @@ object PracticeLog {
         val advisories: List<AdvisoryNote> = emptyList(),
         /** Every word row in written order, including SKIPPED/UNKNOWN (the population, not the score). */
         val wordRows: List<WordRow> = emptyList(),
+        val frameRows: List<FramePoint> = emptyList(),
     ) {
 
     data class AdvisoryNote(val key: String, val kind: String, val count: Int)
@@ -228,6 +229,14 @@ object PracticeLog {
      * "past the first unit". See [Record.v].
      */
     data class WordRow(val key: String, val st: String, val wu: Int? = null, val wt: Int? = null)
+
+    /**
+     * One poll row of the record's frame ring, as written. The console's
+     * night replays the lock walk from these, and its silence mist from the
+     * stretches where nothing was decided (tag != DECIDED) or no frame exists
+     * at all. tag: 0 decided, 1 empty window, 2 handoff, 3 sibling escape.
+     */
+    data class FramePoint(val tMs: Long, val lock: Int, val tag: Int)
         /**
          * Every word the engine recorded a status for, including SKIPPED and
          * UNKNOWN - which are the ABSENCE of a verdict, not one. This is the
@@ -785,6 +794,13 @@ object PracticeLog {
                 List(arr.length()) { i -> arr.optLong(i) }
             },
             wordRows = rows,
+            frameRows = run {
+                val arr = o.optJSONArray("frames") ?: org.json.JSONArray()
+                List(arr.length()) { i ->
+                    val fr = arr.optJSONObject(i) ?: return@List Record.FramePoint(0L, 0, 0)
+                    Record.FramePoint(fr.optLong("t"), fr.optInt("lock"), fr.optInt("tag"))
+                }
+            },
             advisories = run {
                 val arr = o.optJSONArray("advisories") ?: org.json.JSONArray()
                 List(arr.length()) { i ->

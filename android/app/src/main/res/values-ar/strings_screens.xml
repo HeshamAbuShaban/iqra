@@ -178,8 +178,11 @@
     <string name="console_legend">الذهب الكلمة الحالية أو موضع ملاحظة · الأحمر خطأ · الباهت لم يُسمَع · انقر كلمة لمحاذاتها</string>
     <string name="console_report_card">مرصد هذه الجلسة</string>
     <string name="console_report_card_blurb">ليل الجلسة، ومحاذاة أي كلمة — ببيانات هذه الجلسة وهي الأحدث على الشاشة.</string>
-    <string name="console_record_note">يعرض سجلّ هذه الجلسة: كثافة ما وصل للمحرك، وأحكامها في لحظاتها. مسار التتبع والبوابة يعيشان في الجلسة الحية فقط.</string>
     <string name="console_blame_unit">الاتهام عند الوحدة %1$d من الكلمة</string>
     <string name="console_decided_at">حُكِم عند الثانية %1$.1f من الجلسة</string>
     <string name="console_stitch_note">التركيب تقريبي — سلسلة المحاذاة الكاملة تعيش في أدوات الإعادة</string>
+    <string name="console_show_alignment">اعرض محاذاتها</string>
+    <string name="console_hear_around">اسمع ما سمعه — حول لحظة الحكم</string>
+    <string name="console_hearing">يُسمَع… انقر للإيقاف</string>
+    <string name="console_record_note">يعرض سجلّ هذه الجلسة: كثافة ما وصل للمحرك، وأحكامها في لحظاتها، ومسار التتبع من إطارات السجل. فترات الصمت بلا حكم تظهر ضباباً.</string>
 </resources>

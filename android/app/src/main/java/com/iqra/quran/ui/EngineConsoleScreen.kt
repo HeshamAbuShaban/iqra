@@ -47,7 +47,9 @@ import com.iqra.quran.data.WordStatus
 import com.iqra.quran.ui.theme.IqraColors
 import com.iqra.quran.ui.theme.IqraShape
 import com.iqra.quran.ui.theme.LocalIqraColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.min
 
 /**
@@ -208,9 +210,47 @@ fun EngineConsoleScreen(
         scopeProgress.associate { it.ayah to vm.standWordsFor(it.ayah) }
     }
 
+    // The hear-it player, record mode only: the session WAV anchored by the
+    // record's own clock - WAV position = t - (audioStartMs - startedAt) - the
+    // same mapping the report's audio card uses. One player; the hero's
+    // button plays the seconds around the selected word's decision.
+    val wavFile = remember(rec) {
+        rec?.audioFile?.let { java.io.File(ctx.filesDir, "sessions/$it") }
+            ?.takeIf { it.isFile }
+    }
+    val player = remember { android.media.MediaPlayer() }
+    var hearPlaying by remember { mutableStateOf(false) }
+    val hearScope = rememberCoroutineScope()
+    fun hearAround(startRecMs: Long, durMs: Int = 6000) {
+        if (hearPlaying) {
+            runCatching { player.stop() }
+            hearPlaying = false
+            return
+        }
+        val wav = wavFile ?: return
+        val offset = (rec?.audioStartMs ?: 0L) - (rec?.startedAt ?: 0L)
+        val maxMs = ((rec?.audioSamples ?: 0L) / 16L).toInt()
+        hearScope.launch(Dispatchers.IO) {
+            runCatching {
+                player.reset()
+                player.setDataSource(wav.absolutePath)
+                player.prepare()
+                player.seekTo((startRecMs - offset).toInt().coerceIn(0, maxMs.coerceAtLeast(0)))
+                player.start()
+                hearPlaying = true
+                delay(durMs.toLong())
+                runCatching { player.pause() }
+                hearPlaying = false
+            }
+        }
+    }
+
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scrollScope = rememberCoroutineScope()
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { pad ->
         LazyColumn(
-            Modifier.padding(pad).fillMaxSize(),
+            modifier = Modifier.padding(pad).fillMaxSize(),
+            state = listState,
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -355,7 +395,14 @@ fun EngineConsoleScreen(
                                     }
                                 }.getOrNull()
                             }
-                            JudgementHeroRecord(lcG, sel, row, alR)
+                            JudgementHeroRecord(
+                                lcG, sel, row, alR,
+                                hasAudio = wavFile != null,
+                                hearPlaying = hearPlaying,
+                                onHear = {
+                                    row?.wt?.let { hearAround((it - 3000L).coerceAtLeast(0L)) }
+                                },
+                            )
                         } else {
                             val al = remember(sel, heard, scopeProgress) {
                                 runCatching {
@@ -525,6 +572,45 @@ fun EngineConsoleScreen(
                             color = lcG.gold,
                         )
                     }
+                    // The scrub-to-inspect loop: the verdict nearest the
+                    // cursor, one tap from its own alignment.
+                    night.stars.minByOrNull { kotlin.math.abs(it.first - viewT) }?.let { near ->
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                                .background(lcG.surfaceHigh)
+                                .clickable {
+                                    selKey = near.third
+                                    // The hero lives above the night; the tap
+                                    // must land the reader on the answer.
+                                    scrollScope.launch { listState.animateScrollToItem(2) }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                when (near.second) {
+                                    WordStatus.CORRECT -> "✓"
+                                    WordStatus.WRONG -> "✕"
+                                    else -> "؟"
+                                },
+                                fontSize = 12.sp,
+                                color = when (near.second) {
+                                    WordStatus.CORRECT -> lcG.wordGood
+                                    WordStatus.WRONG -> lcG.wordBad
+                                    else -> lcG.inkMuted
+                                },
+                            )
+                            Text(near.third, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                                color = lcG.ink)
+                            Text(
+                                stringResource(R.string.console_show_alignment),
+                                fontSize = 10.sp, color = lcG.accent,
+                                modifier = Modifier.padding(start = 2.dp),
+                            )
+                        }
+                    }
                     if (rec != null) {
                         Spacer(Modifier.height(4.dp))
                         Text(stringResource(R.string.console_record_note),
@@ -646,6 +732,9 @@ private fun JudgementHeroRecord(
     key: String,
     row: com.iqra.quran.data.PracticeLog.Record.WordRow?,
     al: PracticeViewModel.AyahAlignment?,
+    hasAudio: Boolean,
+    hearPlaying: Boolean,
+    onHear: () -> Unit,
 ) {
     if (al == null) {
         EmptyNote(c, stringResource(R.string.console_heard_empty))
@@ -690,12 +779,24 @@ private fun JudgementHeroRecord(
                     fontSize = 10.sp, color = c.inkMuted,
                 )
             }
-            row?.wt?.let {
+            row?.wt?.let { wt ->
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    stringResource(R.string.console_decided_at, it / 1000f),
+                    stringResource(R.string.console_decided_at, wt / 1000f),
                     fontSize = 10.sp, color = c.gold,
                 )
+                if (hasAudio) {
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        if (hearPlaying) stringResource(R.string.console_hearing)
+                        else stringResource(R.string.console_hear_around),
+                        fontSize = 11.sp, color = c.accent,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                            .background(c.accent.copy(alpha = 0.1f))
+                            .clickable { onHear() }
+                            .padding(horizontal = 9.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
     }

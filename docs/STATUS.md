@@ -2244,6 +2244,24 @@ first-terminal latch), fault shape unchanged. Known follow-up: per-unit
 blame bridges (the replay's depth) stay in the replay tools; the live hero
 shows coverage share + verdict seal until the alignment trace is published.
 
+**The record night completed (build #300).** The record's JSON always carried
+the frame ring; the parser dropped it. `Record.frameRows` now parses it, and
+the record-mode night replays the lock walk from the frames and shows the
+silence mist from the stretches where nothing was judged (empty-window runs
+and gaps longer than a few polls). The scrubber gained the inspect loop: the
+verdict nearest the cursor is one chip, one tap from its alignment, with the
+console auto-scrolling to the hero. The record-mode hero gained the hear
+button — the six seconds around the word's own decision instant, from the
+session WAV anchored by the record's clock (the report's player pattern).
+Device-verified over record #272: reading band, hero units (after the
+1-based/0-based word-index fix at the key boundary), the night's stars and
+emission-density wave, and the nearest-verdict chip showing the right verdict
+at its scrub position. The walk/mist render and the hear button are wired and
+compile-verified; their on-device pass waits for the next hand-held session —
+adb swipe injection was being dropped by MIUI's input pipeline under
+sustained automation (DPAD and clicks delivered fine; the main thread slept),
+so the last screen was verified by hand-events only up to the chip.
+
 **Placement and wiring, corrected (build #299).** The console had been filed
 under Settings — a watching instrument in the changing-things place, three
 taps from where it is needed. Rewired to the two moments it serves:
