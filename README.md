@@ -108,7 +108,7 @@ The engineering is documented as it happened, because the interesting part is no
 the code — it is what was nearly shipped, and what turned out to be a bug in the
 measuring instrument rather than in the app.
 
-**[docs/LESSONS.md](docs/LESSONS.md)** — the thirteen things that would each have
+**[docs/LESSONS.md](docs/LESSONS.md)** — the fifteen things that would each have
 saved weeks. **[docs/DEFECTS_AND_METHOD.md](docs/DEFECTS_AND_METHOD.md)** — every
 defect, the four instruments built to find them, and the traps that cost the most
 time.
@@ -222,6 +222,38 @@ An honest list, so nothing here reads as more finished than it is:
 - starting part-way through a surah
 
 Auto feedback is a study aid. A teacher's ear is the authority.
+
+---
+
+## For contributors — hijra ila al-code
+
+This is a tool built for Muslims first, and many of its contributors will be
+Muslims who program. The code is yours to read, change, and build on (MIT,
+below) — and the project's whole discipline is written down so you never have
+to reverse-engineer why it is shaped the way it is.
+
+One rule governs everything, and it is worth reading before your first commit:
+
+> **A verdict is an accusation.** Painting a word red tells someone they
+> recited the Book of Allah wrongly. Never let a false accusation ship, and
+> never let a non-verdict be drawn as one. A wrong verdict is worse than no
+> verdict.
+
+Where to start, in order:
+
+| Read | What it gives you |
+|---|---|
+| [docs/CORE_LOGIC.md](docs/CORE_LOGIC.md) | The pipeline in plain language: detect, decode, judge, move, paint, record |
+| [docs/MAINTAINING.md](docs/MAINTAINING.md) | How to change the app and PROVE the change: the gate, how to write a check, how to add a tajweed rule |
+| [AGENTS.md](AGENTS.md) | The standing rules of this tree — stage by path, fault-inject every check, refuse rather than invent |
+| [docs/TODO.md](docs/TODO.md) | The live backlog, with the measured negatives marked so nothing is re-attempted blind |
+
+Adding a rule to the engine has one safe shape: **a rule that only removes
+blame is safe by construction.** The waqf, optional-final and qalqalah-form
+guards are that family; `docs/TAJWEED_AND_MEMORISATION.md` maps what the
+engine cannot yet judge, with the site counts. Every check in
+`engine/replay/run_checks.py` must be shown able to fail before its result is
+believed — a check that has never gone red is decoration.
 
 ---
 
