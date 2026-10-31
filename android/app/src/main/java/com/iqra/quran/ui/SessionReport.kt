@@ -1152,4 +1152,22 @@ fun reportText(r: PracticeLog.Record, data: QuranData): String = buildString {
     r.durationSec?.let { appendLine("Duration: ${formatSecs(it)}") }
     if (r.wpm > 1.0) appendLine("Pace: %.0f wpm".format(r.wpm))
     appendLine("Correct ${r.correct} · wrong ${r.wrong} · passed over ${r.skipped} · unheard ${r.unknown}")
+    // The kind split, when the record carries it - the pasted summary can
+    // answer "what kind of mistakes" without the report screen open. Only
+    // rows the app could have written: a WRONG verdict always has at least
+    // one substituted unit, so a zero there is a writer defect, not a kind.
+    val kindRows = r.wordRows.filter { it.st == "WRONG" && (it.wsub ?: 0) > 0 && (it.wunits ?: 0) > 0 }
+    if (kindRows.isNotEmpty()) {
+        val sub = kindRows.sumOf { it.wsub ?: 0 }
+        val miss = kindRows.sumOf { it.wmiss ?: 0 }
+        appendLine("Kind split: $sub units said with a different sound, $miss never said, over ${kindRows.size} wrong words")
+    }
+    val notes = r.advisories.sumOf { it.count }
+    if (notes > 0) {
+        // Events and words apart: LOW_EVIDENCE fires per poll and measures
+        // the microphone; the words are the recitation plan. Both numbers,
+        // one line, so the paste says what the report's detail says.
+        val words = r.advisories.map { it.key }.distinct().size
+        appendLine("Notes (advisories, never verdicts): $notes events on $words words")
+    }
 }

@@ -615,6 +615,16 @@ private fun RecentSessionsCard(
                     } ?: "Session · ${shortDate(r.dayKey)}",
                         fontSize = 13.sp, color = c.ink,
                     )
+                    // The notes are part of what the session found, and this
+                    // list is where a recitation plan is chosen from - a row
+                    // that scores but hides its advisories sends the reader
+                    // into the report to learn the one thing they came for.
+                    // Counted as WORDS AFFECTED, not events: a per-event kind
+                    // like LOW_EVIDENCE can fire per poll, and record #272's
+                    // 2,750 events sit on 85 words - the events measure the
+                    // microphone, the words are the recitation plan. The
+                    // report's detail lines keep the event counts per kind.
+                    val notedWords = r.advisories.map { it.key }.distinct().size
                     Text(
                         buildString {
                             // With the denominator where the record carries
@@ -630,6 +640,7 @@ private fun RecentSessionsCard(
                             val dur = r.durationSec
                             append(if (dur != null) " · ${formatSecs(dur)}" else " · length unknown")
                             if (r.ended) append(" · finished") else append(" · ended early")
+                            if (notedWords > 0) append(" · " + stringResource(R.string.practice_row_notes, notedWords))
                         },
                         fontSize = 10.sp, color = c.inkFaint,
                     )

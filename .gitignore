@@ -78,3 +78,10 @@ __pycache__/
 
 # Rendered icon previews (regenerate: see tools/icon/iqra.svg)
 /tools/icon/preview/
+
+# Agent-side skills installed by `npx skills add` (session tooling, not app
+# code; third-party reference skills belong in .opencode/skill with SOURCE.md)
+/.agents/
+/.claude/
+/agent/
+/skills-lock.json
