@@ -1081,3 +1081,44 @@ What this says, precisely:
 Next, in order: attribute the 68 charged qalqalah sites to words (which gates
 they need), then the advisory-family design like the waqf junctions — a
 demote/not-accuse guard, never a verdict.
+
+### 8.2 The 68 charged qalqalah sites, attributed to their words (31 October)
+
+`tajweed_sites.py --charged-words` names every charged genuine site with its
+mushaf word. The full sweep (114 surahs; 306,101 judged unit sites; baseline
+0.69%) attributes all 68: **68 sites, 68 distinct words, 62 ayat** — 59
+substitutions, 9 unheard.
+
+The shape is uniform and it is one class, not a scatter: the table asserts
+the MARKED qalqalah unit (the U+0687 variant, e.g. `قڇ`), and the model
+answered with the SAME letter's plain vowelled form (`قَ`, `بَ`, `جَ`, `دَ`,
+`طَ`). 51 of the 59 substitutions are exactly that pair, same body letter;
+the rest are the same letter's plain form with a different vowel or a
+nearby substitution (e.g. 2:61 بَقْلِهَا expected قڇ heard طڇ; 6:52
+تَطْرُدِ expected طڇ heard قڇ). The 9 unheard charges have no emission at
+the site at all.
+
+That is the word-final-vowel shape again, mid-word: a legal-reading variant
+of one letter confused with its plain form by the recogniser, on audio whose
+coverage passed the 0.90 gate. The same-letter body test the census itself
+uses (`_body()` in tajweed_sites.py) is the checked mapping §8 asked for,
+measured, not guessed.
+
+**The guard this design points at (NOT BUILT — engine verdict path, the
+user decides):** when a charged unit's expectation is a MARKED qalqalah
+unit and the emission that answered it carries the same letter body without
+the mark, the charge is not evidence of a mistake — it is the recogniser
+failing to hear the qalqalah bounce inside an otherwise-passing word. The
+family shape is fixed by MAINTAINING: blame removed, never added; an amber
+advisory (`QALQALAH_FORM`), never a verdict; behind a Settings toggle that
+the engine consumes (pref_consumption); fault-injected parity before it
+ships. Measured cost on this corpus: 59 of 2,115 charges removed (2.8%),
+zero added; the 9 unheard stay out of the rule's reach (no emission is no
+form to intern). The corpus before/after is one run of this same census.
+
+The 68-word list stands in this file's companion output
+(`/tmp/qalqalah_attr.log` is the run of record; regenerate with
+`python3 engine/replay/tajweed_sites.py --charged-words`). First ten words:
+يُخْرِجْ (2:61), بَقْلِهَا (2:61), وَٱجْعَلْنَا (2:128), ٱلْقِبْلَةَ
+(2:143), قِبْلَتَكَ (2:145), ٱلْهَدْىِ (2:196 ×2), يَرْتَدِدْ (2:217),
+عُقْدَةُ (2:237), ٱجْعَلْ (2:260).

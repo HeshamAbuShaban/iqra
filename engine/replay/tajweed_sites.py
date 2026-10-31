@@ -83,6 +83,12 @@ CLASSES = ("QALQALAH", "NASAL", "MADD", "GEMINATE", "OTHER")
 POSITIONS = ("final", "pre-vowel", "mid")
 GENUINE = "genuine"           # row sub-tag: marked + bare-final qalqalah only
 
+# --charged-words: while charging, keep every charged GENUINE qalqalah site
+# (marked / bare-final - not ghosts, which are qalqalah LETTERS, not readings)
+# with the word it sits in, so the advisory family can be designed against
+# named sites instead of a rate. Read-only; the default sweep prints none of it.
+ATTRIBUTE = False
+
 
 def _body(u):
     """Unit minus its trailing harakah/tanwin/sukun and the qalqalah marker.
@@ -300,13 +306,19 @@ def site_sub(classes, u, k, ref):
     return "ghost"
 
 
-def sweep_one(surah):
+def sweep_one(surah, attribute=False):
     """Align one surah dump and charge every refused unit.
 
     Identical machinery to optional_final.py: its local_window, its coverage
     gate, its trim-and-realign; the table is the app's own
     word_aligned_phonemes.json. Charges on the FINAL alignment (post-trim),
     the same one the verdicts are read from.
+
+    `attribute` arrives as a PARAMETER, not a module global: the worker pool
+    is forkserver (Python 3.14's default for ProcessPoolExecutor), and a
+    forkserver worker re-imports this module fresh, so a global set in the
+    parent after import never reaches it. A global here meant hours of
+    grinding and then "0 sites" - silent data loss.
     """
     path = os.path.join(OUT, "%03d.json" % surah)
     if not os.path.isfile(path):
@@ -322,6 +334,8 @@ def sweep_one(surah):
     charged = Counter()
     sub = Counter()
     unheard = Counter()
+    details = []
+    W = words_by_key() if attribute else None
     cursor = 0
     for a in ayat:
         words = tbl["%d:%d" % (surah, a)]
@@ -349,19 +363,28 @@ def sweep_one(surah):
                 charged[ch] += 1
                 (sub if w0[k] else unheard)[("ALL", "", "")] += 1
                 (sub if w0[k] else unheard)[ch] += 1
+                if attribute and classes[u] == "QALQALAH" and pos_t in ("marked", "bare-final"):
+                    heard = window[r2q[k]] if r2q[k] >= 0 else "(none)"
+                    details.append(("%d:%d" % (surah, a), uw[k] + 1,
+                                    W.get((surah, a, uw[k] + 1), "?"),
+                                    u, heard, pos_t, bool(w0[k])))
     return {"surah": surah, "ayat": len(ayat), "judged": judged,
             "skipped": skipped, "symbols": len(syms),
-            "sites": sites, "charged": charged, "sub": sub, "unheard": unheard}
+            "sites": sites, "charged": charged, "sub": sub, "unheard": unheard,
+            "details": details}
 
 
-def corpus_sweep(surahs):
+def corpus_sweep(surahs, attribute=False):
     """Run every surah's dump through the app's own aligner and charge every
     refused unit to the site that expected it, bucketed by tajweed class and
-    position; the ALL row is the baseline every rate is read against."""
+    position; the ALL row is the baseline every rate is read against.
+
+    `attribute` is passed through to the workers - see sweep_one."""
     sites = Counter()
     charged = Counter()
     sub = Counter()
     unheard = Counter()
+    all_details = []
     ayat_total = ayat_judged = ayat_skipped = 0
     notes = []
     workers = min(8, len(surahs)) or 1
@@ -375,7 +398,7 @@ def corpus_sweep(surahs):
     del tbl
     order = sorted(surahs, key=lambda s: -cost[s])
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        futs = {pool.submit(sweep_one, s): s for s in order}
+        futs = {pool.submit(sweep_one, s, attribute): s for s in order}
         for fut in as_completed(futs):
             r = fut.result()
             if "note" in r:
@@ -389,6 +412,7 @@ def corpus_sweep(surahs):
             charged += r["charged"]
             sub += r["sub"]
             unheard += r["unheard"]
+            all_details += r.get("details", [])
             extra = "" if not r["skipped"] else " (%d below the gate)" % r["skipped"]
             print("surah %03d: %d/%d ayat judged, %s symbols%s"
                   % (r["surah"], r["judged"], r["ayat"],
@@ -443,13 +467,39 @@ def corpus_sweep(surahs):
         row(cls, cls, None)
     row("ALL (baseline)", "ALL", "")
 
+    if attribute:
+        # The sites behind the qalqalah rate, named: one line per charged
+        # genuine site, keyed to its mushaf word. The advisory family (demote,
+        # never accuse) is designed against this list, not against the rate.
+        by_word = defaultdict(list)
+        for key, wi, txt, unit, heard, pos_t, is_sub in all_details:
+            by_word[(key, wi, txt)].append((unit, heard, pos_t, is_sub))
+        print()
+        print("  CHARGED GENUINE QALQALAH SITES: %d sites over %d words in %d ayat"
+              % (len(all_details), len(by_word),
+                 len({k for (k, _wi, _t) in by_word})))
+        for (key, wi, txt), sites_here in sorted(
+                by_word.items(), key=lambda kv: (int(kv[0][0].split(":")[0]),
+                                                 int(kv[0][0].split(":")[1]),
+                                                 kv[0][1])):
+            for unit, heard, pos_t, is_sub in sites_here:
+                kind = "sub" if is_sub else "unheard"
+                print("    %-9s w%-3d %-22s expected %-8s heard %-8s %-10s %s"
+                      % (key, wi, txt if txt != "?" else "-", unit, heard,
+                         pos_t, kind))
+
 
 def main():
-    surahs = [int(a) for a in sys.argv[1:]] or list(range(1, 115))
+    global ATTRIBUTE
+    args = sys.argv[1:]
+    if "--charged-words" in args:
+        ATTRIBUTE = True
+        args = [a for a in args if a != "--charged-words"]
+    surahs = [int(a) for a in args] or list(range(1, 115))
     static_inventory()
     print("=" * 74)
     print()
-    corpus_sweep(surahs)
+    corpus_sweep(surahs, ATTRIBUTE)
     return 0
 
 

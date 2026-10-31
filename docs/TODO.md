@@ -21,8 +21,16 @@ measurements still matter.
    October, STATUS) — do not reopen without new evidence.
 3. **The per-word borrow test is CLOSED** (26 October, measured negative:
    221 charges, zero borrowed against the span-end boundary).
-4. **Engine comparison** — measurement only; swap only on loss (user's
-   decision). **Referee pilot** — built; the model decision is the user's.
+4. **Engine comparison — true state (31 October): a skeleton.** The
+   decision rule is locked and the two challenger weight sets sit on disk
+   (`engine/shootout/weights/`), but the manifest holds one template clip,
+   no runner is wired, no `results-*.json` exists, and onnxruntime-node is
+   not installed. The baseline's clean-half already exists as the corpus
+   sweeps (tilawa: 566 wrong / 6,135 ayat judged, harness numbers). What
+   the shootout actually waits for: a labelled mistakes-clip set (lesson 11
+   — a human is an instrument you cannot build; the user's own sessions
+   are the candidates) and the challenger runners. **Referee pilot** —
+   built; the model decision is the user's.
 5. **Device items waiting for the user's hand:** the next mid-page session
    (un-anchored guard's first live test), the two-surah page walk, the
    repeat-to-refresh scenario, the reader-bounce repro, the console's
@@ -190,6 +198,42 @@ measurements still matter.
     table, so only a labelled device A/B can price it. The minimal correct
     change is a two-id DP, not a one-line edit; re-scoring the existing
     traceback is worse (601). Do not ship without that A/B.
+## The user's leads, recorded — 31 October
+
+His five concerns, in his words, with where each stands:
+
+1. **Performance: word-judging speed, and hiding.** The speed half is
+   measured (item 9 above: verdicts land during the recitation, the floor is
+   the model's phoneme cadence 565 ms, poll halving buys ≤130 ms); hide mode
+   is measured to zero specks on the phone. If he still perceives lag on the
+   current build, his next session's `wt`/`emMs` are the instrument — one
+   recitation names it.
+2. **The pointer keeping pace with the reciter.** The standing pointer and
+   paint scope have fault-injected guards; the OPEN defect here is the
+   reader bounce (page publish reversing direction, seen in the 19-Oct
+   records) — needs a repro on the current build.
+3. **The evidence the judgment rests on.** Per-ayah windows with the
+   span-end trim, measured charge-honest (221 charges, zero borrowed); the
+   kind split (31 Oct) now names what was heard per wrong word.
+4. **"The error-counting mechanism isn't really effective."** The kind split
+   is the first structural answer; the referee pilot is the second-opinion
+   path; his proposal below is the bigger one.
+5. **His proposal — open the lock to the whole ayah or a THREE-AYAH ORBIT
+   (the reciter's own circle), moving with its range in real time, so the
+   comparison runs text-against-what-was-said inside a moving window, with
+   sound logical conditions for counting errors and heard material, and a
+   Settings control for it.** This is a lock/window policy change — verdict
+   path. The house rule: measured before built, him in the loop before it
+   ships. The measurable pilot: simulate the 3-ayah rolling window over the
+   pulled device records (258/260/272) and the corpus, compare per-word
+   verdicts against the records' actual device-verified verdicts, count
+   accusations added/removed and lock-moves saved. Build the simulation
+   first; no app change until the numbers are read together.
+6. **For Muslim developers: freedom to modify, strength of documentation.**
+   LICENSE/NOTICE and docs/MAINTAINING.md exist; a contributor-facing entry
+   point in README (mission, how to extend, where the docs live) is the
+   remaining piece.
+
 ## The user's leads, recorded — 19 October
 
 The user's words (morning of 19 October): the reference apps carry "huge
@@ -341,6 +385,11 @@ letter-binned pass read qalqalah at 4.15×; the honest unit-level split scales
 it back, which is exactly why the census bins by what the class occupies.
 Next: attribute the 68 charged qalqalah sites to their words, then design the
 advisory family (demote, never accuse) like the waqf junctions.
+**DONE 31 October — attributed (TAJWEED §8.2): 68 sites / 68 words / 62 ayat,
+59 sub + 9 unheard, the uniform shape "expected marked ڇ unit, heard the same
+letter's plain vowelled form". The guard design is written there and waits
+for the user's go: a never-accuse family member (QALQALAH_FORM advisory,
+toggle-consumed, fault-injected), corpus before/after is one census run.**
 
 (That is "if we aren't already on some bases with this": A is ~80% data-complete,
 0% UI; B is ~30% — the alignment and the channel exist, the class table does
