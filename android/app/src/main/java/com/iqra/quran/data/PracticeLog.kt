@@ -227,8 +227,16 @@ object PracticeLog {
      * `wu` only carries its full meaning on v2 records (first unit 0, last
      * 1000, fractions between); on v1 it was binary, and 1000 means only
      * "past the first unit". See [Record.v].
+     *
+     * WRONG rows on records from builds with the kind split also carry what
+     * KIND of mismatch charged the word: `wsub` units answered with a
+     * different sound, `wmiss` answered with nothing, of `wunits` own units.
+     * Optional like `wu`; a row without them simply predates the split.
      */
-    data class WordRow(val key: String, val st: String, val wu: Int? = null, val wt: Int? = null)
+    data class WordRow(
+        val key: String, val st: String, val wu: Int? = null, val wt: Int? = null,
+        val wsub: Int? = null, val wmiss: Int? = null, val wunits: Int? = null,
+    )
 
     /**
      * One poll row of the record's frame ring, as written. The console's
@@ -757,6 +765,9 @@ object PracticeLog {
                         st = st.ifEmpty { "UNKNOWN" },
                         wu = if (w.has("wu")) w.optInt("wu") else null,
                         wt = if (w.has("wt")) w.optInt("wt") else null,
+                        wsub = if (w.has("wsub")) w.optInt("wsub") else null,
+                        wmiss = if (w.has("wmiss")) w.optInt("wmiss") else null,
+                        wunits = if (w.has("wunits")) w.optInt("wunits") else null,
                     )
                 )
             }

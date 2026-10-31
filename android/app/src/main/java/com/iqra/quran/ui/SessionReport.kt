@@ -1024,6 +1024,26 @@ private fun RecitationLogCard(
                                     fontSize = 10.sp, color = c.inkFaint,
                                 )
                             }
+                            // WHAT KIND of mistake charged the word, from the
+                            // record itself: units answered with a different
+                            // sound, units never answered, of the word's own
+                            // units. Absent on records that predate the split -
+                            // those rows keep the position line alone. A split
+                            // with zero substituted units cannot belong to a
+                            // WRONG verdict (bad > 0 is the rule that claims
+                            // it), so such a row keeps its position line and
+                            // shows no contradiction under its own red.
+                            if (row.st == "WRONG" && row.wunits != null && row.wunits > 0) {
+                                val sub = row.wsub ?: -1
+                                val miss = row.wmiss ?: 0
+                                if (sub > 0) {
+                                    Text(
+                                        if (miss > 0) stringResource(R.string.report_mistake_shape, sub, row.wunits, miss)
+                                        else stringResource(R.string.report_mistake_shape_clean, sub, row.wunits),
+                                        fontSize = 10.sp, color = c.inkFaint,
+                                    )
+                                }
+                            }
                             // WHAT the model heard around this verdict, from
                             // the record's own emission stream - not a
                             // transcript, the phoneme symbols in the 2.5 s

@@ -474,6 +474,18 @@ object PhonemeMapper {
          * a wrong phoneme. This answers it, per session, from the phone.
          */
         val wrongStartFrac: FloatArray = FloatArray(0),
+        /**
+         * Per expected word, the kind split of its units: how many the emission
+         * answered with a DIFFERENT sound, how many it answered with nothing,
+         * and the word's own unit count. Derived from the same traceback as
+         * every other field - the report's kind line and the verdict it sits
+         * under cannot disagree. Report data; no verdict rule reads these.
+         * A WRONG verdict requires bad > 0, so substituted >= 1 on every row
+         * the record writes; missed alone (bad == 0) falls to SKIPPED.
+         */
+        val wordSubstituted: IntArray = IntArray(0),
+        val wordMissed: IntArray = IntArray(0),
+        val wordUnitsTotal: IntArray = IntArray(0),
     ) {
         /** Fraction of this ayah's phonemes the emission accounts for. */
         val coverage: Float
@@ -545,14 +557,22 @@ object PhonemeMapper {
         val wrong = BooleanArray(len)
         val emitWord = IntArray(n) { -1 }
         var unitsMatched = 0
+        val wordSubstituted = IntArray(m)
+        val wordMissed = IntArray(m)
+        val wordUnitsTotal = IntArray(m)
         for (j in ref.indices) {
+            wordUnitsTotal[wordOf[j]]++
             val qi = refToQuery[j]
-            if (qi < 0) continue
+            if (qi < 0) {
+                wordMissed[wordOf[j]]++
+                continue
+            }
             if (qry[qi] == ref[j]) {
                 matched[j] = true
                 unitsMatched++
             } else {
                 wrong[j] = true
+                wordSubstituted[wordOf[j]]++
             }
             emitWord[qi] = wordOf[j]
         }
@@ -600,6 +620,7 @@ object PhonemeMapper {
             if (found && total > 1) wrongStartFrac[owner] = pos / (total - 1).toFloat()
             else if (found) wrongStartFrac[owner] = 0f
         }
+
         // Emissions the DP assigned to each expected word. Used only by the
         // diagnostic dump; the verdict rule reads `bad` alone, and
         // word_rule_sweep.py measures that at zero collateral.
@@ -677,6 +698,7 @@ object PhonemeMapper {
         return Alignment(
             statuses, emitWord, wordProb, unitsMatched, len, wordHeard,
             wrongAtWordStart, wrongAtWordEnd, wrongStartFrac,
+            wordSubstituted, wordMissed, wordUnitsTotal,
         )
     }
 

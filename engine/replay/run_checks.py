@@ -128,6 +128,9 @@ CHECKS = [
      "the reader drops its verdicts exactly where the engine drops its own"),
     ("live_scope_inherit_parity", "none",
      "a session that never began cannot be finished, nor a finished scope inherited"),
+    ("mistake_kind_parity", "none",
+     "a WRONG row can say what kind of mistake it charged, from the one "
+     "traceback, to the record and the report"),
 ]
 
 # Scripts that need a dump argument rather than running bare.

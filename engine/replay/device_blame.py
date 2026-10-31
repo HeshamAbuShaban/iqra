@@ -210,6 +210,15 @@ def show_cause(o, path):
             uw2 = [j for j, wd in enumerate(wlist) for _ in wd]
             matched, wrong, _r2q, _e, _h, _nw = wv.align(
                 [app_key(e) for e in got], [app_key(u) for u in flat], uw2)
+            # The kind split, from the same re-alignment: what the report's
+            # kind line shows for records that carry it, and what a record
+            # without the fields WOULD have carried. The whole ayah is
+            # re-aligned once, so the per-word numbers are a partition of the
+            # ayah's units, not a per-word re-fit.
+            subs, missed, totals = wv.mistake_counts(
+                matched, wrong, _r2q, uw2, len(wlist))
+            print("            kind split: %d substituted, %d never said, "
+                  "of %d units" % (subs[i_ - 1], missed[i_ - 1], totals[i_ - 1]))
             for k in range(len(flat)):
                 if uw2[k] != i_ - 1:
                     continue

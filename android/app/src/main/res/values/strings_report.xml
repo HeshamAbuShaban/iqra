@@ -112,6 +112,8 @@
     <string name="report_blame_last">blamed at the word\'s last letter</string>
     <string name="report_blame_half1">blamed in the word\'s first half</string>
     <string name="report_blame_half2">blamed in the word\'s second half</string>
+    <string name="report_mistake_shape">%1$d of %2$d units said with a different sound, %3$d never said.</string>
+    <string name="report_mistake_shape_clean">%1$d of %2$d units said with a different sound, none went unheard.</string>
     <string name="report_heard">heard\ </string>
     <string name="report_stop_clip">Stop the clip</string>
     <string name="report_hear_clip">Hear the audio before this verdict</string>

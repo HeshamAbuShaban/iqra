@@ -619,6 +619,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     /** WRONG key -> where the mismatch began inside the word, 0..1, or -1. */
     private val wrongStartOf = HashMap<String, Float>()
 
+    /**
+     * WRONG key -> the kind split the charging alignment reported: units said
+     * with a different sound, units never said, of the word's own units.
+     * Report data; no verdict rule reads it. Captured per WRONG frame like
+     * `wu`, so the record's last WRONG frame is what the row shows.
+     */
+    data class MistakeShape(val substituted: Int, val missed: Int, val units: Int)
+
+    private val mistakeShapeOf = HashMap<String, MistakeShape>()
+
     /** Word key -> ms from session start at which it first earned a verdict. */
     private val sessionTerminalAt = HashMap<String, Long>()
 
@@ -998,6 +1008,17 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             sb.append("{\"key\":\"").append(k).append("\",\"st\":\"").append(v.name).append("\"")
             if (frac >= 0) {
                 sb.append(",\"wu\":").append((frac * 1000f).toInt())
+            }
+            // The kind split, from the same alignment that charged the word:
+            // units answered with a different sound, units never answered, of
+            // the word's own units. Only a WRONG row carries it, and only when
+            // the charging alignment reported one - older builds and demoted
+            // rows write exactly what they always wrote.
+            val shape = if (v == WordStatus.WRONG) mistakeShapeOf[k] else null
+            if (shape != null) {
+                sb.append(",\"wsub\":").append(shape.substituted)
+                    .append(",\"wmiss\":").append(shape.missed)
+                    .append(",\"wunits\":").append(shape.units)
             }
             sessionTerminalAt[k]?.let {
                 sb.append(",\"wt\":").append(it)
@@ -2857,6 +2878,7 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         sessionArchive.clear()
         sessionAdvisories.clear()
         wrongStartOf.clear()
+        mistakeShapeOf.clear()
         sessionTerminalAt.clear()
         _verdictTimeline.value = emptyList()
         _advisoryMap.value = emptyMap()
@@ -3882,6 +3904,13 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     // per verdict, so the record can say it after the fact.
                     if (s == WordStatus.WRONG) {
                         al.wrongStartFrac.getOrNull(i)?.let { wrongStartOf[key] = it }
+                        al.wordSubstituted.getOrNull(i)?.let { sub ->
+                            al.wordMissed.getOrNull(i)?.let { miss ->
+                                al.wordUnitsTotal.getOrNull(i)?.let { tot ->
+                                    mistakeShapeOf[key] = MistakeShape(sub, miss, tot)
+                                }
+                            }
+                        }
                     }
                     if (s == WordStatus.WRONG) {
                         // WRONG is only claimed for the ayah the lock is on, and

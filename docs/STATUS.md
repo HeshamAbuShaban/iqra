@@ -2276,3 +2276,36 @@ alive) and record path (practice → report → card → console over record #27
 67:26:1 with the word's own sounds). The record's word index is 1-based,
 the table's `unitWord`/mapper's `emitWord` are 0-based — the console converts
 once, at the key boundary.
+
+## Shipped, 31 October — the mistake kind, phase 1 (report-only)
+
+The review round's last open item (e): a wrong verdict can now say WHAT KIND
+of mistake it charged, and nothing in the verdict path moved.
+
+- The alignment derives three per-word arrays from the SAME traceback every
+  other field comes from: units the emission answered with a different sound
+  (`wsub`), units it answered with nothing (`wmiss`), of the word's own units
+  (`wunits`). No second alignment — the kind line and the verdict under it
+  cannot disagree. A WRONG verdict needs `bad > 0`, so `wsub >= 1` on every
+  row written; a word whose units were all missed stays SKIPPED and stays out.
+- EXTRA stays out of phase 1, deliberately: the aligner drops insertions from
+  per-word attribution (istiaadha, basmala and leading noise are insertions
+  by design), and inventing a per-word attribution would be the fallback that
+  "explains" wrong ayah audio (AGENTS rule 10).
+- The capture sits on the WRONG path beside `wu` (last WRONG frame wins, the
+  same contract), and clears with the other per-session maps. The record
+  writes `wsub`/`wmiss`/`wunits` only on WRONG rows; every older record reads
+  exactly as it did.
+- The report's wrong rows print the split under the position line, in both
+  locales, absent when the record predates the split.
+- Harness mirror: `word_verdicts.mistake_counts` (the same partition), and a
+  new gate check `mistake_kind_parity` (44 checks now): exact counts on
+  deterministic cases — one sub plus one miss is exact even where the
+  traceback ties, because the cost structure fixes the counts, not the path —
+  the partition invariant, WRONG ⇒ `wsub >= 1`, an all-zeros counter must
+  fail the case list, and source pins from align's ref-loop through the
+  writer to the reader. Four fault injections, each red, each reverted.
+- Not yet: the desktop replay and the console's record-mode hero can read the
+  same fields when wanted. EXTRA per word stays out until an honest
+  attribution exists (Tarteel names the kind; its aligner decides it
+  server-side, which is not an attribution this engine can copy).

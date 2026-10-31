@@ -112,6 +112,8 @@
     <string name="report_blame_last">وقع الخطأ عند الحرف الأخير من الكلمة</string>
     <string name="report_blame_half1">وقع الخطأ في النصف الأول من الكلمة</string>
     <string name="report_blame_half2">وقع الخطأ في النصف الثاني من الكلمة</string>
+    <string name="report_mistake_shape">نُطقت %1$d وحدات من أصل %2$d بصوت مختلف، ولم تُسمع %3$d.</string>
+    <string name="report_mistake_shape_clean">نُطقت %1$d وحدات من أصل %2$d بصوت مختلف، ولم يسقط منها شيء.</string>
     <string name="report_heard">سُمِع:\ </string>
     <string name="report_stop_clip">إيقاف المقطع</string>
     <string name="report_hear_clip">استمع إلى الصوت الذي سبق هذا الحكم</string>

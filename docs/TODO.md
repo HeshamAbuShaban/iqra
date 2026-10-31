@@ -8,12 +8,13 @@ check items only when the shipped code proves them.
 The live state; older blocks below are history, kept because their
 measurements still matter.
 
-1. **Review/UX round (a)–(d) shipped 24/25 October (build 267).** Report
-   surface, Settings knobs, reference pre-play sheet + per-reciter storage,
-   routing. Remaining: **(e) mistake-kind taxonomy phase 1** —
-   MISSED/substitution per wrong word from the DP traceback, additive,
-   report-only. EXTRA stays out: the aligner deliberately declines per-word
-   insertion attribution.
+1. **Review/UX round (a)–(e) shipped** — (a)–(d) on 24/25 October (build
+   267); **(e) the mistake kind, phase 1, on 31 October** (STATUS): wsub /
+   wmiss / wunits from the one traceback, report-only, gate at 44 checks.
+   Follow-ups when wanted: desktop replay + console record-mode hero can read
+   the same fields; EXTRA per word stays out until an honest attribution
+   exists; device verification waits for the user's next session with a real
+   mistake.
 2. **The app rule's scope (narrowing) is BLOCKED on a labelled device A/B**
    (TODO item 17 measured +81 false accusations on the reference reciter
    without it). The word-table rebuild is CLOSED by measurement (25/26

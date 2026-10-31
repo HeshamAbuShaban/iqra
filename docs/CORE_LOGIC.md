@@ -363,7 +363,7 @@ The record holds:
 |---|---|
 | Header | Start time, flush time, surahs, lock, generation, words-per-minute |
 | `counters` | Moves, reversals, polls, words evaluated, words judged, words with no window, empty windows, unjudgeable ayat |
-| `words` | Every word the archive holds, with its verdict. A WRONG word also carries `wu`: the fraction of its own units at which the contradiction began, 0..1000 — first unit 0, last unit 1000 on `"v":2` records; v1 records carry only the binary 0/1000, where 1000 means "past the first unit". Without that field the app cannot say WHY a word was accused, and it cannot be argued with. |
+| `words` | Every word the archive holds, with its verdict. A WRONG word also carries `wu`: the fraction of its own units at which the contradiction began, 0..1000 — first unit 0, last unit 1000 on `"v":2` records; v1 records carry only the binary 0/1000, where 1000 means "past the first unit". Without that field the app cannot say WHY a word was accused, and it cannot be argued with. Newer builds also carry the kind split on a WRONG row: `wsub` units answered with a different sound, `wmiss` answered with nothing, of `wunits` own units — derived from the same traceback as the verdict, so the two cannot disagree (`mistake_kind_parity`). |
 | `ayahStatus` | Per-ayah counts, including `SKIPPED` and `CORRECT`, and `words`: how many words that ayah was expected to have. Without the denominator the report can only print a bare judged count, and "did I finish the scope" is a question only a denominator can answer. It excludes the verse-end marker, because the mushaf appends the ayah number to the last word and that is not a word anyone said — the live counter excludes it too, so the two can never disagree by one per ayah. |
 | `advisories` | The engine's notes, by kind and count |
 | `frames` | The policy state at each poll |
@@ -546,7 +546,7 @@ Run the gate:
 python3 engine/replay/run_checks.py
 ```
 
-It runs 43 checks. Every check must be shown able to fail. Break the thing that
+It runs 44 checks. Every check must be shown able to fail. Break the thing that
 a check measures, and see the check go red. A check that cannot fail measures
 nothing.
 
@@ -581,6 +581,7 @@ nothing.
 | `hide_mask_parity` | Hide mode printing a hidden word: the standing word, the play-head, the selection, the recite bar's expected-words line, or the live screen |
 | `session_epoch_parity` | The reader dropping verdicts at teardown, or keeping them across a session change |
 | `live_scope_inherit_parity` | A LiveTest that ends before it began, by inheriting the previous session's scope |
+| `mistake_kind_parity` | A wrong verdict that cannot say what kind of mistake it charged: a kind split that is not a partition, not gated on WRONG, or not carried from alignment to record to report |
 | `honest_numbers` | Two meanings of zero |
 | `tone_measurement` | A crest that reads reading speed instead of tone |
 | `latin_wrap_parity` | A trailing full stop migrating to the left of an English sentence |

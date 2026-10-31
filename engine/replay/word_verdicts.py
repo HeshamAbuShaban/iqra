@@ -483,6 +483,31 @@ def statuses_from(matched, wrong, unit_word, nwords, emit_word=None):
     return out
 
 
+def mistake_counts(matched, wrong, ref_to_query, unit_word, nwords):
+    """Per word: what KIND of mismatch its units took.
+
+    Mirrors the three arrays PhonemeMapper.align derives from the one
+    traceback, so the report's kind line and the verdict it sits under cannot
+    disagree. substituted = a unit the emission answered with a DIFFERENT
+    sound (`wrong`); missed = a unit the emission answered with nothing
+    (`ref_to_query` < 0). A word judged WRONG must have substituted >= 1 -
+    `bad > 0` is the rule that claims WRONG - and substituted + missed +
+    matched == total by construction.
+    """
+    subs = [0] * nwords
+    missed = [0] * nwords
+    total = [0] * nwords
+    for k, owner in enumerate(unit_word):
+        if not 0 <= owner < nwords:
+            continue
+        total[owner] += 1
+        if wrong[k]:
+            subs[owner] += 1
+        elif ref_to_query[k] < 0:
+            missed[owner] += 1
+    return subs, missed, total
+
+
 def word_spans(ref, unit_word, ref_to_query, nwords):
     """Exact word -> (lo,hi) window span, from the clean alignment itself.
 
