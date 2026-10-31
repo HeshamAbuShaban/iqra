@@ -2341,3 +2341,36 @@ diagnostics screen's 300 ms readout (visible only when opened) and the
 observer's 60 ms transport (runs only while playing). The recite bar's
 14 Hz waveform lives on the recitation screen and was not touched — the
 reader screen stays frozen.
+
+## The three-ayah orbit, priced on the user's own records (31 October)
+
+The user's proposal - the lock opens to a three-ayah "orbit" moving with the
+reciter - was put to the measurement before anything was built
+(`orbit_pilot.py`, read-only): for each ayah of the pulled device records,
+the THREE ayat as one expected text, ONE monotone alignment with the app's
+own DP and costing, against the slice the record's own spans rebuild; every
+word then compared with the verdict the phone actually gave. All pulled
+records (surahs 1, 2, 3, 18, 67), 7,250 words compared, harness numbers:
+
+- **Verdict stability collapses in the naive form.** 3,193 device-CORRECT
+  words lose their verdict (1,961 -> UNKNOWN, 1,232 -> SKIPPED): a static
+  slice's audio covers ~1.5 ayat while the expected text is 3, so the path
+  eats ~1.5 ayat of deletions and starves words whichever way the tie-breaks
+  fall. Only 78 of the device's 378 WRONG verdicts survive as WRONG.
+- **But the wider context absolves a measured class:** 22 WRONG->CORRECT
+  with sub 0, miss 0 - every unit matched once the neighbours' text was in
+  the same path. Among them 2:4:12, the twins-in-window case TODO item 5
+  named (أَمْوَالَهُمْ / أَمْوَالَكُمْ), 3:126:16 and 67:28:14. The monotone
+  path over a page IS the "window truth" model that item said the census
+  must wait for.
+- **71 accusations added**, every one a single substituted unit (sub 1 of
+  5-8) on a device-CORRECT word - the same shape as the known recogniser
+  single-unit miss class, unpriced without the audio.
+
+Reading: the orbit as a naive window-widening is not shippable - it starves
+verdicts faster than it forgives. The measured path forward, if the user
+wants it, is LESSONS 7's real design: a page-level monotone aligner with
+per-word attribution, where the path's cost model handles the audio/text
+coverage mismatch instead of eating it as deletions. That is a build, not a
+flip, and it stays his decision. The tool and the full matrix stand in
+engine/replay/orbit_pilot.py (run: orbit_pilot.py <records...>).
