@@ -142,17 +142,26 @@ fun EngineConsoleScreen(
     val lockTrace = remember { mutableStateListOf<Pair<Long, Int>>() }
     val gateTrace = remember { mutableStateListOf<Pair<Long, Boolean>>() }
     LaunchedEffect(Unit) {
+        // The clock ticks only while a session is recording. An idle console
+        // (no session, or one that ended) must rest: `nowMs` is the live
+        // night's x-axis, and a wall-clock write every 120 ms re-invalidated
+        // the whole screen ~8x a second while showing the same picture - the
+        // frame cost the user saw as "render is not just audio latency".
+        // Frozen axis when idle, live axis while recording: same picture,
+        // none of the burn.
         while (true) {
-            val t = vm.sessionNowMs()
-            nowMs = t
-            micNow = if (recording) vm.micLevel() else 0f
-            if (recording && (env.isEmpty() || t - env.last().first >= 250)) {
-                env.add(t to micNow)
-                if (env.size > 1400) env.removeAt(0)
-                lockTrace.add(t to (activeVerse ?: 0))
-                if (lockTrace.size > 1400) lockTrace.removeAt(0)
-                gateTrace.add(t to gateReason.isNotEmpty())
-                if (gateTrace.size > 1400) gateTrace.removeAt(0)
+            if (recording) {
+                val t = vm.sessionNowMs()
+                nowMs = t
+                micNow = vm.micLevel()
+                if (env.isEmpty() || t - env.last().first >= 250) {
+                    env.add(t to micNow)
+                    if (env.size > 1400) env.removeAt(0)
+                    lockTrace.add(t to (activeVerse ?: 0))
+                    if (lockTrace.size > 1400) lockTrace.removeAt(0)
+                    gateTrace.add(t to gateReason.isNotEmpty())
+                    if (gateTrace.size > 1400) gateTrace.removeAt(0)
+                }
             }
             delay(120)
         }

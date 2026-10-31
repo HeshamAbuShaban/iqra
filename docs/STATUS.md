@@ -2321,3 +2321,23 @@ desktop replay's cause panel renders it. Verified on the emulator over the
 derived fixture: the hero shows 67:10:1 — ✕ wrong, blame at unit 1, "1 of 5
 units said with a different sound, none went unheard", decided at second
 106.7 — the mirror's own numbers.
+
+## The idle console was redrawing the whole screen 8x a second (31 October, perf)
+
+The user's standing observation — "frame updates and render are not just
+audio latency" — put on the instrument. gfxinfo on the emulator, warm pass:
+the app's CPU-side stages are healthy (input+anim median 8.5 ms, draw record
+1.3–1.6 ms across home and report scrolls); the cost sits in the GPU
+pipeline, and roughly doubles on the report's dense Arabic panels. But one
+mechanism was fully the app's own: the console's sampling loop wrote
+`nowMs` (the live night's x-axis) from the wall clock every 120 ms whether
+or not a session was recording — an always-different value, so the entire
+screen re-invalidated ~8×/second while showing the same picture, and the
+night canvas redrew with it. The loop now ticks only while recording; the
+idle axis holds its last value. Measured on the emulator: the visible
+record-mode console produced **0 frames in 8 s of idling** (previously ~8/s
+by structure). Two sibling cadence loops were audited and left alone: the
+diagnostics screen's 300 ms readout (visible only when opened) and the
+observer's 60 ms transport (runs only while playing). The recite bar's
+14 Hz waveform lives on the recitation screen and was not touched — the
+reader screen stays frozen.
