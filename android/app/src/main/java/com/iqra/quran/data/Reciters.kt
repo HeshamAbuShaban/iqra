@@ -30,5 +30,7 @@ object Reciters {
     fun byId(id: String?): Reciter = ALL.firstOrNull { it.id == id } ?: DEFAULT
 
     fun url(r: Reciter, surah: Int): String =
-        "https://download.quranicaudio.com/quran/${r.relativePath}/%03d.mp3".format(surah)
+        // Locale-pinned: this is a URL, and %03d under an Arabic locale renders
+        // Eastern Arabic digits — lesson 14 (a locale is a data contract too).
+        "https://download.quranicaudio.com/quran/${r.relativePath}/%03d.mp3".format(java.util.Locale.US, surah)
 }

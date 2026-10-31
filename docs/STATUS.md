@@ -2054,47 +2054,42 @@ the app rule's scope (nineteen-letter collapse anywhere → word-final
 only), corpus-gated.
 
 ## What is open next
+(Reconciled 31 October against the measured negatives above; the stale
+entries are gone, not closed silently — each closed item's section is
+still below.)
 
 
-
-**1. The review/UX round, in the order the user ranked it.** (a) Report as
-the testing surface: metrics upgrades, per-word "what the model heard" text
-(the emissions the record already holds), controls; (b) parent screen and
-routing: BackHandler/origin discipline across child screens; (c) Settings:
-a plain-wording sub-label per item, dependent rows gated with the reason
-(Tarteel's "has also been enabled since…" pattern), more knobs in the
-user's hands (keep-N sessions, audio retention); (d) reference recitation:
-a pre-play sheet (reciter, start ayah, speed) with one-tap play kept as the
-default, plus per-reciter storage totals and a cap; (e) mistake-kind
-taxonomy phase 1: MISSED/EXTRA are already separable in the alignment DP —
-write them additively, show them in the report before they ever touch live
-judging. Ranked map with file:line evidence is in the 24 October study.
-**2. Rebuild the word table with case vowels on finals.** 26,733 of 77,481
-words end bare; the mushaf text carries the vowel; the builder already walks
-word by word. The runtime `final_vowel_id` rule then becomes a backstop.
-The fractional `wu` + the fresh records make the before/after measurable.
+**1. The review/UX round — items (a)–(d) SHIPPED 24/25 October (build 267;
+see "Shipped overnight, 24/25 October"). The remaining item is (e),
+mistake-kind taxonomy phase 1:** MISSED/substitution are already separable
+in the alignment DP's traceback (a ref unit aligned to a differing
+emission is a substitution; a ref unit aligned to nothing was never said)
+— write them additively, show them in the report before they ever touch
+live judging. EXTRA (insertions) stays out of phase 1: the aligner
+deliberately drops insertions from per-word attribution, and inventing an
+attribution would be the fallback that "explains" wrong ayah audio.
+**2. The app rule's scope (the narrowing), BLOCKED on a labelled device
+A/B.** The word-table rebuild is closed by measurement above (the source
+does not carry case vowels; table vowels are matching-neutral). The real
+precision win is narrowing the app's nineteen-letter short-vowel collapse
+to word-final position — measured 20 October (TODO item 17): position-aware
+adds **81 accusations, all false on the reference reciter** at coverage
+0.80–0.89, so the minimal correct change is a two-id DP and the decision
+needs a labelled device A/B on the user's voice. Not shippable from the
+harness alone.
 **3. Engine comparison** on the noisy human corpus; swap only on loss, per
 the shootout's own decision rule. A real external reference for the unit
 inventory: Quran-Lab/mfa-quran-hafs's 67-symbol phone set with contextual
 cross-word rules (idgham/ikhfa/iqlab) — studied, not adopted blindly.
-**4. The per-word borrow test** — the engine-side fix for the borrow charges
-(18/18 reproduced; the shape now seen on 3:118, surah 67, 2:19:10 and ~40%
-of the surah-17 sample). The fresh fractional records are its dataset —
-and the rule is now PROJECTED before anyone builds it
-(`borrow_projection.py`, 24/25 October): across seven pulled sessions, of
-46 reproduced charges the per-word arrival rule would drop **15** and flip
-**10 accusations clean**, with **8** dropped charges sitting 6–15 symbols
-before their ayah's arrival, **5** at 16+, and only **2** within
-poll-granularity noise (1–5 symbols) — those two are the honest-charge
-risk, a real mistake whose arrival stamp lags by a poll, and an
-implementation should excuse only beyond a margin, not at one. Unlike the
-rejected whole-window test (621/621 firings, 25 lost CORRECTs), this rule
-only ever removes charges from words already judged WRONG, so it cannot
-cost a CORRECT verdict by construction. Build next session with the user
-in the loop, margin-gated.
-**5. Decision models: rejected for the live loop; the referee pilot is
-built (24/25 October).** The user pushed back, and the deeper study
-justifies the category if not these four instances: the decide contract
+**4. The referee pilot's model decision.** The pilot is built
+(`engine/replay/decision_referee.py`, 126 labelled cases). The measured
+path needs one decision that is the user's: duplicate the laya Space with
+RL_AGENT_MODEL=convaiinnovations/laya-multilingual (their documented fix,
+token-free), or run the ~540 MB int8 community ONNX locally. Both wait for
+him; near-chance agreement on the 126 kills the category with a number.
+
+(The study behind it, 24/25 October: the user pushed back, and the deeper
+study justifies the category if not these four instances: the decide contract
 (`state` + `question` + `options` → one prefill pass → calibrated
 probability per option, no generation, no parsing) is exactly the right
 primitive for second-guessing a charge — better than a chat LLM. The

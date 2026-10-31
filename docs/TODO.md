@@ -3,6 +3,30 @@
 Canonical backlog for the recognition work. Update at commit boundaries;
 check items only when the shipped code proves them.
 
+## Where this sits — 31 October
+
+The live state; older blocks below are history, kept because their
+measurements still matter.
+
+1. **Review/UX round (a)–(d) shipped 24/25 October (build 267).** Report
+   surface, Settings knobs, reference pre-play sheet + per-reciter storage,
+   routing. Remaining: **(e) mistake-kind taxonomy phase 1** —
+   MISSED/substitution per wrong word from the DP traceback, additive,
+   report-only. EXTRA stays out: the aligner deliberately declines per-word
+   insertion attribution.
+2. **The app rule's scope (narrowing) is BLOCKED on a labelled device A/B**
+   (TODO item 17 measured +81 false accusations on the reference reciter
+   without it). The word-table rebuild is CLOSED by measurement (25/26
+   October, STATUS) — do not reopen without new evidence.
+3. **The per-word borrow test is CLOSED** (26 October, measured negative:
+   221 charges, zero borrowed against the span-end boundary).
+4. **Engine comparison** — measurement only; swap only on loss (user's
+   decision). **Referee pilot** — built; the model decision is the user's.
+5. **Device items waiting for the user's hand:** the next mid-page session
+   (un-anchored guard's first live test), the two-surah page walk, the
+   repeat-to-refresh scenario, the reader-bounce repro, the console's
+   walk/mist/hear on-device pass.
+
 ## Where this sits — 17 October
 
 **Fixed and installed today (08:57 build):**
