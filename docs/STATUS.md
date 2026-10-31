@@ -2309,3 +2309,15 @@ of mistake it charged, and nothing in the verdict path moved.
   same fields when wanted. EXTRA per word stays out until an honest
   attribution exists (Tarteel names the kind; its aligner decides it
   server-side, which is not an attribution this engine can copy).
+
+## The kind split reaches the console hero and the desktop replay (31 October, same day)
+
+The follow-up named by phase 1, closed the same day: the console's
+record-mode judgment hero prints the record's own kind split under the blame
+line (the report's string, so both surfaces name the same mistake), refusing
+a zero-substitution split like the report does; `replay_export.py` passes
+`wsub`/`wmiss`/`wunits` through as the cause payload's `kind`, and the
+desktop replay's cause panel renders it. Verified on the emulator over the
+derived fixture: the hero shows 67:10:1 — ✕ wrong, blame at unit 1, "1 of 5
+units said with a different sound, none went unheard", decided at second
+106.7 — the mirror's own numbers.

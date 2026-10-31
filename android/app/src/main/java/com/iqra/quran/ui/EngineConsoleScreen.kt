@@ -779,6 +779,20 @@ private fun JudgementHeroRecord(
                     fontSize = 10.sp, color = c.inkMuted,
                 )
             }
+            // The kind split, when the record carries it - the report's own
+            // line, so both surfaces name the same mistake. Refuses a
+            // zero-substitution split, which cannot belong to a WRONG verdict.
+            val sub = row?.wsub ?: -1
+            val miss = row?.wmiss ?: 0
+            val units = row?.wunits ?: 0
+            if (st == WordStatus.WRONG && sub > 0 && units > 0) {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    if (miss > 0) stringResource(R.string.report_mistake_shape, sub, units, miss)
+                    else stringResource(R.string.report_mistake_shape_clean, sub, units),
+                    fontSize = 10.sp, color = c.inkMuted,
+                )
+            }
             row?.wt?.let { wt ->
                 Spacer(Modifier.height(3.dp))
                 Text(

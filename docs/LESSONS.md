@@ -282,6 +282,28 @@ pattern-matches. The accessibility tree saw the truth the whole time.
 
 ---
 
+## 15. A forkserver worker re-imports the world; a global set at runtime never reaches it
+
+The tajweed class census was given an attribution mode: a module-level
+`ATTRIBUTE = True` set in `main()` before `ProcessPoolExecutor` started,
+read inside the worker function. It ground for almost an hour and would
+have printed "0 sites" - because Python 3.14 starts `ProcessPoolExecutor`
+workers from a **forkserver**, which re-imports the module in every worker.
+A global set after import in the parent exists only in the parent. With the
+old fork start method the same code would have worked, and that is what
+makes it dangerous: the failure is silent, produces a well-formed report,
+and the number in it is zero.
+
+The fix is one shape: **anything a worker needs must arrive as an argument.**
+`pool.submit(fn, x, flag)` cannot lose it. The cost of finding this was
+fifty minutes; the cost of NOT finding it would have been hours of compute
+followed by a confidently wrong zero in the docs - the exact shape of rule
+10, "refuse rather than invent", wearing a different coat.
+
+> **Under 3.14, a module global is parent-local in a pool. Pass it.**
+
+---
+
 ## If you only remember five things
 
 1. Measure the whole corpus before you trust the first sample.

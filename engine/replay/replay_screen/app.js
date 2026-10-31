@@ -329,6 +329,10 @@
     if (!c) { html += '<div class="window">no reconstruction in this record for this word.</div>'; causeEl.innerHTML = html; return; }
     if (c.error) { html += '<div class="nr">NOT RECONSTRUCTABLE (' + c.error + ')</div>'; causeEl.innerHTML = html; return; }
     html += '<div class="window">judged window [' + c.lo + ':' + c.hi + ']</div>';
+    if (c.kind) {
+      html += '<div class="window">kind: ' + c.kind[0] + ' of ' + c.kind[2] +
+        ' units said with a different sound, ' + c.kind[1] + ' never said</div>';
+    }
     html += '<table>';
     c.units.forEach(function (u) {
       html += '<tr><td>' + u[0] + '</td><td>' + (u[2] ? '<span class="charge">charged \u2190 ' + u[1] + '</span>'

@@ -200,6 +200,12 @@ def causes_for(record):
             causes[w["key"]] = {"lo": lo, "hi": hi, "units": [], "error": "re-align: %s" % e}
             continue
         causes[w["key"]] = {"lo": lo, "hi": hi, "units": units_out}
+        # The record's own kind split, when the writing build carried it -
+        # harness numbers on newer records, absent on older ones. Zero
+        # substitutions cannot belong to a WRONG verdict, so a split that
+        # reads 0 is not passed through: the panel would contradict the row.
+        if w.get("wsub") is not None and w["wsub"] > 0 and w.get("wunits"):
+            causes[w["key"]]["kind"] = [w["wsub"], w.get("wmiss"), w.get("wunits")]
     return causes
 
 
