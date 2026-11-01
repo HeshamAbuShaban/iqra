@@ -128,3 +128,22 @@ jobs:
               --title "Iqra $VERSION · build $BUILD" \
               --notes "Debug APK. versionCode = $BUILD (the commit count); the record's build tag is #$BUILD."
           fi
+
+      # One release per push filled the Releases page with thirty stale debug
+      # APKs (~1.7 GB) - a graveyard nobody navigates. Keep the newest three;
+      # everything older is superseded by definition (the newest always carries
+      # the latest build, and the record tags name every historical build in
+      # git anyway).
+      - name: Prune old releases (keep newest 3)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release list --limit 100 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[3:][] | .tagName' \
+            | while read -r OLD; do
+                [ -z "$OLD" ] && continue
+                echo "deleting release $OLD"
+                gh release delete "$OLD" --cleanup-tag --yes
+              done

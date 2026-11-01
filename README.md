@@ -157,6 +157,11 @@ The debug build uses a committed debug keystore so successive builds install ove
 one another instead of demanding an uninstall. Debug signing only; release
 signing is unaffected.
 
+Every push to `main` builds a debug APK and publishes it under
+[Releases](https://github.com/HeshamAbuShaban/iqra/releases) — versionCode is
+the commit count and the tag carries the same number. The three newest
+releases are kept; older ones are pruned automatically.
+
 `scripts/fetch_assets.sh` populates `android/app/src/main/assets` with the text
 tables. Page images and the glyph database are **not** bundled — they are staged
 to `.iqra-stage/` for copying to the phone.
@@ -175,7 +180,8 @@ cd engine
 uv venv .venv-replay --python 3.12
 uv pip install --python .venv-replay/bin/python sherpa-onnx numpy
 
-# the gate — runs in about 15 s and needs no model
+# the gate — 44 checks; the model-free subset runs in CI in seconds,
+# the full local run (with the corpus dumps) takes about two minutes
 python3 engine/replay/run_checks.py
 
 # score a whole-Quran corpus from existing token dumps, no re-recognition
