@@ -202,8 +202,13 @@ def main() -> int:
              ('optString("audioFile"', 'optLong("audioStartMs"', 'optLong("audioSamples"'))),
         ("the report anchors playback on the record's clock",
          "r.audioStartMs - r.startedAt" in sr),
+        # The drill-down gates the branch once (isWrong) and the clip inside
+        # it on the audio being present and the verdict being timed - the
+        # per-row playback is still wrong-words-with-a-decision-time only.
         ("per-row playback is limited to wrong words with a decision time",
-         re.search(r'audioAvailable && row\.st == "WRONG" && row\.wt != null', sr)
+         re.search(r'val isWrong = row\.st == "WRONG"', sr) is not None
+         and re.search(r'if \(audioAvailable && row\.wt != null\) \{', sr) is not None
+         and re.search(r'\(\(row\.wt - 2500\) - \(r\.audioStartMs - r\.startedAt\)\)', sr)
          is not None),
         ("a named-but-missing WAV is stated, not played",
          "R.string.report_audio_missing" in sr

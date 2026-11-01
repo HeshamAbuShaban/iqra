@@ -170,8 +170,12 @@ def main() -> int:
         # verdict comes from the record's own emission stream, and the
         # blame-bands card must refuse to claim fractions from a v1 record,
         # whose wu has no finer position than first/past-first.
+        # The drill-down moved the window behind an opened row: the gate is
+        # the row's own WRONG test (bound once as isWrong) plus the verdict
+        # time and the emission stream - same behaviour, new shape.
         ("the report says what was heard near a wrong verdict",
-         re.search(r'row\.st == "WRONG" && row\.wt != null && r\.emMs\.isNotEmpty\(\)', sr)
+         re.search(r'val isWrong = row\.st == "WRONG"', sr) is not None
+         and re.search(r'if \(row\.wt != null && r\.emMs\.isNotEmpty\(\)\)', sr)
          is not None),
         ("the blame-bands card is gated on v2 records",
          re.search(r"r\.v >= 2 && r\.wordRows\.any \{ it\.st == \"WRONG\" && it\.wu != null \}", sr)
