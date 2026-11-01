@@ -2416,3 +2416,52 @@ only what the record holds — a record without emission times has no strip,
 never an invented timeline. Verified on the phone by screenshot (build 300).
 The investigative layer keeps its place: denominators, notes-in-words,
 Arabic dates all intact under the visual one.
+
+## The screens night, 1–2 November — the whole surface, not one piece
+
+His verdict on the four-screen proposal: build it, raise the standard
+everywhere, then the technical defects. What landed, verified on the phone
+at each boundary:
+
+- **The report argues its mistakes.** Each wrong word is a recessed row that
+  OPENS: a kind chip beside the word (sound swap / swap+unheard), and
+  unfolded - the blame position, the kind split, the expected against the
+  heard in the Qur'an face, the clip of the moment, and the road to the
+  session's full alignment. A kind summary counts swaps and unheard-unit
+  rows from the record's own splits. The audio transport gained
+  skip-previous/next between the mistakes' own instants.
+- **The home wears the proposal**: the hero act, the three resume doors in
+  one quiet row (dimming when empty, not vanishing), the last two sessions
+  beneath, the full log one tap away.
+- **Settings in reasoned groups**: language and look (text size, night,
+  direction, both themes), recitation behaviour (never-accuse family,
+  advisories, strictness, metric, diagnostics), reference audio, data and
+  privacy. fmtMb through Locale.US; the live-theme line names its theme by
+  resource.
+- **The face the eye asked for**: IBM Plex Sans Arabic as the UI face
+  (bundled, ~720 KB, full Typography), Amiri kept for the Qur'an text and
+  the unit beads alone; inkFaint lifted one step in the three dark palettes
+  - the 10sp meta lines sat below comfortable contrast.
+- **Latin digits by standing policy**, ended the mixed-digit rows: n()/n1()
+  format once, numeric resources take pre-formatted strings. Every numeric
+  resource the touched screens use was swept.
+- **Session management**: long-press deletes a session with its audio and
+  drops the aggregate cache so nothing reports a session that is gone.
+
+Field-verified: the drill-down opens on a real session row and shows the
+record's own truth (1 of 7 units said with a different sound, none
+unheard - matched against the pulled record, row 4:144:10); the doors, the
+mini sessions, the regrouped settings, the new face throughout. No crash
+dialog on any surface walked.
+
+Three crashes the night buried: two format-string resource mismatches (the
+Arabic practice_min_secs and the new report_errors_kinds - the class
+lesson 14 names, met at display time) and one real race: ayahAlignmentFor
+handed the console a view over the live emission log, and a session died
+mid-recitation when data-class equals walked it under the poll loop - the
+alignment now freezes snapshots at the boundary.
+
+Open, next session: the technical defects round he queued (computational
+and logical), the deeper colour work against the reference competitor's
+calm state, and the parked engine items (the qalqalah-form guard, the
+page-level monotone aligner) on his go.
