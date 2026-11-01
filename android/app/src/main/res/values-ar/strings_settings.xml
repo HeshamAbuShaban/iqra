@@ -7,6 +7,7 @@
     <string name="settings_title">الإعدادات</string>
 
     <!-- ===== SettingsScreen: القراءة ===== -->
+    <string name="settings_section_look">اللغة والمظهر</string>
     <string name="settings_section_reading">القراءة</string>
     <string name="settings_text_size">حجم الخط</string>
     <string name="settings_night_mode">الوضع الليلي</string>
@@ -20,7 +21,7 @@
     <string name="settings_section_theme">المظهر</string>
 
     <!-- ===== SettingsScreen: شاشة التسميع ===== -->
-    <string name="settings_section_recitation">شاشة التسميع</string>
+    <string name="settings_section_recitation">التسميع</string>
     <string name="settings_live_animation_title">تحريك ضوء التسميع</string>
     <string name="settings_live_animation_subtitle">الأفق في شاشة التسميع يتحرك باستمرار. أوقفه لصورة ثابتة.</string>
     <string name="settings_vibrate_title">اهتزاز عند الكلمة الخاطئة</string>
@@ -49,7 +50,7 @@
     <string name="settings_engine_notes_where">أين تظهر ملاحظات المحرك</string>
     <string name="settings_how_strict">درجة الصرامة</string>
     <string name="settings_evidence_label">مقدار الدليل اللازم قبل اعتبار الكلمة خطأً</string>
-    <string name="settings_heard_floor_explain">يشترط سماع %1$d٪ من أصوات الكلمة نفسها قبل أن يُحتسب عدمُ التطابق عليك. الانخفاض يعني تحذيرات أكثر.</string>
+    <string name="settings_heard_floor_explain">يشترط سماع %1$s٪ من أصوات الكلمة نفسها قبل أن يُحتسب عدمُ التطابق عليك. الانخفاض يعني تحذيرات أكثر.</string>
     <string name="settings_accuracy_means">ماذا تعني «الدقة»</string>
     <string name="settings_metric_shown_in">يظهر في تقرير الجلسة</string>
     <string name="settings_diagnostics_title">تشخيصات التعرّف</string>
@@ -69,18 +70,18 @@
     <string name="settings_downloaded_audio">الصوتيات المحفوظة</string>
     <string name="settings_nothing_saved">لا شيء محفوظ بعد</string>
     <string name="settings_one_surah_size">سورة واحدة · %1$s</string>
-    <string name="settings_n_surahs_size">%1$d من السور · %2$s</string>
+    <string name="settings_n_surahs_size">%1$s من السور · %2$s</string>
     <string name="settings_manage">إدارة</string>
 
     <!-- ===== SettingsScreen: بياناتك ===== -->
-    <string name="settings_section_your_data">بياناتك</string>
-    <string name="settings_data_all_present">جميع ملفات البيانات الـ%1$d موجودة · %2$s</string>
-    <string name="settings_data_missing_count">ملفات بيانات ناقصة: %1$d من %2$d</string>
+    <string name="settings_section_your_data">البيانات والخصوصية</string>
+    <string name="settings_data_all_present">جميع ملفات البيانات الـ%1$s موجودة · %2$s</string>
+    <string name="settings_data_missing_count">ملفات بيانات ناقصة: %1$s من %2$s</string>
     <string name="settings_manage_data_files">إدارة ملفات البيانات</string>
     <string name="settings_practice_history">سجل التسميع</string>
     <string name="settings_nothing_recorded">لا شيء مسجَّل بعد</string>
     <string name="settings_one_session">جلسة واحدة</string>
-    <string name="settings_n_sessions">الجلسات المحفوظة: %1$d</string>
+    <string name="settings_n_sessions">الجلسات المحفوظة: %1$s</string>
     <string name="settings_view">عرض</string>
     <string name="settings_clear">مسح</string>
     <string name="settings_sessions_kept_label">الجلسات المحفوظة على هذا الجهاز</string>
@@ -89,7 +90,7 @@
     <string name="settings_keep_audio_subtitle">أثناء تسميعك يُكتب صوتُ الجلسة بجوار سجلّها، فيستطيع التقرير تشغيل ما سمعه النموذج. لا يترك هذا الجهاز أبداً ويُحذف مع جلسته. أوقفه للاحتفاظ بالسجلات بلا صوت.</string>
     <string name="settings_no_session_audio">لا صوت جلسات على القرص.</string>
     <string name="settings_session_audio_disk_one">صوت الجلسات على القرص: %1$s، تسجيلٌ واحد.</string>
-    <string name="settings_session_audio_disk">صوت الجلسات على القرص: %1$s، عددُ التسجيلات %2$d.</string>
+    <string name="settings_session_audio_disk">صوت الجلسات على القرص: %1$s، عددُ التسجيلات %2$s.</string>
 
     <!-- ===== SettingsScreen: حول التطبيق ===== -->
     <string name="settings_section_about">حول التطبيق</string>
@@ -101,7 +102,7 @@
 
     <!-- ===== SettingsScreen: حوار مسح السجل ===== -->
     <string name="settings_clear_history_title">مسح سجل التسميع؟</string>
-    <string name="settings_clear_history_text">يؤدي هذا إلى حذف الجلسات المسجَّلة (%1$d) والإحصاءات المبنية عليها، ولا يمكن التراجع.</string>
+    <string name="settings_clear_history_text">يؤدي هذا إلى حذف الجلسات المسجَّلة (%1$s) والإحصاءات المبنية عليها، ولا يمكن التراجع.</string>
 
     <!-- ===== SettingsScreen: منتقي مظهر شاشة التسميع ===== -->
     <string name="settings_live_follow_app">مطابق للتطبيق</string>

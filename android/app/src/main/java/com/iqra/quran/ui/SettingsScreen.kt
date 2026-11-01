@@ -124,11 +124,8 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
-            SettingsSection(stringResource(R.string.language)) {
-                LanguageRow(tick)
-            }
+                        SettingsSection(stringResource(R.string.settings_section_look)) {
 
-            SettingsSection(stringResource(R.string.settings_section_reading)) {
                 TextSizeRow(tick)
                 SettingDivider()
                 NightSettings(tick)
@@ -142,23 +139,21 @@ fun SettingsScreen(
                     checked = remember(tick) { ReaderPrefs.rightToLeft(ctx) },
                     onChange = { ReaderPrefs.setRightToLeft(ctx, it) },
                 )
-            }
+                SettingDivider()
 
-            // Scoped separately from the app theme on purpose. The recitation screen
-            // has the only continuously moving element in the app, and someone who
-            // wants that still off while reading a page does not want it switched on
-            // for a practice session either.
-            SettingsSection(stringResource(R.string.settings_section_theme)) {
                 ThemeChooser(tick)
+                SettingDivider()
+                LanguageRow(tick)
             }
 
-            // The recitation screen gets its own theme, because it is not a page.
-            // It is one glowing element on a dark ground, and its palette is
-            // derived rather than shared, so the app theme was never really
-            // deciding it - it was only supplying the seed. Someone reading
-            // tafseer in daylight and reciting in a dim room at night can want
-            // two different answers, and before this there was one knob for both.
+            // ----------------------------------------------------------------
+            // Recitation
+            //
+            // Behaviour, not appearance: everything here answers "how the
+            // engine treats what it hears and what the session does about it".
+            // ----------------------------------------------------------------
             SettingsSection(stringResource(R.string.settings_section_recitation)) {
+
                 LiveThemeChooser(tick)
                 SettingDivider()
                 SwitchRow(
@@ -168,7 +163,7 @@ fun SettingsScreen(
                     onChange = { ReaderPrefs.setLiveAnimation(ctx, it) },
                 )
                 SettingDivider()
-                SwitchRow(
+SwitchRow(
                     title = stringResource(R.string.settings_vibrate_title),
                     subtitle = stringResource(R.string.settings_vibrate_subtitle),
                     checked = remember(tick) { ReaderPrefs.vibrateOnWrong(ctx) },
@@ -183,173 +178,7 @@ fun SettingsScreen(
                 )
             }
 
-            // ----------------------------------------------------------------
-            // Recognition
-            //
-            // This section answers a question the app could not previously
-            // answer at all: what is this engine actually able to judge?
-            //
-            // The numbers in the model card are measured, not estimated, from
-            // the tajweed register over all 51,395 madd sites - see
-            // docs/TAJWEED_AND_MEMORISATION.md. They are here because a tool that
-            // can accuse someone of misreading their scripture owes them the
-            // list of things it cannot see.
-            // ----------------------------------------------------------------
-            SettingsSection(stringResource(R.string.settings_section_recognition)) {
-                Card(
-                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    ),
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(
-                            stringResource(R.string.settings_model_card_title),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        ModelCardGap(
-                            stringResource(R.string.settings_madd_title),
-                            stringResource(R.string.settings_gap_madd_detail),
-                        )
-                        ModelCardGap(
-                            stringResource(R.string.settings_waqf_title),
-                            stringResource(R.string.settings_gap_waqf_detail),
-                        )
-                        ModelCardGap(
-                            stringResource(R.string.settings_gap_idgham_title),
-                            stringResource(R.string.settings_gap_idgham_detail),
-                        )
-                        ModelCardGap(
-                            stringResource(R.string.settings_gap_silent_title),
-                            stringResource(R.string.settings_gap_silent_detail),
-                        )
-                    }
-                }
-
-                Text(
-                    stringResource(R.string.settings_never_accuse_on),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
-                )
-                SwitchRow(
-                    title = stringResource(R.string.settings_madd_title),
-                    subtitle = stringResource(R.string.settings_madd_never_subtitle),
-                    checked = remember(tick) { ReaderPrefs.maddNeverAccuses(ctx) },
-                    onChange = { ReaderPrefs.setMaddNeverAccuses(ctx, it) },
-                )
-                SettingDivider()
-                SwitchRow(
-                    title = stringResource(R.string.settings_waqf_title),
-                    subtitle = stringResource(R.string.settings_waqf_never_subtitle),
-                    checked = remember(tick) { ReaderPrefs.waqfNeverAccuses(ctx) },
-                    onChange = { ReaderPrefs.setWaqfNeverAccuses(ctx, it) },
-                )
-                SettingDivider()
-                SwitchRow(
-                    title = stringResource(R.string.settings_unanchored_title),
-                    subtitle = stringResource(R.string.settings_unanchored_subtitle),
-                    checked = remember(tick) { ReaderPrefs.unanchoredNeverAccuses(ctx) },
-                    onChange = { ReaderPrefs.setUnanchoredNeverAccuses(ctx, it) },
-                )
-                SettingDivider()
-                Text(
-                    stringResource(R.string.settings_engine_may_tell),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
-                )
-                val alarmOptions = ReaderPrefs.AdvisoryAlarm.entries.map { stringResource(it.labelRes) }
-                ChoiceRow(
-                    label = stringResource(R.string.settings_engine_note_label),
-                    options = alarmOptions,
-                    selected = stringResource(remember(tick) { ReaderPrefs.advisoryAlarm(ctx).labelRes }),
-                    onSelect = { label ->
-                        val i = alarmOptions.indexOf(label)
-                        if (i >= 0) ReaderPrefs.setAdvisoryAlarm(ctx, ReaderPrefs.AdvisoryAlarm.entries[i])
-                    },
-                )
-                Text(
-                    stringResource(remember(tick) { ReaderPrefs.advisoryAlarm(ctx).explainRes }),
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                Spacer(Modifier.height(6.dp))
-                val displayOptions = ReaderPrefs.AdvisoryDisplay.entries.map { stringResource(it.labelRes) }
-                ChoiceRow(
-                    label = stringResource(R.string.settings_engine_notes_where),
-                    options = displayOptions,
-                    selected = stringResource(remember(tick) { ReaderPrefs.advisoryDisplay(ctx).labelRes }),
-                    onSelect = { label ->
-                        val i = displayOptions.indexOf(label)
-                        if (i >= 0) ReaderPrefs.setAdvisoryDisplay(ctx, ReaderPrefs.AdvisoryDisplay.entries[i])
-                    },
-                )
-                Text(
-                    stringResource(R.string.settings_how_strict),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
-                )
-                val strictnessOptions = ReaderPrefs.Strictness.entries.map { stringResource(it.labelRes) }
-                ChoiceRow(
-                    label = stringResource(R.string.settings_evidence_label),
-                    options = strictnessOptions,
-                    selected = stringResource(remember(tick) { ReaderPrefs.strictness(ctx).labelRes }),
-                    onSelect = { label ->
-                        val i = strictnessOptions.indexOf(label)
-                        if (i >= 0) ReaderPrefs.setStrictness(ctx, ReaderPrefs.Strictness.entries[i])
-                    },
-                )
-                Text(
-                    stringResource(
-                        R.string.settings_heard_floor_explain,
-                        remember(tick) { (ReaderPrefs.heardFloor(ctx) * 100).toInt() },
-                    ),
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                SettingDivider()
-                Text(
-                    stringResource(R.string.settings_accuracy_means),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
-                )
-                val metricOptions = ReaderPrefs.Metric.entries.map { stringResource(it.labelRes) }
-                ChoiceRow(
-                    label = stringResource(R.string.settings_metric_shown_in),
-                    options = metricOptions,
-                    selected = stringResource(remember(tick) { ReaderPrefs.metric(ctx).labelRes }),
-                    onSelect = { label ->
-                        val i = metricOptions.indexOf(label)
-                        if (i >= 0) ReaderPrefs.setMetric(ctx, ReaderPrefs.Metric.entries[i])
-                    },
-                )
-                Text(
-                    stringResource(remember(tick) { ReaderPrefs.metric(ctx).explainRes }),
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                SettingDivider()
-                SwitchRow(
-                    title = stringResource(R.string.settings_diagnostics_title),
-                    subtitle = stringResource(R.string.settings_diagnostics_subtitle),
-                    checked = remember(tick) { ReaderPrefs.diagnostics(ctx) },
-                    onChange = { ReaderPrefs.setDiagnostics(ctx, it) },
-                )
-            }
-
-            // The reference recitation used to be one hardcoded reciter,
-            // streamed fresh on every tap and thrown away. This section is the
-            // control surface for what replaced it: who recites, whether the
-            // audio is kept, and what the transport does with it.
-            SettingsSection(stringResource(R.string.settings_section_reference_audio)) {
+SettingsSection(stringResource(R.string.settings_section_reference_audio)) {
                 ReciterRow(audioTick) { audioTick++ }
                 SettingDivider()
                 SwitchRow(
@@ -474,7 +303,7 @@ fun SettingsScreen(
                             when (log.size) {
                                 0 -> stringResource(R.string.settings_nothing_recorded)
                                 1 -> stringResource(R.string.settings_one_session)
-                                else -> stringResource(R.string.settings_n_sessions, log.size)
+                                else -> stringResource(R.string.settings_n_sessions, n(log.size))
                             },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -614,7 +443,7 @@ fun SettingsScreen(
             title = { Text(stringResource(R.string.settings_clear_history_title)) },
             text = {
                 Text(
-                    stringResource(R.string.settings_clear_history_text, log.size)
+                    stringResource(R.string.settings_clear_history_text, n(log.size))
                 )
             },
             confirmButton = {
@@ -1019,8 +848,8 @@ private fun SettingDivider() {
 }
 
 private fun fmtMb(b: Long): String =
-    if (b >= 1_000_000) String.format("%.1f MB", b / 1_000_000.0)
-    else String.format("%.0f KB", b / 1_000.0)
+    if (b >= 1_000_000) String.format(java.util.Locale.US, "%.1f MB", b / 1_000_000.0)
+    else String.format(java.util.Locale.US, "%.0f KB", b / 1_000.0)
 
 /**
  * Four themes, each previewed with its own colours rather than described.
@@ -1087,7 +916,7 @@ private fun LiveThemeChooser(tick: Int) {
                     fontWeight = if (follow) FontWeight.SemiBold else FontWeight.Normal,
                 )
                 Text(
-                    stringResource(R.string.settings_live_follows_theme, appTheme.name),
+                    stringResource(R.string.settings_live_follows_theme, stringResource(appTheme.labelRes)),
                     fontSize = 11.sp, color = live.inkFaint,
                 )
             }

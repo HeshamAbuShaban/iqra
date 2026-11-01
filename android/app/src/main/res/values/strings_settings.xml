@@ -8,6 +8,7 @@
     <string name="settings_title">Settings</string>
 
     <!-- ===== SettingsScreen: Reading ===== -->
+    <string name="settings_section_look">Language and look</string>
     <string name="settings_section_reading">Reading</string>
     <string name="settings_text_size">Text size</string>
     <string name="settings_night_mode">Night mode</string>
@@ -21,7 +22,7 @@
     <string name="settings_section_theme">Theme</string>
 
     <!-- ===== SettingsScreen: Recitation screen ===== -->
-    <string name="settings_section_recitation">Recitation screen</string>
+    <string name="settings_section_recitation">Recitation</string>
     <string name="settings_live_animation_title">Animate the recitation light</string>
     <string name="settings_live_animation_subtitle">The horizon on the recitation screen moves continuously. Turn off for a still image.</string>
     <string name="settings_vibrate_title">Vibrate on a wrong word</string>
@@ -50,7 +51,7 @@
     <string name="settings_engine_notes_where">Where engine notes appear</string>
     <string name="settings_how_strict">How strict to be</string>
     <string name="settings_evidence_label">Evidence needed before a word can be called wrong</string>
-    <string name="settings_heard_floor_explain">A word must have %1$d%% of its own sounds heard before a mismatch counts against you. Lower means more warnings.</string>
+    <string name="settings_heard_floor_explain">A word must have %1$s%% of its own sounds heard before a mismatch counts against you. Lower means more warnings.</string>
     <string name="settings_accuracy_means">What \"accuracy\" means</string>
     <string name="settings_metric_shown_in">Shown in the session report</string>
     <string name="settings_diagnostics_title">Recognition diagnostics</string>
@@ -70,18 +71,18 @@
     <string name="settings_downloaded_audio">Downloaded audio</string>
     <string name="settings_nothing_saved">Nothing saved yet</string>
     <string name="settings_one_surah_size">1 surah · %1$s</string>
-    <string name="settings_n_surahs_size">%1$d surahs · %2$s</string>
+    <string name="settings_n_surahs_size">%1$s surahs · %2$s</string>
     <string name="settings_manage">Manage</string>
 
     <!-- ===== SettingsScreen: Your data ===== -->
-    <string name="settings_section_your_data">Your data</string>
-    <string name="settings_data_all_present">All %1$d data files are present · %2$s</string>
-    <string name="settings_data_missing_count">%1$d of %2$d data files missing</string>
+    <string name="settings_section_your_data">Data and privacy</string>
+    <string name="settings_data_all_present">All %1$s data files are present · %2$s</string>
+    <string name="settings_data_missing_count">%1$s of %2$s data files missing</string>
     <string name="settings_manage_data_files">Manage data files</string>
     <string name="settings_practice_history">Practice history</string>
     <string name="settings_nothing_recorded">Nothing recorded yet</string>
     <string name="settings_one_session">1 session</string>
-    <string name="settings_n_sessions">%1$d sessions kept</string>
+    <string name="settings_n_sessions">%1$s sessions kept</string>
     <string name="settings_view">View</string>
     <string name="settings_clear">Clear</string>
     <string name="settings_sessions_kept_label">Sessions kept on this device</string>
@@ -90,7 +91,7 @@
     <string name="settings_keep_audio_subtitle">While you recite, the session\'s own sound is written next to its record, so the report can play what the model heard. It never leaves this device and is deleted with its session. Turn off to keep records without audio.</string>
     <string name="settings_no_session_audio">No session audio on disk.</string>
     <string name="settings_session_audio_disk_one">Session audio on disk: %1$s across 1 recording.</string>
-    <string name="settings_session_audio_disk">Session audio on disk: %1$s across %2$d recordings.</string>
+    <string name="settings_session_audio_disk">Session audio on disk: %1$s across %2$s recordings.</string>
 
     <!-- ===== SettingsScreen: About ===== -->
     <string name="settings_section_about">About</string>
@@ -102,7 +103,7 @@
 
     <!-- ===== SettingsScreen: clear-history dialog ===== -->
     <string name="settings_clear_history_title">Clear practice history?</string>
-    <string name="settings_clear_history_text">This deletes the %1$d recorded sessions and the statistics built from them. It cannot be undone.</string>
+    <string name="settings_clear_history_text">This deletes the %1$s recorded sessions and the statistics built from them. It cannot be undone.</string>
 
     <!-- ===== SettingsScreen: live-theme chooser ===== -->
     <string name="settings_live_follow_app">Same as the app</string>
