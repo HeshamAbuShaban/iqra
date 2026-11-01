@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -213,6 +214,9 @@ private fun ChooseContent(
                                         ltr(stringResource(R.string.choose_last_passage)),
                                         fontSize = 13.sp, color = c.ink,
                                     )
+                                    // The Latin name stays a deliberate subtitle here - the
+                                    // same bilingual pairing the surah rows below use, and the
+                                    // bidi wrap it requires.
                                     Text(
                                         ltr(data.surahInfo(lastRead.first)?.nameEn
                                             ?: stringResource(R.string.home_surah_n, n(lastRead.first))),
@@ -399,7 +403,7 @@ private fun ChooseContent(
                 ) {
                     Text(
                         ltr(
-                            if (wholeRange) stringResource(R.string.choose_cta_whole, info?.nameEn ?: "")
+                            if (wholeRange) stringResource(R.string.choose_cta_whole, info?.displayName(LocalConfiguration.current) ?: "")
                             else if (startAyah == endAyah) stringResource(R.string.choose_cta_ayah, startAyah)
                             else stringResource(R.string.choose_cta_range, endAyah - startAyah + 1)
                         ),

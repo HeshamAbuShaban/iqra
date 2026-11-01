@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -213,8 +214,9 @@ fun AudioLibraryScreen(
                 Spacer(Modifier.height(6.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     items(sorted, key = { it.reciterId + ":" + it.surah }) { e ->
-                        val name = quran?.surahInfo(e.surah)?.nameEn
-                            ?: stringResource(R.string.audio_fallback_surah, e.surah)
+                        val name = quran?.surahInfo(e.surah)
+                            ?.displayName(LocalConfiguration.current)
+                            ?: stringResource(R.string.audio_fallback_surah, n(e.surah))
                         val reciter = Reciters.byId(e.reciterId)
                         Row(
                             Modifier.fillMaxWidth(),
@@ -259,8 +261,9 @@ fun AudioLibraryScreen(
     }
 
     confirmDeleteEntry?.let { e ->
-        val name = quran?.surahInfo(e.surah)?.nameEn
-            ?: stringResource(R.string.audio_fallback_surah, e.surah)
+        val name = quran?.surahInfo(e.surah)
+            ?.displayName(LocalConfiguration.current)
+            ?: stringResource(R.string.audio_fallback_surah, n(e.surah))
         AlertDialog(
             onDismissRequest = { confirmDeleteEntry = null },
             title = { Text(stringResource(R.string.audio_delete_entry_title, name)) },
