@@ -94,7 +94,7 @@ fun TrendLine(
     // Sweep in from the left edge on first composition, so the line reads as
     // being drawn rather than simply appearing.
     var drawn by remember { mutableStateOf(0f) }
-    LaunchedEffect(Unit) { if (animate) drawn = 1f else drawn = 1f }
+    LaunchedEffect(Unit) { drawn = 1f }
     val sweep by animateFloatAsState(drawn, tween(900), label = "sweep")
     val grid = gridLines.coerceAtLeast(0)
     val gridStyle = TextStyle(fontSize = 9.sp, color = labelColor)
@@ -140,7 +140,10 @@ fun TrendLine(
             }
         }
 
-        val pts = points.map { Offset(it.x, mapY(it.y) * sweep + size.height * (1f - sweep)) }
+        // trendX hands us 0..1; the canvas wants pixels. Raw, the whole line
+        // lived inside the leftmost pixel - "the charts look broken" since the
+        // day they shipped, and the complaint was right.
+        val pts = points.map { Offset(it.x * size.width, mapY(it.y) * sweep + size.height * (1f - sweep)) }
         if (pts.size == 1) {
             drawCircle(line, 5f, pts[0])
             return@Canvas
@@ -179,9 +182,11 @@ fun TrendLine(
             val lbl = points[i].label
             if (lbl.isEmpty()) return@forEach
             val txt = measurer.measure(lbl, gridStyle)
-            val x = (pts[i].x - txt.size.width / 2f)
+            val x = (pts[i].x * size.width - txt.size.width / 2f)
                 .coerceIn(0f, size.width - txt.size.width)
-            drawText(txt, topLeft = Offset(x, size.height - txt.size.height - 2f))
+            // The top corners: the bottom is the bars' ground, and a date
+            // printed inside a bar was one more floating value.
+            drawText(txt, topLeft = Offset(x, 2f))
         }
     }
 }

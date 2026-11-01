@@ -383,6 +383,13 @@ private fun AccuracyTrendCard(s: PracticeLog.Summary, c: IqraColors) {
         )
         if (withAcc.size >= 2) {
             Spacer(Modifier.height(14.dp))
+            // The y-range fits the data, not the 0..100 sky: a history living
+            // between 60 and 97% on a full-scale axis draws as a flat line in
+            // the clouds and the chart reads as broken. Padded a little so the
+            // best and worst sessions keep air around them.
+            val accs = withAcc.mapNotNull { it.accuracy }
+            val lo = ((accs.minOrNull() ?: 0f) - 0.04f).coerceAtLeast(0f)
+            val hi = ((accs.maxOrNull() ?: 1f) + 0.04f).coerceAtMost(1f)
             TrendLine(
                 points = withAcc.mapIndexed { i, p ->
                     TrendPoint(
@@ -393,6 +400,8 @@ private fun AccuracyTrendCard(s: PracticeLog.Summary, c: IqraColors) {
                 },
                 line = c.series1,
                 fill = c.series1,
+                yMin = lo,
+                yMax = hi,
                 bars = withAcc.map { it.judged.toFloat() },
                 barColor = c.series1.copy(alpha = 0.10f),
                 labelColor = c.inkFaint,
