@@ -2,6 +2,7 @@ package com.iqra.quran.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -199,8 +202,8 @@ fun SessionReportScreen(
                         Text(
                             pos?.let {
                                 val nm = data.surahInfo(it.first)?.displayName(LocalConfiguration.current)
-                                    ?: stringResource(R.string.report_surah_fallback, it.first)
-                                stringResource(R.string.report_position, nm, it.second)
+                                    ?: stringResource(R.string.report_surah_fallback, n(it.first))
+                                stringResource(R.string.report_position, nm, n(it.second))
                             } ?: stringResource(R.string.report_spanned_boundary),
                             fontSize = 11.sp, color = c.inkFaint,
                         )
@@ -249,7 +252,7 @@ fun SessionReportScreen(
                 if (r.v >= 2 && r.wordRows.any { it.st == "WRONG" && it.wu != null }) {
                     item { BlameBandsCard(r, c) }
                 }
-                if (r.wordRows.isNotEmpty()) item { RecitationLogCard(r, data, c, wavFile != null, playingKey, hear) }
+                if (r.wordRows.isNotEmpty()) item { RecitationLogCard(r, data, c, wavFile != null, playingKey, hear, onOpenConsole) }
                 item {
                     Panel(c) {
                         TextButton(onClick = {
@@ -446,7 +449,7 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
     // not the same claim as "a scope of zero words"; `judgedLine` prints the
     // bare count in that case rather than an invented denominator.
     val scopeWords = remember(r.perAyah) { r.perAyah.values.sumOf { it.getOrNull(4) ?: 0 } }
-    val judgedLine = if (scopeWords > 0) stringResource(R.string.report_judged_of, r.judged, scopeWords) else "${r.judged}"
+    val judgedLine = if (scopeWords > 0) stringResource(R.string.report_judged_of, n(r.judged), n(scopeWords)) else "${r.judged}"
 
     val reached = r.judged + r.unknown
     val coverage = if (reached > 0) r.judged.toFloat() / reached else null
@@ -519,7 +522,7 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
                 Spacer(Modifier.height(10.dp))
                 Stat(
                     c.gold,
-                    if (r.wpm > 1.0 && r.judged > 0) "%.0f".format(r.wpm) else "—",
+                    if (r.wpm > 1.0 && r.judged > 0) java.lang.String.format(java.util.Locale.US, "%.0f", r.wpm) else "—",
                     stringResource(R.string.report_stat_wpm),
                 )
             }
@@ -535,7 +538,7 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.hairline))
             Spacer(Modifier.height(12.dp))
             Text(
-                stringResource(R.string.report_unheard_note, r.unknown, "${pct1(full)}"),
+                stringResource(R.string.report_unheard_note, n(r.unknown), "${pct1(full)}"),
                 fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
             )
         }
@@ -583,7 +586,7 @@ private fun AyahCard(r: PracticeLog.Record, c: IqraColors) {
         entries.forEach { (key, v) ->
             val ayah = key.substringAfter(':').toIntOrNull() ?: 0
             Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                Text(stringResource(R.string.report_ayah_n, ayah), fontSize = 11.sp, color = c.inkMuted,
+                Text(stringResource(R.string.report_ayah_n, n(ayah)), fontSize = 11.sp, color = c.inkMuted,
                     modifier = Modifier.width(64.dp))
                 Counts(c, v)
             }
@@ -609,10 +612,10 @@ private fun Counts(c: IqraColors, v: IntArray) {
     Text(
         buildString {
             fun add(t: String) { if (isNotEmpty()) append(" · "); append(t) }
-            if (v[0] > 0) add(stringResource(R.string.report_counts_right, v[0]))
-            if (v[1] > 0) add(stringResource(R.string.report_counts_wrong, v[1]))
-            if (v[3] > 0) add(stringResource(R.string.report_counts_unheard, v[3]))
-            if (v[2] > 0) add(stringResource(R.string.report_counts_passed, v[2]))
+            if (v[0] > 0) add(stringResource(R.string.report_counts_right, n(v[0])))
+            if (v[1] > 0) add(stringResource(R.string.report_counts_wrong, n(v[1])))
+            if (v[3] > 0) add(stringResource(R.string.report_counts_unheard, n(v[3])))
+            if (v[2] > 0) add(stringResource(R.string.report_counts_passed, n(v[2])))
             if (isEmpty()) append(stringResource(R.string.report_counts_none))
         },
         fontSize = 11.sp, color = c.inkFaint,
@@ -704,7 +707,7 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
                 )
                 Text(
                     data.surahInfo(surah)?.displayName(LocalConfiguration.current)
-                        ?: stringResource(R.string.report_surah_fallback, surah),
+                        ?: stringResource(R.string.report_surah_fallback, n(surah)),
                     fontSize = 11.sp, color = c.inkFaint,
                 )
             }
@@ -751,7 +754,35 @@ private fun SessionAudioCard(
             )
             return@Panel
         }
+        // The mistake anchors, computed once for both the skip buttons and
+        // the map below: every WRONG verdict at its own instant on the WAV's
+        // clock. The skip buttons are the cheap way to hear each mistake in
+        // order without hunting a slider - jump, hear, jump.
+        val anchor0 = r.audioStartMs - r.startedAt
+        val mistakeAnchors = r.wordRows.filter { it.st == "WRONG" && it.wt != null }
+            .map { (it.wt!!.toLong() - anchor0).coerceIn(0, durMs.toLong()).toInt() }
+            .distinct().sorted()
+        fun jumpTo(target: Int) {
+            val around = 2600
+            val remaining = (durMs - target).coerceAtLeast(around)
+            hear("session", target, remaining + 500)
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = {
+                    val prev = mistakeAnchors.lastOrNull { it < posMs - 1200 }
+                        ?: mistakeAnchors.firstOrNull() ?: 0
+                    jumpTo(prev)
+                },
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    Icons.Filled.SkipPrevious,
+                    stringResource(R.string.report_skip_prev_mistake),
+                    tint = c.inkMuted,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
             IconButton(
                 onClick = { hear("session", 0, durMs + 500) },
                 modifier = Modifier.size(48.dp),
@@ -764,10 +795,24 @@ private fun SessionAudioCard(
                     modifier = Modifier.size(30.dp),
                 )
             }
-            Spacer(Modifier.width(10.dp))
+            IconButton(
+                onClick = {
+                    val next = mistakeAnchors.firstOrNull { it > posMs + 1200 } ?: posMs
+                    jumpTo(next)
+                },
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    Icons.Filled.SkipNext,
+                    stringResource(R.string.report_skip_next_mistake),
+                    tint = c.inkMuted,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
             Column {
                 Text(
-                    "%.1f s / %.0f s".format(posMs / 1000f, durMs / 1000f),
+                    java.lang.String.format(java.util.Locale.US, "%.1f s / %.0f s", posMs / 1000f, durMs / 1000f),
                     fontSize = 15.sp, color = c.ink, fontFamily = FontFamily.Monospace,
                 )
                 Text(
@@ -777,11 +822,10 @@ private fun SessionAudioCard(
             }
         }
         if (durMs > 0) {
-            val anchor = r.audioStartMs - r.startedAt
             val wrongs = r.wordRows.filter { it.st == "WRONG" && it.wt != null }
                 .map {
                     Triple(
-                        (it.wt!!.toLong() - anchor).coerceIn(0, durMs.toLong()).toInt(),
+                        (it.wt!!.toLong() - anchor0).coerceIn(0, durMs.toLong()).toInt(),
                         it.wu == 0,
                         it.key,
                     )
@@ -891,7 +935,7 @@ private fun BlameBandsCard(r: PracticeLog.Record, c: IqraColors) {
                 Text(label, fontSize = 12.sp, color = c.ink, modifier = Modifier.weight(1f))
                 Text(
                     stringResource(
-                        if (n == 1) R.string.report_word_one else R.string.report_word_many, n,
+                        if (n == 1) R.string.report_word_one else R.string.report_word_many, n(n),
                     ),
                     fontSize = 12.sp, color = c.inkFaint, fontFamily = FontFamily.Monospace,
                 )
@@ -899,7 +943,7 @@ private fun BlameBandsCard(r: PracticeLog.Record, c: IqraColors) {
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            stringResource(R.string.report_blame_footer, fr.size),
+            stringResource(R.string.report_blame_footer, n(fr.size)),
             fontSize = 10.sp, color = c.inkFaint,
         )
     }
@@ -933,12 +977,16 @@ private fun RecitationLogCard(
     audioAvailable: Boolean,
     playingKey: String?,
     hear: (String, Int, Int) -> Unit,
+    onOpenConsole: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     // The log's control: a review pass usually wants the misses; the full
     // walk stays one tap away. Off by default, so the card opens exactly as
     // it always did.
     var wrongOnly by remember { mutableStateOf(false) }
+    // The drill-down: one wrong word unfolds its evidence at a time - the
+    // list stays scannable, the proof one tap deep. (توسيعًا وتدليلًا)
+    var openKey by remember { mutableStateOf<String?>(null) }
     val timedAll = r.wordRows.filter { it.wt != null }.sortedBy { it.wt }
     val untimedAll = r.wordRows.filter { it.wt == null }
     val timed = if (wrongOnly) timedAll.filter { it.st == "WRONG" } else timedAll
@@ -950,7 +998,7 @@ private fun RecitationLogCard(
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.report_log_title), fontSize = 11.sp, color = c.inkMuted, letterSpacing = 1.1.sp)
                 Text(
-                    stringResource(R.string.report_log_subtitle, r.wordRows.size),
+                    stringResource(R.string.report_log_subtitle, n(r.wordRows.size)),
                     fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                 )
             }
@@ -971,6 +1019,23 @@ private fun RecitationLogCard(
                 )
             }
         }
+        // The kind summary, from the record's own splits: how many wrong
+        // words were charged as a different sound, how many carry units that
+        // were never said. The zero-substitution guard holds here too - a
+        // split of zero cannot belong to a WRONG verdict, so such rows count
+        // as neither and keep their position line alone.
+        if (wrongOnly) {
+            val wrongRows = r.wordRows.filter { it.st == "WRONG" && (it.wsub ?: 0) > 0 && (it.wunits ?: 0) > 0 }
+            if (wrongRows.isNotEmpty()) {
+                val swaps = wrongRows.count { (it.wmiss ?: 0) == 0 }
+                val withMiss = wrongRows.count { (it.wmiss ?: 0) > 0 }
+                Text(
+                    stringResource(R.string.report_errors_kinds, n(swaps), n(withMiss)),
+                    fontSize = 10.sp, color = c.inkFaint,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
         Spacer(Modifier.height(10.dp))
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
             itemsIndexed(rows) { _, row ->
@@ -980,117 +1045,191 @@ private fun RecitationLogCard(
                 val idx = parts.getOrNull(2)?.toIntOrNull() ?: 0
                 val expected = data.getVerse(surah, ayah)?.textClean
                     ?.split(Regex("\\s+"))?.filter { it.isNotEmpty() }?.getOrNull(idx - 1)
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            when (row.st) {
-                                "CORRECT" -> "✓"
-                                "WRONG" -> "✕"
-                                "UNKNOWN" -> "?"
-                                else -> "—"
-                            },
-                            fontSize = 13.sp,
-                            color = when (row.st) {
-                                "CORRECT" -> c.wordGood
-                                "WRONG" -> c.wordBad
-                                "UNKNOWN" -> c.inkMuted
-                                else -> c.inkFaint
-                            },
-                            modifier = Modifier.padding(end = 8.dp, top = 2.dp),
-                        )
-                        Column(Modifier.weight(1f)) {
+                val isWrong = row.st == "WRONG"
+                val isOpen = openKey == row.key
+
+                if (!isWrong) {
+                    // The non-verdict rows keep their quiet walk: a mark, the
+                    // word, the time. They were never the accusation surface.
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                expected ?: stringResource(R.string.report_no_text, surah, ayah),
-                                fontSize = 16.sp, fontFamily = quranFont,
-                                color = when (row.st) {
-                                    "WRONG" -> c.wordBad; "CORRECT" -> c.ink
-                                    else -> c.inkMuted
+                                when (row.st) {
+                                    "CORRECT" -> "✓"
+                                    "UNKNOWN" -> "?"
+                                    else -> "—"
                                 },
+                                fontSize = 13.sp,
+                                color = when (row.st) {
+                                    "CORRECT" -> c.wordGood
+                                    "UNKNOWN" -> c.inkMuted
+                                    else -> c.inkFaint
+                                },
+                                modifier = Modifier.padding(end = 8.dp, top = 2.dp),
                             )
-                            // For a wrong word, where the mismatch began - the
-                            // same bands device_blame uses, so the phone and the
-                            // read-back name the same place. Only a v2 record
-                            // may claim the last letter or a half: v1's `wu` was
-                            // binary, and 1000 meant merely "past the first
-                            // unit" - rendering that as a position invented one.
-                            if (row.st == "WRONG" && row.wu != null) {
+                            Text(
+                                expected ?: stringResource(R.string.report_no_text, n(surah), n(ayah)),
+                                fontSize = 16.sp, fontFamily = quranFont, color = c.inkMuted,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        Text(
+                            (row.wt?.let { java.lang.String.format(java.util.Locale.US, "%.1f s", it / 1000f) } ?: "—") +
+                                " · " + surah + ":" + ayah,
+                            fontSize = 10.sp, color = c.inkFaint,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                    return@itemsIndexed
+                }
+
+                // A wrong word: a recessed row that OPENS. Collapsed, it says
+                // what happened in one line - the word, its kind chip, its
+                // ref. Open, it lays out the evidence: where the blame sat,
+                // the kind split, the expected against the heard, the clip of
+                // the moment, and the road to the full alignment.
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(c.ground)
+                        .clickable { openKey = if (isOpen) null else row.key }
+                        .padding(horizontal = 11.dp, vertical = 9.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("✕", fontSize = 13.sp, color = c.wordBad, modifier = Modifier.padding(end = 8.dp))
+                        Text(
+                            expected ?: stringResource(R.string.report_no_text, n(surah), n(ayah)),
+                            fontSize = 17.sp, fontFamily = quranFont, color = c.wordBad,
+                            modifier = Modifier.weight(1f),
+                        )
+                        val sub = row.wsub ?: -1
+                        val miss = row.wmiss ?: 0
+                        if (sub > 0) {
+                            Text(
+                                stringResource(
+                                    if (miss > 0) R.string.report_chip_both
+                                    else R.string.report_chip_swap,
+                                ),
+                                fontSize = 9.5.sp, color = c.gold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.dp, c.gold.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (isOpen) "▴" else "▾",
+                            fontSize = 11.sp, color = c.inkFaint,
+                        )
+                    }
+                    Text(
+                        (row.wt?.let { java.lang.String.format(java.util.Locale.US, "%.1f s", it / 1000f) } ?: "—") +
+                            " · " + surah + ":" + ayah,
+                        fontSize = 10.sp, color = c.inkFaint,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+
+                    if (isOpen) {
+                        Spacer(Modifier.height(7.dp))
+                        // For a wrong word, where the mismatch began - the
+                        // same bands device_blame uses. Only a v2 record may
+                        // claim the last letter or a half: v1's `wu` was
+                        // binary, and 1000 meant merely "past the first unit"
+                        // - rendering that as a position invented one.
+                        if (row.wu != null) {
+                            Text(
+                                when {
+                                    row.wu == 0 -> stringResource(R.string.report_blame_first)
+                                    r.v < 2 -> stringResource(R.string.report_blame_past_first)
+                                    row.wu >= 1000 -> stringResource(R.string.report_blame_last)
+                                    row.wu <= 500 -> stringResource(R.string.report_blame_half1)
+                                    else -> stringResource(R.string.report_blame_half2)
+                                },
+                                fontSize = 10.sp, color = c.inkFaint,
+                            )
+                        }
+                        // WHAT KIND of mistake charged the word. Absent on
+                        // records that predate the split. A split with zero
+                        // substituted units cannot belong to a WRONG verdict
+                        // (bad > 0 is the rule that claims it), so such a row
+                        // shows no contradiction under its own red.
+                        if (row.wunits != null && row.wunits > 0) {
+                            val sub2 = row.wsub ?: -1
+                            val miss2 = row.wmiss ?: 0
+                            if (sub2 > 0) {
                                 Text(
-                                    when {
-                                        row.wu == 0 -> stringResource(R.string.report_blame_first)
-                                        r.v < 2 -> stringResource(R.string.report_blame_past_first)
-                                        row.wu >= 1000 -> stringResource(R.string.report_blame_last)
-                                        row.wu <= 500 -> stringResource(R.string.report_blame_half1)
-                                        else -> stringResource(R.string.report_blame_half2)
-                                    },
+                                    if (miss2 > 0) stringResource(R.string.report_mistake_shape, n(sub2), n(row.wunits), n(miss2))
+                                    else stringResource(R.string.report_mistake_shape_clean, n(sub2), n(row.wunits)),
                                     fontSize = 10.sp, color = c.inkFaint,
                                 )
                             }
-                            // WHAT KIND of mistake charged the word, from the
-                            // record itself: units answered with a different
-                            // sound, units never answered, of the word's own
-                            // units. Absent on records that predate the split -
-                            // those rows keep the position line alone. A split
-                            // with zero substituted units cannot belong to a
-                            // WRONG verdict (bad > 0 is the rule that claims
-                            // it), so such a row keeps its position line and
-                            // shows no contradiction under its own red.
-                            if (row.st == "WRONG" && row.wunits != null && row.wunits > 0) {
-                                val sub = row.wsub ?: -1
-                                val miss = row.wmiss ?: 0
-                                if (sub > 0) {
+                        }
+                        // The expected against the heard: the phoneme symbols
+                        // in the 2.5 s before the decision - the same window
+                        // the "hear it" clip plays. Label and symbols are
+                        // separate texts: mixing Latin and Arabic in one run
+                        // scrambles the bidi order; the symbols set in the
+                        // Qur'an face, RTL, at readable size.
+                        if (row.wt != null && r.emMs.isNotEmpty()) {
+                            val heard = ArrayList<String>()
+                            for (i in r.emMs.indices) {
+                                if (r.emMs[i] >= row.wt - 2500 && r.emMs[i] <= row.wt + 250
+                                    && i < r.emissions.size
+                                ) {
+                                    heard.add(r.emissions[i])
+                                }
+                            }
+                            if (expected != null) {
+                                Row(Modifier.padding(top = 5.dp)) {
                                     Text(
-                                        if (miss > 0) stringResource(R.string.report_mistake_shape, sub, row.wunits, miss)
-                                        else stringResource(R.string.report_mistake_shape_clean, sub, row.wunits),
+                                        stringResource(R.string.console_expected),
                                         fontSize = 10.sp, color = c.inkFaint,
+                                        modifier = Modifier
+                                            .width(64.dp)
+                                            .padding(top = 3.dp),
+                                    )
+                                    Text(
+                                        expected,
+                                        fontSize = 16.sp, fontFamily = quranFont, color = c.ink,
                                     )
                                 }
                             }
-                            // WHAT the model heard around this verdict, from
-                            // the record's own emission stream - not a
-                            // transcript, the phoneme symbols in the 2.5 s
-                            // before the decision, the same window the
-                            // "hear it" clip plays. Absent on records that
-                            // predate the emission capture. Label and
-                            // symbols are separate texts: mixing Latin and
-                            // Arabic in one run scrambles the bidi order,
-                            // and the symbols are the content here, so they
-                            // set in the Qur'an face, RTL, at readable size.
-                            if (row.st == "WRONG" && row.wt != null && r.emMs.isNotEmpty()) {
-                                val heard = ArrayList<String>()
-                                for (i in r.emMs.indices) {
-                                    if (r.emMs[i] >= row.wt - 2500 && r.emMs[i] <= row.wt + 250
-                                        && i < r.emissions.size
-                                    ) {
-                                        heard.add(r.emissions[i])
-                                    }
-                                }
-                                if (heard.isNotEmpty()) {
-                                    Row(Modifier.padding(top = 2.dp)) {
-                                        Text(
-                                            stringResource(R.string.report_heard),
-                                            fontSize = 10.sp, color = c.inkFaint,
-                                            modifier = Modifier.padding(top = 3.dp),
-                                        )
-                                        Text(
-                                            heard.take(12).joinToString(" ") +
-                                                if (heard.size > 12) " …" else "",
-                                            fontSize = 15.sp, color = c.inkMuted,
-                                            fontFamily = quranFont,
-                                            style = androidx.compose.ui.text.TextStyle(
-                                                textDirection = TextDirection.Rtl,
-                                            ),
-                                        )
-                                    }
+                            if (heard.isNotEmpty()) {
+                                Row(Modifier.padding(top = 3.dp)) {
+                                    Text(
+                                        stringResource(R.string.report_heard),
+                                        fontSize = 10.sp, color = c.inkFaint,
+                                        modifier = Modifier
+                                            .width(64.dp)
+                                            .padding(top = 3.dp),
+                                    )
+                                    Text(
+                                        heard.take(12).joinToString(" ") +
+                                            if (heard.size > 12) " …" else "",
+                                        fontSize = 15.sp, color = c.inkMuted,
+                                        fontFamily = quranFont,
+                                        style = androidx.compose.ui.text.TextStyle(
+                                            textDirection = TextDirection.Rtl,
+                                        ),
+                                    )
                                 }
                             }
-                            // Hear what the model heard: the 2.5 s of room
-                            // audio before this verdict - the audio the judged
-                            // window was built from. WRONG rows only; the
-                            // dashboard above plays the whole recitation.
-                            if (audioAvailable && row.st == "WRONG" && row.wt != null) {
-                                val key = "w:" + row.key
-                                val into = ((row.wt - 2500) - (r.audioStartMs - r.startedAt))
-                                    .toInt().coerceAtLeast(0)
+                        }
+                        // The two roads deeper: the moment itself (the room
+                        // audio the judged window was built from) and the full
+                        // alignment in this session's console.
+                        if (audioAvailable && row.wt != null) {
+                            val key = "w:" + row.key
+                            val into = ((row.wt - 2500) - (r.audioStartMs - r.startedAt))
+                                .toInt().coerceAtLeast(0)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 7.dp),
+                            ) {
                                 IconButton(
                                     onClick = { hear(key, into, 2600) },
                                     modifier = Modifier.size(36.dp),
@@ -1104,18 +1243,21 @@ private fun RecitationLogCard(
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
-                            }
-                            if (row.wt == null) {
-                                Text(stringResource(R.string.report_no_time), fontSize = 10.sp, color = c.inkFaint)
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    stringResource(R.string.report_full_alignment),
+                                    fontSize = 11.sp, color = c.accent,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onOpenConsole() }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                )
                             }
                         }
+                        if (row.wt == null) {
+                            Text(stringResource(R.string.report_no_time), fontSize = 10.sp, color = c.inkFaint)
+                        }
                     }
-                    Text(
-                        (row.wt?.let { "%.1f s".format(it / 1000f) } ?: "—") +
-                            " · " + surah + ":" + ayah,
-                        fontSize = 10.sp, color = c.inkFaint,
-                        fontFamily = FontFamily.Monospace,
-                    )
                 }
             }
         }

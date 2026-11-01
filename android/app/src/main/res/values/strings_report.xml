@@ -3,8 +3,8 @@
 <resources>
     <!-- Header / loading / empty states -->
     <string name="report_title">Session report</string>
-    <string name="report_surah_fallback">Surah %1$d</string>
-    <string name="report_position">%1$s · ayah %2$d</string>
+    <string name="report_surah_fallback">Surah %1$s</string>
+    <string name="report_position">%1$s · ayah %2$s</string>
     <string name="report_spanned_boundary">Spanned a surah boundary</string>
     <string name="report_loading">Reading the record…</string>
     <string name="report_gone">That session is no longer on the phone.\nOnly the ten most recent are kept.</string>
@@ -27,7 +27,7 @@
     <string name="report_detail_polls">audio polls</string>
     <string name="report_detail_unjudgeable">unjudgeable ayat</string>
     <string name="report_detail_no_window">words the engine could not hear</string>
-    <string name="report_no_window_value">%1$d (%2$d empty windows)</string>
+    <string name="report_no_window_value">%1$s (%2$s empty windows)</string>
     <string name="report_detail_frames">trace frames</string>
     <string name="report_detail_recorded">words with a status</string>
     <string name="report_audio_polls_note">\"Audio polls\" is how many times the engine looked at the microphone, not a score. It is here because it diagnoses a session that produced nothing.</string>
@@ -37,26 +37,26 @@
     <string name="report_watch_again_blurb">The session on a timeline: the lock\'s walk, every verdict at the moment it was decided, and what the model heard.</string>
 
     <!-- Verdict card -->
-    <string name="report_judged_of">%1$d of %2$d</string>
+    <string name="report_judged_of">%1$s of %2$s</string>
     <string name="report_metric_accuracy">accuracy</string>
     <string name="report_metric_coverage">coverage</string>
     <string name="report_stat_decided">words decided</string>
     <string name="report_metric_net">correct / wrong</string>
     <string name="report_stat_duration">duration</string>
     <string name="report_stat_wpm">words per minute</string>
-    <string name="report_unheard_note">The engine never heard %1$d of these words. Counting those, accuracy is %2$s%%.</string>
+    <string name="report_unheard_note">The engine never heard %1$s of these words. Counting those, accuracy is %2$s%%.</string>
 
     <!-- Ayah card -->
     <string name="report_ayah_by_ayah">Ayah by ayah</string>
     <string name="report_legend_clean">clean</string>
     <string name="report_legend_wrong">a word wrong</string>
     <string name="report_legend_unheard">partly unheard</string>
-    <string name="report_ayah_n">ayah %1$d</string>
-    <string name="report_ayah_fallback">(ayah %1$d)</string>
-    <string name="report_counts_right">%1$d right</string>
-    <string name="report_counts_wrong">%1$d wrong</string>
-    <string name="report_counts_unheard">%1$d unheard</string>
-    <string name="report_counts_passed">%1$d passed over</string>
+    <string name="report_ayah_n">ayah %1$s</string>
+    <string name="report_ayah_fallback">(ayah %1$s)</string>
+    <string name="report_counts_right">%1$s right</string>
+    <string name="report_counts_wrong">%1$s wrong</string>
+    <string name="report_counts_unheard">%1$s unheard</string>
+    <string name="report_counts_passed">%1$s passed over</string>
     <string name="report_counts_none">nothing judged</string>
 
     <!-- Verdicts card -->
@@ -74,17 +74,19 @@
     <string name="report_misses_none_wrong">Nothing came out wrong</string>
     <string name="report_misses_none">Nothing to report</string>
     <string name="report_misses_none_body">No word in this session was judged wrong.</string>
-    <string name="report_misses_none_body2">No word was judged in this session, so there is nothing to score. %1$d passed over as the lock advanced and %2$d were not heard by the model.</string>
+    <string name="report_misses_none_body2">No word was judged in this session, so there is nothing to score. %1$s passed over as the lock advanced and %2$s were not heard by the model.</string>
     <string name="report_misses_title">Words that slipped</string>
     <string name="report_misses_note">Words the model could not place at all are listed separately as unheard, and are not counted as mistakes.</string>
 
     <!-- Session audio card -->
+    <string name="report_skip_prev_mistake">previous mistake</string>
+    <string name="report_skip_next_mistake">next mistake</string>
     <string name="report_audio_title">Session audio</string>
     <string name="report_audio_missing">This record names audio (\"%1$s\"), but the file is no longer on this device.</string>
     <string name="report_pause">Pause</string>
     <string name="report_play">Play the recitation</string>
     <string name="report_audio_caption">kept on this device, never uploaded · red ticks are wrong verdicts</string>
-    <string name="report_mistake_map_cd">Mistake map: %1$d wrong verdicts across %2$d seconds</string>
+    <string name="report_mistake_map_cd">Mistake map: %1$s wrong verdicts across %2$s seconds</string>
 
     <!-- Blame bands card -->
     <string name="report_blame_title">Where blame lands</string>
@@ -95,25 +97,29 @@
     <string name="report_band_late">late</string>
     <string name="report_band_near_end">near the end</string>
     <string name="report_band_last">last letter</string>
-    <string name="report_word_one">%1$d word</string>
-    <string name="report_word_many">%1$d words</string>
-    <string name="report_blame_footer">%1$d wrong words judged at their own blame position.</string>
+    <string name="report_word_one">%1$s word</string>
+    <string name="report_word_many">%1$s words</string>
+    <string name="report_blame_footer">%1$s wrong words judged at their own blame position.</string>
 
     <!-- Recitation log card -->
     <string name="report_log_title">Recitation log</string>
-    <string name="report_log_subtitle">%1$d words, decided in order. The ayah\'s word is what was expected.</string>
+    <string name="report_errors_kinds">%1$d sound swaps · %2$d with unheard units</string>
+    <string name="report_chip_swap">sound swap</string>
+    <string name="report_chip_both">swap + unheard</string>
+    <string name="report_full_alignment">the full alignment →</string>
+    <string name="report_log_subtitle">%1$s words, decided in order. The ayah\'s word is what was expected.</string>
     <string name="report_show_first">show first</string>
     <string name="report_show_all">show all</string>
     <string name="report_all_words">all words</string>
     <string name="report_wrong_only">wrong only</string>
-    <string name="report_no_text">(the record names no text for %1$d:%2$d)</string>
+    <string name="report_no_text">(the record names no text for %1$s:%2$s)</string>
     <string name="report_blame_first">blamed at the word\'s first letter</string>
     <string name="report_blame_past_first">blamed past the first letter (older record: no finer position)</string>
     <string name="report_blame_last">blamed at the word\'s last letter</string>
     <string name="report_blame_half1">blamed in the word\'s first half</string>
     <string name="report_blame_half2">blamed in the word\'s second half</string>
-    <string name="report_mistake_shape">%1$d of %2$d units said with a different sound, %3$d never said.</string>
-    <string name="report_mistake_shape_clean">%1$d of %2$d units said with a different sound, none went unheard.</string>
+    <string name="report_mistake_shape">%1$s of %2$s units said with a different sound, %3$s never said.</string>
+    <string name="report_mistake_shape_clean">%1$s of %2$s units said with a different sound, none went unheard.</string>
     <string name="report_heard">heard\ </string>
     <string name="report_stop_clip">Stop the clip</string>
     <string name="report_hear_clip">Hear the audio before this verdict</string>

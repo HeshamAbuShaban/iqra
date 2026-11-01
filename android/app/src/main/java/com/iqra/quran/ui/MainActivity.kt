@@ -206,7 +206,11 @@ class MainActivity : ComponentActivity() {
                 LocalIqraColors provides cols,
                 LocalLiveColors provides liveCols,
             ) {
-            MaterialTheme(colorScheme = iqraScheme(cols), shapes = mushafShapes()) {
+            MaterialTheme(
+                colorScheme = iqraScheme(cols),
+                shapes = mushafShapes(),
+                typography = com.iqra.quran.ui.theme.uiTypography(),
+            ) {
                 App(
                     vm,
                     onRequestMic = { block ->

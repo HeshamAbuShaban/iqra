@@ -152,7 +152,7 @@ object IqraPalettes {
         goldBright = Color(0xFFF2DDA8),
         ink = Color(0xFFEAF3EE),
         inkMuted = Color(0xFF93A8A0),
-        inkFaint = Color(0xFF5E716A),
+        inkFaint = Color(0xFF6E837C),
         wordGood = Color(0xFFF2EFE4),
         wordBad = Color(0xFFF08A80),
         wordUnknown = Color(0xFF7E8C86),
@@ -175,7 +175,7 @@ object IqraPalettes {
         goldBright = Color(0xFFF4F7FB),
         ink = Color(0xFFEDF1F7),
         inkMuted = Color(0xFF97A3B4),
-        inkFaint = Color(0xFF5F6A7A),
+        inkFaint = Color(0xFF6E7A8C),
         wordGood = Color(0xFFEDF1F7),
         wordBad = Color(0xFFE58C82),
         wordUnknown = Color(0xFF7C8899),
@@ -198,7 +198,7 @@ object IqraPalettes {
         goldBright = Color(0xFFF7E7BE),
         ink = Color(0xFFEFE6D4),
         inkMuted = Color(0xFFA99B84),
-        inkFaint = Color(0xFF726A5C),
+        inkFaint = Color(0xFF837A6A),
         wordGood = Color(0xFFEFE6D4),
         wordBad = Color(0xFFDD9084),
         wordUnknown = Color(0xFF8C8371),
@@ -376,3 +376,38 @@ fun iqraScheme(c: IqraColors): androidx.compose.material3.ColorScheme =
         onError = c.ground,
     )
 
+/**
+ * The UI face: IBM Plex Sans Arabic - comfortable at the app's small sizes,
+ * with clean Western digits, and a quiet companion to Amiri. The Qur'an face
+ * stays Amiri (MainActivity's quranFont): one face per job, never one face
+ * for everything - the single default face strained the eye across every
+ * surface, which is what the user asked to end.
+ */
+val UiFont = androidx.compose.ui.text.font.FontFamily(
+    androidx.compose.ui.text.font.Font(com.iqra.quran.R.font.ibmplexsansarabic_regular, androidx.compose.ui.text.font.FontWeight.Normal),
+    androidx.compose.ui.text.font.Font(com.iqra.quran.R.font.ibmplexsansarabic_medium, androidx.compose.ui.text.font.FontWeight.Medium),
+    androidx.compose.ui.text.font.Font(com.iqra.quran.R.font.ibmplexsansarabic_semibold, androidx.compose.ui.text.font.FontWeight.SemiBold),
+)
+
+/** Every Material style carries the UI face, so a Text without an explicit
+ *  fontFamily inherits it and no surface is left on the system face. */
+fun uiTypography(): androidx.compose.material3.Typography {
+    val base = androidx.compose.material3.Typography()
+    return androidx.compose.material3.Typography(
+        displayLarge = base.displayLarge.copy(fontFamily = UiFont),
+        displayMedium = base.displayMedium.copy(fontFamily = UiFont),
+        displaySmall = base.displaySmall.copy(fontFamily = UiFont),
+        headlineLarge = base.headlineLarge.copy(fontFamily = UiFont),
+        headlineMedium = base.headlineMedium.copy(fontFamily = UiFont),
+        headlineSmall = base.headlineSmall.copy(fontFamily = UiFont),
+        titleLarge = base.titleLarge.copy(fontFamily = UiFont),
+        titleMedium = base.titleMedium.copy(fontFamily = UiFont),
+        titleSmall = base.titleSmall.copy(fontFamily = UiFont),
+        bodyLarge = base.bodyLarge.copy(fontFamily = UiFont),
+        bodyMedium = base.bodyMedium.copy(fontFamily = UiFont),
+        bodySmall = base.bodySmall.copy(fontFamily = UiFont),
+        labelLarge = base.labelLarge.copy(fontFamily = UiFont),
+        labelMedium = base.labelMedium.copy(fontFamily = UiFont),
+        labelSmall = base.labelSmall.copy(fontFamily = UiFont),
+    )
+}
