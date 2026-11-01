@@ -205,6 +205,7 @@ fun HomeScreen(
 
         if (trimmed.isNotBlank()) {
             SearchResults(
+                vm = vm,
                 surahHits = surahHits,
                 ayahHits = ayahHits,
                 data = data,
@@ -226,6 +227,7 @@ fun HomeScreen(
 
 @Composable
 private fun SearchResults(
+    vm: PracticeViewModel,
     surahHits: List<com.iqra.quran.data.SurahInfo>,
     ayahHits: List<com.iqra.quran.data.AyahSearch.Hit>,
     data: com.iqra.quran.data.QuranData,
@@ -234,7 +236,9 @@ private fun SearchResults(
     onOpenAyah: (Int, Int, Int) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val scale = ReaderPrefs.fontScale(LocalContext.current)
+    val prefTick by ReaderPrefs.tick.collectAsStateWithLifecycle()
+    val sctx = LocalContext.current
+    val scale = remember(prefTick, sctx) { ReaderPrefs.fontScale(sctx) }
     val lazy = rememberLazyListState()
     LaunchedEffect(surahHits.size, ayahHits.size) { lazy.scrollToItem(0) }
     LazyColumn(
@@ -257,8 +261,11 @@ private fun SearchResults(
                     Modifier
                         .fillMaxWidth()
                         .clickable {
-                            val p = surah?.let { if (h.ayah in it.startPage..it.endPage) it.startPage else 1 }
-                                ?: 1
+                            // The AYAH's own page - the searcher found a word
+                            // somewhere in the middle of a surah, and landing
+                            // on its first page defeated the search.
+                            val p = vm.pageOfVerse(h.surah, h.ayah)
+                                ?: surah?.startPage ?: 1
                             onOpenAyah(h.surah, p, h.ayah)
                         }
                         .padding(horizontal = 18.dp, vertical = 11.dp),
