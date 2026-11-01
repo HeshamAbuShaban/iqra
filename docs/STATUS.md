@@ -2499,3 +2499,23 @@ not by localized string identity across six callers, the misplaced theme
 KDoc sits on its own composable, and the raw sessions-prefs block carries
 its contract comment. Gate 44/44; verified on the phone over the live
 sessions (the manage sheet, the grouped card).
+
+## The follow-through, 2 November (later)
+
+- **A search hit lands on its own ayah's page**: tapping an ayah search
+  result opened the surah's first page unless the ayah happened to sit
+  there - the searcher found a word on page 137 and was sent to page 1.
+  pageOfVerse resolves the real page now. SearchResults' text scale also
+  re-reads keyed on the prefs tick (a size change in Settings reached
+  nothing already open).
+- **The drill-down states survive the scroll**: openKey, openGroup, the
+  wrong-only filters and the show-all toggles were remember inside
+  LazyColumn items torn down on scroll - an opened piece of evidence closed
+  itself when the list moved. rememberSaveable holds them on both screens.
+- **The instruments move**: the practice rings sweep in with the
+  composition; the pace chart fits its y-range to the data as the accuracy
+  chart does.
+- **docs/DEVICE_TESTS.md**: the five device tests written for the voice
+  that runs them - the reader bounce, the continuous two-surah walk,
+  repeat-to-refresh, the gated long jump, the kind split - each with what
+  to do, what to watch, and what the record must show.
