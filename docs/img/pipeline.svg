@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" font-family="ui-monospace,Menlo,monospace">
+  <rect width="960" height="560" fill="#070B0C"/>
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6" fill="none" stroke="#2BB6A0" stroke-width="1.6"/>
+    </marker>
+  </defs>
+  <g fill="none" stroke="#1E2A2A" stroke-width="1.4">
+    <rect x="40"  y="40"  width="240" height="64" rx="10"/>
+    <rect x="360" y="40"  width="240" height="64" rx="10"/>
+    <rect x="680" y="40"  width="240" height="64" rx="10"/>
+    <rect x="360" y="170" width="240" height="64" rx="10"/>
+    <rect x="360" y="300" width="240" height="64" rx="10"/>
+    <rect x="360" y="430" width="240" height="64" rx="10"/>
+  </g>
+  <g fill="#EAF3EE" font-size="15">
+    <text x="52"  y="67">microphone · 16 kHz mono</text>
+    <text x="52"  y="87" fill="#8FA6A0" font-size="12">the reciter's voice, on device</text>
+    <text x="372" y="67">VAD gate</text>
+    <text x="372" y="87" fill="#8FA6A0" font-size="12">speech passes, silence does not</text>
+    <text x="692" y="67">streaming acoustic model</text>
+    <text x="692" y="87" fill="#8FA6A0" font-size="12">zipformer2 · int8 · 72 MB</text>
+    <text x="372" y="197">phoneme symbols heard</text>
+    <text x="372" y="217" fill="#8FA6A0" font-size="12">the sounds of Arabic, not letters</text>
+    <text x="372" y="327">expected units per word</text>
+    <text x="372" y="347" fill="#8FA6A0" font-size="12">from the mushaf's phoneme table</text>
+    <text x="372" y="457">DP alignment → verdicts</text>
+    <text x="372" y="477" fill="#8FA6A0" font-size="12">correct · wrong · unheard — per word</text>
+  </g>
+  <g stroke="#2BB6A0" stroke-width="1.6" marker-end="url(#a)">
+    <line x1="280" y1="72"  x2="352" y2="72"/>
+    <line x1="600" y1="72"  x2="672" y2="72"/>
+    <line x1="800" y1="104" x2="800" y2="150"/>
+    <path d="M 800 150 Q 800 202 610 202" fill="none"/>
+    <line x1="480" y1="234" x2="480" y2="292"/>
+    <line x1="480" y1="364" x2="480" y2="422"/>
+  </g>
+  <g fill="#2BB6A0" font-size="12">
+    <text x="286" y="64">stream</text>
+    <text x="812" y="130">every 250 ms</text>
+    <text x="492" y="268">compare</text>
+    <text x="492" y="398">charge or match</text>
+  </g>
+  <g>
+    <rect x="680" y="300" width="240" height="194" rx="10" fill="none" stroke="#1E2A2A" stroke-width="1.4"/>
+    <text x="692" y="327" fill="#D9B36B" font-size="14">session record · on device</text>
+    <text x="692" y="351" fill="#8FA6A0" font-size="12">every verdict with its moment,</text>
+    <text x="692" y="369" fill="#8FA6A0" font-size="12">the symbol stream, and the</text>
+    <text x="692" y="387" fill="#8FA6A0" font-size="12">session's own audio — deleted</text>
+    <text x="692" y="405" fill="#8FA6A0" font-size="12">with the session, never uploaded</text>
+    <text x="692" y="433" fill="#8FA6A0" font-size="12">"hear the 2.5 s before this</text>
+    <text x="692" y="451" fill="#8FA6A0" font-size="12">verdict" in the report</text>
+  </g>
+  <g stroke="#D9B36B" stroke-width="1.2" stroke-dasharray="4 4">
+    <line x1="600" y1="462" x2="672" y2="420"/>
+  </g>
+  <text x="40" y="540" fill="#5E6E69" font-size="12">nothing in this diagram touches a network. a charge is only ever laid on evidence the window actually heard.</text>
+</svg>

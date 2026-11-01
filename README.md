@@ -1,7 +1,15 @@
 <h1 align="center">Iqra — recite, and be followed</h1>
 
 <p align="center">
-  <img src="tools/icon/iqra.png" width="120" alt="The Iqra icon: a mushaf page whose lines resolve into a recitation wave, gold on near-black">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-2BB6A0?style=flat-square" alt="MIT licence"></a>
+  <img src="https://img.shields.io/badge/platform-Android_8.0%2B-0F1A1A?style=flat-square" alt="Android 8.0+">
+  <img src="https://img.shields.io/badge/mushaf-Madinah_604_pages-D9B36B?style=flat-square" alt="604-page Madinah mushaf">
+  <a href="https://github.com/HeshamAbuShaban/iqra/actions/workflows/build.yml"><img src="https://github.com/HeshamAbuShaban/iqra/actions/workflows/build.yml/badge.svg" alt="CI build"></a>
+  <img src="https://img.shields.io/badge/gate-44_checks-2BB6A0?style=flat-square" alt="44-check recognition gate">
+</p>
+
+<p align="center">
+  <img src="docs/img/icon.png" width="120" alt="The Iqra icon: a mushaf page whose lines resolve into a recitation wave, gold on near-black">
 </p>
 
 <p align="center">
@@ -94,6 +102,13 @@ English today, built so a new language is a set of strings, not a code
 change. The recite screen renders its numbers and captions properly for
 right-to-left reading.
 
+<p align="center">
+  <img src="docs/img/report_ar.png" width="270" alt="The session report in Arabic: the accuracy ring, the note that the engine did not hear 70 words, and the session audio with its mistake-map ticks">
+  &nbsp;&nbsp;
+  <img src="docs/img/log_ar.png" width="270" alt="The recitation log in Arabic: a wrong word with where the charge began, what was heard beside what was expected, and the play button for the audio before the verdict">
+</p>
+<p align="center"><sub>Real sessions, shown as the app showed them: the report that did not hear 70 words says so, and the wrong word's charge names where it began.</sub></p>
+
 ## What it will not do
 
 - It is **not a judge of your recitation.** Tajweed, meaning and correctness in
@@ -109,27 +124,9 @@ right-to-left reading.
 
 ## How it hears you
 
-```
-   microphone (16 kHz mono)
-          │
-          ▼
-   ┌────────────────────────────────┐
-   │ streaming CTC acoustic model   │  zipformer2, phoneme output, on-device
-   │ (int8, 72 MB, user-supplied)   │
-   └────────────────────────────────┘
-          │  phoneme units
-          ▼
-   ┌────────────────────────────────┐
-   │ expected text, EXPLODED into   │  the mushaf's phoneme table is per-WORD,
-   │ the model's own unit inventory │  so each word is split into the 250 units
-   └────────────────────────────────┘
-          │
-          ▼
-   alignment  →  how much of each verse has been heard
-          │
-          ▼
-   lock advances as verses are covered  →  per-word CORRECT / WRONG / unheard
-```
+<p align="center">
+  <img src="docs/img/pipeline.svg" width="720" alt="The pipeline: microphone, VAD gate, streaming acoustic model, heard phoneme symbols compared against per-word expected units, DP alignment, per-word verdicts, and the on-device session record">
+</p>
 
 The second box is the one that matters, and the one that took the longest to get
 right. Comparing the model's **phoneme units** against the table's **word
@@ -273,6 +270,19 @@ to record.
 - far-field audio and multi-reciter voices
 
 Auto feedback is a study aid. A teacher's ear is the authority.
+
+### On what these marks mean
+
+This is said plainly, because the subject is the Book of Allah and a person's
+standing with it. The marks this app paints are one instrument's reading of one
+microphone's audio — nothing more. A red word is not a proof that you sinned,
+and a green page is not a certificate that you recited well; the engine has
+been wrong before, the places where it is weak are documented in this
+repository, and its rules exist to *remove* accusations rather than add them.
+What the app claims is narrower: here is what was heard, here is the recording,
+hear it and judge for yourself — and take the verdict to a teacher when it
+matters. If anything in this README ever reads as more than that, the README
+is wrong and should be corrected.
 
 ---
 
