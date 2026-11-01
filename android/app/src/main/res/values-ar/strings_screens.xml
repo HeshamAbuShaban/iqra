@@ -17,6 +17,10 @@
     <string name="home_section_meccan">مكية</string>
     <string name="home_section_madani">مدنية</string>
     <string name="home_empty_surah_match">لا سورة مطابقة</string>
+    <string name="home_doors_read">القراءة</string>
+    <string name="home_doors_recite">التسميع</string>
+    <string name="home_doors_listen">الاستماع</string>
+    <string name="home_log_all">السجل كاملًا ←</string>
     <string name="home_continue_title">متابعة</string>
     <string name="home_continue_detail">%1$s  ·  صفحة %2$d  ·  %3$d آيات</string>
     <string name="home_test_title">تسميع من الذاكرة</string>

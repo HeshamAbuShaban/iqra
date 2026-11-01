@@ -219,7 +219,7 @@ fun HomeScreen(
 
         HomeTabRow(tab) { tab = it }
         when (tab) {
-            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs, onTest, onRecite, onListen)
+            HomeTab.Surahs -> SurahIndex(vm, lastRead, data, onOpen, surahs, onTest, onRecite, onListen, onProgress)
             HomeTab.Juz -> JuzList(vm, data, onOpen)
             HomeTab.Bookmarks -> BookmarkList(vm, data, onOpen, onOpenAyah)
         }
@@ -341,6 +341,7 @@ fun SurahIndex(
     onTest: (Int, Int) -> Unit = { _, _ -> },
     onRecite: (Int, Int, Int) -> Unit = { _, _, _ -> },
     onListen: (Int, Int) -> Unit = { _, _ -> },
+    onProgress: () -> Unit = {},
 ) {
     // `surahs` arrives prebuilt from HomeScreen. The default keeps this
     // composable usable on its own without forcing every caller to remember it.
@@ -393,14 +394,8 @@ fun SurahIndex(
                         )
                     }
 
-                    continueInfo?.let { (info, page) ->
-                        item {
-                            ContinueCard(info = info, page = page) {
-                                onOpen(info.number, page)
-                            }
-                        }
-                    }
-                    item { ResumeSlots(vm, surahs, onRecite, onListen) }
+                    item { ResumeDoorsRow(vm, surahs, continueInfo, onOpen, onRecite, onListen) }
+                    item { RecentMiniCard(surahs, onOpenLog = onProgress) }
                     if (meccan.isNotEmpty()) {
                         item { SectionHeader(stringResource(R.string.home_section_meccan), meccan.size, false) }
                         items(meccan, key = { it.number }) { SurahRow(it, lastRead, onOpen) }
@@ -427,14 +422,8 @@ fun SurahIndex(
                         )
                     }
 
-                    continueInfo?.let { (info, page) ->
-                        item {
-                            ContinueCard(info = info, page = page) {
-                                onOpen(info.number, page)
-                            }
-                        }
-                    }
-                    item { ResumeSlots(vm, surahs, onRecite, onListen) }
+                    item { ResumeDoorsRow(vm, surahs, continueInfo, onOpen, onRecite, onListen) }
+                    item { RecentMiniCard(surahs, onOpenLog = onProgress) }
                     items(gridRows, key = { it.first().number }) { row ->
                         Row(Modifier.fillMaxWidth()) {
                             row.forEach { s ->
@@ -449,127 +438,153 @@ fun SurahIndex(
     }
 }
 
-@Composable
-fun ContinueCard(
-    info: com.iqra.quran.data.SurahInfo,
-    page: Int,
-    onClick: () -> Unit,
-) {
-    Card(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        shape = IqraShape.card,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(Modifier.fillMaxWidth().clickable(onClick = onClick),
-                verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.home_continue_title), fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    Text(
-                        stringResource(R.string.home_continue_detail, info.displayName(LocalConfiguration.current), page, info.ayahCount),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                }
-            }
-        }
-    }
-}
-
 /**
- * The two further resume doors beneath Continue.
- *
- * Reading, reciting and listening are three different acts that end in
- * different places, and one "continue" could only remember one of them. The
- * recite slot resumes the latest recorded session's own position - the lock's
- * spot, not the page top - and the listen slot resumes the surah whose
- * playback was last chosen. A slot with nothing behind it renders nothing, so
- * a fresh install sees only the read door.
+ * The three resume doors in one row - reading, reciting, listening are three
+ * acts that end in different places, and the old layout stacked one icon and
+ * two full-width cards in two different places. Compact, equal, quiet: the
+ * act is named, the place is named, nothing else. A door with nothing behind
+ * it dims rather than disappears, so the row holds its shape.
  */
 @Composable
-fun ResumeSlots(
+private fun ResumeDoorsRow(
     vm: PracticeViewModel,
     surahs: List<com.iqra.quran.data.SurahInfo>,
+    continueInfo: Pair<com.iqra.quran.data.SurahInfo, Int>?,
+    onOpen: (Int, Int) -> Unit,
     onRecite: (Int, Int, Int) -> Unit,
     onListen: (Int, Int) -> Unit,
 ) {
     val ctx = LocalContext.current
-    val lastRecite = remember {
+    val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
+    val c = LocalIqraColors.current
+    val lastRecite = remember(tick) {
         PracticeLog.summarise(ctx).recent
             .firstOrNull { it.safePosition != null }?.safePosition
     }
-    val lastListen = remember { AudioPrefs.lastPlayedSurah(ctx) }
-    if (lastRecite != null) {
-        val (surah, ayah) = lastRecite
-        val info = surahs.firstOrNull { it.number == surah }
-        if (info != null) {
-            val page = vm.pageOfVerse(surah, ayah) ?: info.startPage
-            SlotCard(
-                icon = Icons.Filled.Mic,
-                title = stringResource(R.string.home_slot_recite),
-                detail = stringResource(R.string.home_slot_recite_detail, info.displayName(LocalConfiguration.current), ayah),
-            ) { onRecite(surah, page, ayah) }
+    val lastListen = remember(tick) { AudioPrefs.lastPlayedSurah(ctx) }
+    val reciteInfo = lastRecite?.let { (sn, ay) ->
+        surahs.firstOrNull { it.number == sn }?.let { info ->
+            Triple(info, ay, vm.pageOfVerse(sn, ay) ?: info.startPage)
         }
     }
-    if (lastListen in 1..114) {
-        val info = surahs.firstOrNull { it.number == lastListen }
-        if (info != null) {
-            SlotCard(
-                icon = Icons.Filled.Headphones,
-                title = stringResource(R.string.home_slot_listen),
-                detail = stringResource(R.string.home_slot_listen_detail, info.displayName(LocalConfiguration.current)),
-            ) { onListen(info.number, info.startPage) }
+    val listenInfo = if (lastListen in 1..114)
+        surahs.firstOrNull { it.number == lastListen } else null
+
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DoorTile(
+            label = stringResource(R.string.home_doors_read),
+            place = continueInfo?.let { (info, page) ->
+                info.displayName(LocalConfiguration.current) + " · " + n(page)
+            },
+            active = continueInfo != null,
+            c = c,
+            modifier = Modifier.weight(1f),
+        ) { continueInfo?.let { (info, page) -> onOpen(info.number, page) } }
+        DoorTile(
+            label = stringResource(R.string.home_doors_recite),
+            place = reciteInfo?.let { (info, ay, _) ->
+                info.displayName(LocalConfiguration.current) + " · " + n(ay)
+            },
+            active = reciteInfo != null,
+            c = c,
+            modifier = Modifier.weight(1f),
+        ) {
+            reciteInfo?.let { (info, ay, page) -> onRecite(info.number, page, ay) }
         }
+        DoorTile(
+            label = stringResource(R.string.home_doors_listen),
+            place = listenInfo?.displayName(LocalConfiguration.current),
+            active = listenInfo != null,
+            c = c,
+            modifier = Modifier.weight(1f),
+        ) { listenInfo?.let { onListen(it.number, it.startPage) } }
     }
 }
 
 @Composable
-private fun SlotCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    detail: String,
+private fun DoorTile(
+    label: String,
+    place: String?,
+    active: Boolean,
+    c: com.iqra.quran.ui.theme.IqraColors,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Card(
-        Modifier.fillMaxWidth().padding(vertical = 5.dp),
-        shape = IqraShape.card,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    Column(
+        modifier
+            .clip(IqraShape.card)
+            .background(if (active) c.surface else c.surface.copy(alpha = 0.45f))
+            .clickable(enabled = active, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
     ) {
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.secondary)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                Text(detail, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface)
-            }
-        }
+        Text(label, fontSize = 10.sp, color = if (active) c.accent else c.inkFaint)
+        Text(
+            place ?: "—",
+            fontSize = 12.sp, lineHeight = 16.sp, color = if (active) c.ink else c.inkFaint,
+            maxLines = 2,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 
 /**
- * The way into a recitation test, with its own door on the home screen.
- *
- * It was buried at the bottom of the Continue card, which is wrong twice over:
- * testing from memory is a different act from carrying on reading, and a control
- * that only exists once you have read something is invisible to exactly the
- * people who most want it. So it is a card of its own, above Continue, and it
- * says what will happen - "we listen" is the promise, and without it the word
- * "test" reads like an exam rather than a practice partner.
- *
- * The glyph is a still frame of the live orb: the same sphere, drawn once, so
- * the door looks like what is behind it without running an animation on the home
- * screen where nobody asked for one.
+ * The last two sessions, as quiet rows under the doors: the accuracy in its
+ * Latin form, the session's own name, its day. The full log is one tap away.
  */
+@Composable
+private fun RecentMiniCard(
+    surahs: List<com.iqra.quran.data.SurahInfo>,
+    onOpenLog: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
+    val c = LocalIqraColors.current
+    val recent = remember(tick) { PracticeLog.summarise(ctx).recent.take(2) }
+    if (recent.isEmpty()) return
+    val lang = uiLanguage(LocalConfiguration.current)
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.practice_recent_title), fontSize = 11.sp, color = c.inkMuted)
+            Text(
+                stringResource(R.string.home_log_all),
+                fontSize = 11.sp, color = c.accent,
+                modifier = Modifier.clickable(onClick = onOpenLog),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        recent.forEach { r ->
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(IqraShape.chip)
+                    .background(c.surface)
+                    .clickable(onClick = onOpenLog)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    r.accuracy?.let { pct1(it) } ?: "—",
+                    fontSize = 12.sp, color = c.accent,
+                )
+                Spacer(Modifier.width(9.dp))
+                Text(
+                    r.safePosition?.let { (sn, _) ->
+                        surahs.firstOrNull { it.number == sn }
+                            ?.displayName(LocalConfiguration.current)
+                    } ?: stringResource(R.string.practice_row_session, shortDateLocalized(r.dayKey, lang)),
+                    fontSize = 12.sp, color = c.ink,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(shortDateLocalized(r.dayKey, lang), fontSize = 10.sp, color = c.inkFaint)
+            }
+            Spacer(Modifier.height(5.dp))
+        }
+    }
+}
+
 @Composable
 private fun TestHeroCard(surah: Int, onTest: () -> Unit) {
     val c = LocalIqraColors.current

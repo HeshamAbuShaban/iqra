@@ -18,6 +18,10 @@
     <string name="home_section_meccan">Meccan</string>
     <string name="home_section_madani">Madani</string>
     <string name="home_empty_surah_match">No surah matches</string>
+    <string name="home_doors_read">Read</string>
+    <string name="home_doors_recite">Recite</string>
+    <string name="home_doors_listen">Listen</string>
+    <string name="home_log_all">the full log →</string>
     <string name="home_continue_title">Continue</string>
     <string name="home_continue_detail">%1$s  ·  Page %2$d  ·  %3$d verses</string>
     <string name="home_test_title">Recite from memory</string>
