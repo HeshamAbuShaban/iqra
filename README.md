@@ -203,10 +203,12 @@ the words around it.
 
 ### Trying it with your own voice
 
-Everything above is measured on recorded audio. It has never been tested against a
-person — hesitation, a mispronounced word, a skipped verse, a start from the
-middle of a surah. That is the largest remaining gap and it needs a phone and a
-verse.
+The corpus behind the numbers is recorded audio; since October the app has
+also been carried through real recitations on a phone — hesitation, repeats,
+backtracking, background noise — and those device sessions are the freshest
+regression corpus. The fastest way to add your own voice to that evidence:
+recite, then open the session report — every wrong word carries the moment's
+audio and what the model heard.
 
 ```bash
 scripts/collect_clips.py          # pull recordings off the device and score them
@@ -217,15 +219,20 @@ to record.
 
 ---
 
-## Still unmeasured
+## Measured on a human, and still unmeasured
 
-An honest list, so nothing here reads as more finished than it is:
+Since October the app has been carried through real recitations - noisy
+rooms, hesitation, backtrack and repeat, sessions of up to half an hour,
+judged word by word on a phone. Those sessions are the regression corpus;
+the numbers in the docs name which instrument produced them.
 
-- deliberate mispronunciation under live microphone conditions
-- hesitation and reciting from memory
-- ambiguous repeated words (e.g. الرحمٰن الرحيم in 1:3 and 1:4)
-- background noise and far-field audio
-- starting part-way through a surah
+Still honestly unmeasured:
+
+- deliberate mispronunciation under controlled conditions (the sessions
+  carry real mistakes, but nobody has labeled them word by word yet)
+- ambiguous repeated words (e.g. الرحمٰن الرحيم in 1:3 and 1:4) priced on
+  device
+- far-field audio and multi-reciter voices
 
 Auto feedback is a study aid. A teacher's ear is the authority.
 
