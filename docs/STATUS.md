@@ -2405,8 +2405,14 @@ Verified on the phone (build 299): "سُورَةُ البَقَرَةِ · صف�
 on the doors, "٢٩٤ من ٣٥٩ كلمة · ٥ د ٠٦ ث · اكتملت · ملاحظات على ٢٣٤ كلمات"
 on the rows, the sessions card first.
 
-The deeper visual direction (the house language — night horizon, roundels,
-beads — brought down to the daily surfaces) is a design decision that is
-his to make: a working prototype of the practice screen in that language
-stands ready for his review; it is built additively over data the records
-already carry (every verdict's `wt` is the star's own instant).
+The deeper visual direction was approved ("good proposal... a visual
+cleanup that does not diminish the investigative achievement, and keep
+adding") and landed the same day: each session card in the practice screen
+is now a recessed instrument — AccuracyRoundel (the report's own number and
+thresholds drawn as its arc) and SessionNightStrip (every decided word a
+mark at its `wt` instant, gold with a soft halo where the verdict is WRONG,
+above the heard-density wave binned from the record's `emMs`). Both draw
+only what the record holds — a record without emission times has no strip,
+never an invented timeline. Verified on the phone by screenshot (build 300).
+The investigative layer keeps its place: denominators, notes-in-words,
+Arabic dates all intact under the visual one.
