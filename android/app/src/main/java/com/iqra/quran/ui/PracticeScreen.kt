@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -479,6 +480,12 @@ private fun PaceTrendCard(s: PracticeLog.Summary, c: IqraColors) {
             }
             if (paced.size >= 2) {
                 Spacer(Modifier.height(14.dp))
+                // The range fits the data, as the accuracy chart does: a
+                // reciter pacing 60-90 wpm on a 20-180 axis draws a flat
+                // line and learns nothing from it.
+                val wpms = paced.map { it.wpm.toFloat() }
+                val lo = ((wpms.minOrNull() ?: 20f) - 10f).coerceAtLeast(0f)
+                val hi = (wpms.maxOrNull() ?: 180f) + 10f
                 TrendLine(
                     points = paced.mapIndexed { i, p ->
                         TrendPoint(
@@ -488,7 +495,7 @@ private fun PaceTrendCard(s: PracticeLog.Summary, c: IqraColors) {
                     },
                     line = c.series2,
                     fill = c.series2,
-                    yMin = 20f, yMax = 180f,
+                    yMin = lo, yMax = hi,
                     labelColor = c.inkFaint, gridColor = c.hairline,
                     gridLines = 0,
                     modifier = Modifier.fillMaxWidth().height(80.dp),
@@ -637,7 +644,7 @@ private fun HardestWordsCard(
             }
             .sortedByDescending { it.third }
     }
-    var openGroup by remember { mutableStateOf<Int?>(null) }
+    var openGroup by rememberSaveable { mutableStateOf<Int?>(null) }
     Panel(c) {
         PanelTitle(
             stringResource(R.string.practice_hard_title),
@@ -823,6 +830,11 @@ private fun RecentSessionsCard(
 @Composable
 private fun AccuracyRoundel(fraction: Float?, label: String, colour: Color, c: IqraColors) {
     Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+        // The arc sweeps in with the composition - the rest of this screen's
+        // instruments move; a ring that pops static reads as a placeholder.
+        val shown by animateFloatAsState(
+            (fraction ?: 0f).coerceIn(0f, 1f), tween(700), label = "roundel",
+        )
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 4.dp.toPx()
             val inset = stroke / 2
@@ -832,9 +844,9 @@ private fun AccuracyRoundel(fraction: Float?, label: String, colour: Color, c: I
                 topLeft = Offset(inset, inset), size = arc,
                 style = Stroke(stroke, cap = StrokeCap.Round),
             )
-            if (fraction != null && fraction > 0f) {
+            if (shown > 0f) {
                 drawArc(
-                    colour, 0f, 360f * fraction.coerceIn(0f, 1f), false,
+                    colour, 0f, 360f * shown, false,
                     topLeft = Offset(inset, inset), size = arc,
                     style = Stroke(stroke, cap = StrokeCap.Round),
                 )

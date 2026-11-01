@@ -40,6 +40,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -979,14 +980,14 @@ private fun RecitationLogCard(
     hear: (String, Int, Int) -> Unit,
     onOpenConsole: () -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     // The log's control: a review pass usually wants the misses; the full
     // walk stays one tap away. Off by default, so the card opens exactly as
     // it always did.
-    var wrongOnly by remember { mutableStateOf(false) }
+    var wrongOnly by rememberSaveable { mutableStateOf(false) }
     // The drill-down: one wrong word unfolds its evidence at a time - the
     // list stays scannable, the proof one tap deep. (توسيعًا وتدليلًا)
-    var openKey by remember { mutableStateOf<String?>(null) }
+    var openKey by rememberSaveable { mutableStateOf<String?>(null) }
     val timedAll = r.wordRows.filter { it.wt != null }.sortedBy { it.wt }
     val untimedAll = r.wordRows.filter { it.wt == null }
     val timed = if (wrongOnly) timedAll.filter { it.st == "WRONG" } else timedAll
