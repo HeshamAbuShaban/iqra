@@ -77,7 +77,7 @@
     <string name="practice_streak_day">يوماً متتالياً</string>
     <string name="practice_streak_days">أياماً متتالية</string>
     <string name="practice_streak_best">أطولها %1$s</string>
-    <string name="practice_accuracy_with_unknown">مع احتساب %1$d٪ من الكلمات التي لم يسمعها المحرك، تكون النتيجة %2$s.</string>
+    <string name="practice_accuracy_with_unknown">مع احتساب %1$s٪ من الكلمات التي لم يسمعها المحرك، تكون النتيجة %2$s.</string>
     <string name="practice_trend_up">ارتفاع %1$s عن جلستك السابقة</string>
     <string name="practice_trend_down">انخفاض %1$s عن جلستك السابقة</string>
     <string name="practice_trend_level">على مستوى جلستك السابقة</string>

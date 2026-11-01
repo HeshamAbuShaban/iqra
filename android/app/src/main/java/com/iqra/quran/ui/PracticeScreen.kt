@@ -372,7 +372,7 @@ private fun HeadlineCard(s: PracticeLog.Summary, c: IqraColors) {
             Text(
                 stringResource(
                     R.string.practice_accuracy_with_unknown,
-                    100 - (full * 100).toInt(), pct1(full),
+                    n(100 - (full * 100).toInt()), pct1(full),
                 ),
                 fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
             )

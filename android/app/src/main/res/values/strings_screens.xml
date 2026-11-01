@@ -78,7 +78,7 @@
     <string name="practice_streak_day">day in a row</string>
     <string name="practice_streak_days">days in a row</string>
     <string name="practice_streak_best">best %1$s</string>
-    <string name="practice_accuracy_with_unknown">Counting the %1$d%% of words the engine never heard, this is %2$s.</string>
+    <string name="practice_accuracy_with_unknown">Counting the %1$s%% of words the engine never heard, this is %2$s.</string>
     <string name="practice_trend_up">Up %1$s on your previous session</string>
     <string name="practice_trend_down">Down %1$s on your previous session</string>
     <string name="practice_trend_level">Level with your previous session</string>
