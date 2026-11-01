@@ -2465,3 +2465,21 @@ Open, next session: the technical defects round he queued (computational
 and logical), the deeper colour work against the reference competitor's
 calm state, and the parked engine items (the qalqalah-form guard, the
 page-level monotone aligner) on his go.
+
+## The technical round's first kill: the charts were drawing inside one pixel
+
+He said the charts had been broken since day one, and he was right in the
+precise way: `trendX` hands TrendLine x in 0..1 and the canvas drew that as
+RAW PIXELS - every accuracy history since the first chart rendered as a
+vertical hairline in the leftmost pixel of its own panel. The x now scales
+by the canvas width. The accuracy chart's y-range fits its data (padded 4%)
+instead of the 0..100 sky, so a history between 60 and 97% shows its
+differences; the gridline labels carry real values; the date labels moved to
+the top corners out of the bars' ground. Verified on the phone: the line
+crosses the full width, dates in the corners.
+
+The language sweep closed its last surfaces: the audio library's rows and
+delete dialog, and the choose CTA, speak the running language. The
+last-passage subtitle stays the Latin name by design - the bilingual pairing
+the surah rows use - and latin_wrap_parity held that line when I reached
+past it.
