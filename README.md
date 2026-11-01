@@ -1,7 +1,7 @@
 <h1 align="center">Iqra — recite, and be followed</h1>
 
 <p align="center">
-  <img src="tools/icon/iqra.svg" width="120" alt="Iqra">
+  <img src="tools/icon/iqra.png" width="120" alt="Iqra">
 </p>
 
 <p align="center">
