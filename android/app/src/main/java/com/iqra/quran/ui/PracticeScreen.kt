@@ -36,6 +36,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -603,68 +609,174 @@ private fun RecentSessionsCard(
         )
         Spacer(Modifier.height(10.dp))
         s.recent.forEach { r ->
-            Row(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+            // Each session is its own small instrument, recessed into the
+            // panel: the accuracy ring carries the same number the report
+            // would show, and the night strip below is the session's own
+            // timeline - every verdict a mark at the instant it was decided,
+            // the heard-density wave beneath it. Both draw only what the
+            // record holds; a record without times simply has no strip.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(c.ground)
                     .clickable { onOpen(r.name) }
-                    .padding(vertical = 9.dp, horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(horizontal = 12.dp, vertical = 11.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    val pos = r.safePosition
-                    val lang = uiLanguage(LocalConfiguration.current)
-                    Text(
-                        pos?.let {
-                            "${data.surahInfo(it.first)?.displayName(LocalConfiguration.current)
-                                ?: stringResource(R.string.home_surah_n, it.first)} · ${shortDateLocalized(r.dayKey, lang)}"
-                        } ?: stringResource(R.string.practice_row_session, shortDateLocalized(r.dayKey, lang)),
-                        fontSize = 13.sp, color = c.ink,
-                    )
-                    // The notes are part of what the session found, and this
-                    // list is where a recitation plan is chosen from - a row
-                    // that scores but hides its advisories sends the reader
-                    // into the report to learn the one thing they came for.
-                    // Counted as WORDS AFFECTED, not events: a per-event kind
-                    // like LOW_EVIDENCE can fire per poll, and record #272's
-                    // 2,750 events sit on 85 words - the events measure the
-                    // microphone, the words are the recitation plan. The
-                    // report's detail lines keep the event counts per kind.
-                    val notedWords = r.advisories.map { it.key }.distinct().size
-                    Text(
-                        buildString {
-                            // With the denominator where the record carries
-                            // one. "29 words" is a number with nothing to be
-                            // a number OF - the same session's list showed
-                            // "13 words" for a 43-word scope, which reads as
-                            // a short session rather than a barely-decided
-                            // one. The report screen learned this first; the
-                            // list follows it. Every fragment here is a
-                            // resource: an Arabic row reading "294 of 359
-                            // words · 5m ٠٦s · finished · ملاحظات..." was
-                            // three languages in one line.
-                            val scope = r.perAyah.values.sumOf { it.getOrNull(4) ?: 0 }
-                            if (scope > 0) append(stringResource(R.string.practice_row_words_of, r.judged, scope))
-                            else append(stringResource(R.string.practice_row_words, r.judged))
-                            val dur = r.durationSec
-                            append(" · " + (dur?.let { formatSecs(it) }
-                                ?: stringResource(R.string.practice_row_dur_unknown)))
-                            append(if (r.ended) " · " + stringResource(R.string.practice_row_finished)
-                                   else " · " + stringResource(R.string.practice_row_ended_early))
-                            if (notedWords > 0) append(" · " + stringResource(R.string.practice_row_notes, notedWords))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val a = r.accuracy
+                    AccuracyRoundel(
+                        fraction = a,
+                        label = a?.let { pct1(it) } ?: "—",
+                        colour = when {
+                            a == null -> c.inkFaint
+                            a >= 0.95f -> c.chartGood
+                            a >= 0.8f -> c.accent
+                            else -> c.chartBad
                         },
-                        fontSize = 10.sp, color = c.inkFaint,
+                        c = c,
                     )
+                    Spacer(Modifier.width(11.dp))
+                    Column(Modifier.weight(1f)) {
+                        val pos = r.safePosition
+                        val lang = uiLanguage(LocalConfiguration.current)
+                        Text(
+                            pos?.let {
+                                "${data.surahInfo(it.first)?.displayName(LocalConfiguration.current)
+                                    ?: stringResource(R.string.home_surah_n, it.first)} · ${shortDateLocalized(r.dayKey, lang)}"
+                            } ?: stringResource(R.string.practice_row_session, shortDateLocalized(r.dayKey, lang)),
+                            fontSize = 13.sp, color = c.ink,
+                        )
+                        // The notes are part of what the session found, and
+                        // this list is where a recitation plan is chosen
+                        // from - a row that scores but hides its advisories
+                        // sends the reader into the report to learn the one
+                        // thing they came for. Counted as WORDS AFFECTED,
+                        // not events: a per-event kind like LOW_EVIDENCE can
+                        // fire per poll, and record #272's 2,750 events sit
+                        // on 85 words - the events measure the microphone,
+                        // the words are the recitation plan. The report's
+                        // detail lines keep the event counts per kind.
+                        val notedWords = r.advisories.map { it.key }.distinct().size
+                        Text(
+                            buildString {
+                                // With the denominator where the record carries
+                                // one. "29 words" is a number with nothing to be
+                                // a number OF - the same session's list showed
+                                // "13 words" for a 43-word scope, which reads as
+                                // a short session rather than a barely-decided
+                                // one. Every fragment here is a resource: an
+                                // Arabic row reading "294 of 359 words · 5m ٠٦s ·
+                                // finished · ملاحظات..." was three languages in
+                                // one line.
+                                val scope = r.perAyah.values.sumOf { it.getOrNull(4) ?: 0 }
+                                if (scope > 0) append(stringResource(R.string.practice_row_words_of, r.judged, scope))
+                                else append(stringResource(R.string.practice_row_words, r.judged))
+                                val dur = r.durationSec
+                                append(" · " + (dur?.let { formatSecs(it) }
+                                    ?: stringResource(R.string.practice_row_dur_unknown)))
+                                append(if (r.ended) " · " + stringResource(R.string.practice_row_finished)
+                                       else " · " + stringResource(R.string.practice_row_ended_early))
+                                if (notedWords > 0) append(" · " + stringResource(R.string.practice_row_notes, notedWords))
+                            },
+                            fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
+                        )
+                    }
                 }
-                val a = r.accuracy
-                Text(
-                    a?.let { pct1(it) } ?: "—",
-                    fontFamily = FontFamily.Monospace, fontSize = 14.sp,
-                    color = when {
-                        a == null -> c.inkFaint
-                        a >= 0.95f -> c.chartGood
-                        a >= 0.8f -> c.ink
-                        else -> c.chartBad
-                    },
+                SessionNightStrip(r, c)
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+/** The accuracy ring: the same number the report shows, drawn as its arc. */
+@Composable
+private fun AccuracyRoundel(fraction: Float?, label: String, colour: Color, c: IqraColors) {
+    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 4.dp.toPx()
+            val inset = stroke / 2
+            val arc = Size(size.width - stroke, size.height - stroke)
+            drawArc(
+                c.hairline, 0f, 360f, false,
+                topLeft = Offset(inset, inset), size = arc,
+                style = Stroke(stroke, cap = StrokeCap.Round),
+            )
+            if (fraction != null && fraction > 0f) {
+                drawArc(
+                    colour, 0f, 360f * fraction.coerceIn(0f, 1f), false,
+                    topLeft = Offset(inset, inset), size = arc,
+                    style = Stroke(stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        Text(label, fontSize = 11.sp, color = c.ink)
+    }
+}
+
+/**
+ * The session's own night, one strip tall: the heard-density wave beneath
+ * (what reached the engine per 250 ms bin, from the record's `emMs`), every
+ * decided word a mark at its `wt` instant - gold where the verdict is WRONG,
+ * the rest quiet. Drawn only from what the record carries; a record without
+ * emission times draws nothing rather than inventing a timeline.
+ */
+@Composable
+private fun SessionNightStrip(r: PracticeLog.Record, c: IqraColors) {
+    val span = r.emMs.lastOrNull() ?: return
+    if (span <= 0L) return
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+            .height(30.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(c.ground),
+    ) {
+        val w = size.width
+        val h = size.height
+        // the density wave: emissions per 250 ms bin, normalised to the
+        // loudest bin - the same envelope the console's night draws
+        val bins = IntArray(((span / 250L) + 1).toInt().coerceAtLeast(1))
+        r.emMs.forEach { ms ->
+            val b = (ms / 250L).toInt()
+            if (b in bins.indices) bins[b]++
+        }
+        val maxB = (bins.maxOrNull() ?: 1).coerceAtLeast(1)
+        val waveBottom = h
+        val waveTop = h * 0.42f
+        val path = Path()
+        path.moveTo(0f, waveBottom)
+        bins.forEachIndexed { i, n ->
+            val x = (i + 0.5f) / bins.size * w
+            val y = waveBottom - (n.toFloat() / maxB) * (waveBottom - waveTop)
+            path.lineTo(x, y)
+        }
+        path.lineTo(w, waveBottom)
+        path.close()
+        drawPath(path, c.accent.copy(alpha = 0.16f))
+        // the baseline the verdicts sit on
+        drawLine(
+            c.hairline, Offset(0f, h * 0.52f), Offset(w, h * 0.52f),
+            strokeWidth = 1f,
+        )
+        // every decided word at its own instant
+        r.wordRows.forEach { row ->
+            val wt = row.wt?.toFloat() ?: return@forEach
+            val x = (wt / span) * w
+            when (row.st) {
+                "WRONG" -> {
+                    drawCircle(
+                        c.gold.copy(alpha = 0.28f), radius = 4.5f, center = Offset(x, h * 0.30f),
+                    )
+                    drawCircle(c.gold, radius = 2.2f, center = Offset(x, h * 0.30f))
+                }
+                "CORRECT" -> drawCircle(
+                    c.accent.copy(alpha = 0.62f), radius = 1.4f, center = Offset(x, h * 0.36f),
+                )
+                else -> drawCircle(
+                    c.inkMuted.copy(alpha = 0.28f), radius = 1.2f, center = Offset(x, h * 0.42f),
                 )
             }
         }
