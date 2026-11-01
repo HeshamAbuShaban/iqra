@@ -2483,3 +2483,19 @@ delete dialog, and the choose CTA, speak the running language. The
 last-passage subtitle stays the Latin name by design - the bilingual pairing
 the surah rows use - and latin_wrap_parity held that line when I reached
 past it.
+
+## The words group themselves; the sessions answer a hold (2 November)
+
+The words-to-work-on list stopped being twelve unrelated lines: grouped by
+surah with each group's burden in its header (words and misses), folded, and
+unfolded every word is a door to its own ayah through the mushaf pages the
+screen already holds. A held session opens its sheet - the friendly title
+from the summary the row read, open the report, or delete behind the
+confirmation. Pace metrics joined the Latin-digit policy.
+
+The settings agent's four precision fixes landed: the history count
+re-reads after a clear (keyed on the tick), ChoiceRow dispatches by index
+not by localized string identity across six callers, the misplaced theme
+KDoc sits on its own composable, and the raw sessions-prefs block carries
+its contract comment. Gate 44/44; verified on the phone over the live
+sessions (the manage sheet, the grouped card).
