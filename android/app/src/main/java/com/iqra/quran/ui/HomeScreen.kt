@@ -63,6 +63,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -468,7 +469,7 @@ fun ContinueCard(
                     Text(stringResource(R.string.home_continue_title), fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSecondaryContainer)
                     Text(
-                        stringResource(R.string.home_continue_detail, info.nameEn, page, info.ayahCount),
+                        stringResource(R.string.home_continue_detail, info.displayName(LocalConfiguration.current), page, info.ayahCount),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -510,7 +511,7 @@ fun ResumeSlots(
             SlotCard(
                 icon = Icons.Filled.Mic,
                 title = stringResource(R.string.home_slot_recite),
-                detail = stringResource(R.string.home_slot_recite_detail, info.nameEn, ayah),
+                detail = stringResource(R.string.home_slot_recite_detail, info.displayName(LocalConfiguration.current), ayah),
             ) { onRecite(surah, page, ayah) }
         }
     }
@@ -520,7 +521,7 @@ fun ResumeSlots(
             SlotCard(
                 icon = Icons.Filled.Headphones,
                 title = stringResource(R.string.home_slot_listen),
-                detail = stringResource(R.string.home_slot_listen_detail, info.nameEn),
+                detail = stringResource(R.string.home_slot_listen_detail, info.displayName(LocalConfiguration.current)),
             ) { onListen(info.number, info.startPage) }
         }
     }

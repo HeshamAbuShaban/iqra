@@ -105,3 +105,43 @@ fun arabicFold(s: String): String = buildString(s.length) {
         if (c != null) append(c)
     }
 }
+
+/**
+ * The language the UI is actually running in, read from the live
+ * configuration - which is where both locale paths land: the system's own
+ * per-app store on 33+, and the wrapped context below it.
+ */
+fun uiLanguage(configuration: android.content.res.Configuration): String =
+    configuration.locales[0].language
+
+/**
+ * The surah name the running UI language reads. The stored Arabic name is
+ * fully vocalised (سُورَةُ ٱلْفَاتِحَةِ) and the English one doubles as the
+ * search key; a door or a row that prints `nameEn` under an Arabic UI
+ * changes language mid-line - "Al-Baqara · صفحة ٤" - which is the blemish
+ * this exists to close.
+ */
+fun com.iqra.quran.data.SurahInfo.displayName(
+    configuration: android.content.res.Configuration,
+): String = if (uiLanguage(configuration) == AppLocales.ARABIC) name else nameEn
+
+/**
+ * The localized short date for a session row: day + month name in the running
+ * language. [shortDate] stays Latin - the paste summary and any tool that
+ * reads it are contract surfaces, not UI text.
+ */
+fun shortDateLocalized(dayKey: Long, lang: String): String {
+    if (dayKey <= 0L) return "—"
+    val m = ((dayKey / 100) % 100).toInt()
+    val d = (dayKey % 100).toInt()
+    // The day itself through the running locale's digits, or an Arabic row
+    // reads "30 أكتوبر" - half the number in each alphabet.
+    val day = java.lang.String.format(java.util.Locale.forLanguageTag(lang), "%d", d)
+    val months = if (lang == AppLocales.ARABIC)
+        arrayOf("يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+            "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر")
+    else
+        arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    return "$day ${months.getOrNull(m - 1) ?: "?"}"
+}

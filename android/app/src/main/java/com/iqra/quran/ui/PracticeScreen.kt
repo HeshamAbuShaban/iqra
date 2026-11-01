@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -150,17 +151,19 @@ fun PracticeScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
+                    // The sessions open the screen. This is the reciter's own
+                    // log - the list is what a review visit comes for, and it
+                    // sat five screens of aggregate below the fold; the trends
+                    // and the headline are the context, not the destination.
+                    if (s.recent.isNotEmpty()) item("recent") {
+                        RecentSessionsCard(s, data, c, onOpenSession)
+                    }
                     item("hero") { HeadlineCard(s, c) }
                     item("trend") { AccuracyTrendCard(s, c) }
                     item("pace") { PaceTrendCard(s, c) }
                     item("activity") { ActivityCard(s, c) }
                     if (s.surahs.isNotEmpty()) item("surahs") { SurahMasteryCard(s, data, c, onOpen) }
                     if (s.hardest.isNotEmpty()) item("hard") { HardestWordsCard(s, data, c, hardWords) }
-                    // Was gated on `size > 1`, so anyone with one session - which is
-                    // everyone who has just started - saw no session list at all.
-                    if (s.recent.isNotEmpty()) item("recent") {
-                        RecentSessionsCard(s, data, c, onOpenSession)
-                    }
                     item("foot") { Text(
                         stringResource(R.string.practice_footnote),
                         fontSize = 11.sp, lineHeight = 16.sp, color = c.inkFaint,
@@ -609,10 +612,12 @@ private fun RecentSessionsCard(
             ) {
                 Column(Modifier.weight(1f)) {
                     val pos = r.safePosition
+                    val lang = uiLanguage(LocalConfiguration.current)
                     Text(
                         pos?.let {
-                        "${data.surahInfo(it.first)?.nameEn ?: "Surah ${it.first}"} · ${shortDate(r.dayKey)}"
-                    } ?: "Session · ${shortDate(r.dayKey)}",
+                            "${data.surahInfo(it.first)?.displayName(LocalConfiguration.current)
+                                ?: stringResource(R.string.home_surah_n, it.first)} · ${shortDateLocalized(r.dayKey, lang)}"
+                        } ?: stringResource(R.string.practice_row_session, shortDateLocalized(r.dayKey, lang)),
                         fontSize = 13.sp, color = c.ink,
                     )
                     // The notes are part of what the session found, and this
@@ -633,13 +638,18 @@ private fun RecentSessionsCard(
                             // "13 words" for a 43-word scope, which reads as
                             // a short session rather than a barely-decided
                             // one. The report screen learned this first; the
-                            // list follows it.
+                            // list follows it. Every fragment here is a
+                            // resource: an Arabic row reading "294 of 359
+                            // words · 5m ٠٦s · finished · ملاحظات..." was
+                            // three languages in one line.
                             val scope = r.perAyah.values.sumOf { it.getOrNull(4) ?: 0 }
-                            if (scope > 0) append("${r.judged} of $scope words")
-                            else append("${r.judged} words")
+                            if (scope > 0) append(stringResource(R.string.practice_row_words_of, r.judged, scope))
+                            else append(stringResource(R.string.practice_row_words, r.judged))
                             val dur = r.durationSec
-                            append(if (dur != null) " · ${formatSecs(dur)}" else " · length unknown")
-                            if (r.ended) append(" · finished") else append(" · ended early")
+                            append(" · " + (dur?.let { formatSecs(it) }
+                                ?: stringResource(R.string.practice_row_dur_unknown)))
+                            append(if (r.ended) " · " + stringResource(R.string.practice_row_finished)
+                                   else " · " + stringResource(R.string.practice_row_ended_early))
                             if (notedWords > 0) append(" · " + stringResource(R.string.practice_row_notes, notedWords))
                         },
                         fontSize = 10.sp, color = c.inkFaint,
@@ -709,5 +719,7 @@ fun todayKey(): Long {
 }
 
 /** "45s" under a minute, "2m 05s" above. Used wherever a duration is shown. */
+@Composable
 fun formatSecs(s: Int): String =
-    if (s < 60) "${s}s" else "${s / 60}m ${"%02d".format(s % 60)}s"
+    if (s < 60) stringResource(R.string.practice_secs, s)
+    else stringResource(R.string.practice_min_secs, s / 60, s % 60)

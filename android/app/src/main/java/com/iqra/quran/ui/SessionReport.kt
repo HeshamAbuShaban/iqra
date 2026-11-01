@@ -47,6 +47,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -197,7 +198,7 @@ fun SessionReportScreen(
                         val pos = r0.safePosition
                         Text(
                             pos?.let {
-                                val nm = data.surahInfo(it.first)?.nameEn
+                                val nm = data.surahInfo(it.first)?.displayName(LocalConfiguration.current)
                                     ?: stringResource(R.string.report_surah_fallback, it.first)
                                 stringResource(R.string.report_position, nm, it.second)
                             } ?: stringResource(R.string.report_spanned_boundary),
@@ -702,7 +703,7 @@ private fun MissesCard(r: PracticeLog.Record, data: QuranData, c: IqraColors) {
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    data.surahInfo(surah)?.nameEn
+                    data.surahInfo(surah)?.displayName(LocalConfiguration.current)
                         ?: stringResource(R.string.report_surah_fallback, surah),
                     fontSize = 11.sp, color = c.inkFaint,
                 )
@@ -1149,7 +1150,7 @@ fun reportText(r: PracticeLog.Record, data: QuranData): String = buildString {
         appendLine("Including unheard: ${pct1(fu)}%")
     }
     appendLine("Words judged: ${r.judged}")
-    r.durationSec?.let { appendLine("Duration: ${formatSecs(it)}") }
+    r.durationSec?.let { appendLine("Duration: ${it / 60}m ${"%02d".format(it % 60)}s") }
     if (r.wpm > 1.0) appendLine("Pace: %.0f wpm".format(r.wpm))
     appendLine("Correct ${r.correct} · wrong ${r.wrong} · passed over ${r.skipped} · unheard ${r.unknown}")
     // The kind split, when the record carries it - the pasted summary can

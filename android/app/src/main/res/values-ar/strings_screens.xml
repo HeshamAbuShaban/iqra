@@ -102,6 +102,14 @@
     <string name="practice_word_ref">%1$s %2$d</string>
     <string name="practice_recent_title">الجلسات الأخيرة</string>
     <string name="practice_row_notes">ملاحظات على %1$d كلمات</string>
+    <string name="practice_row_session">جلسة · %1$s</string>
+    <string name="practice_row_words_of">%1$d من %2$d كلمة</string>
+    <string name="practice_row_words">%1$d كلمة</string>
+    <string name="practice_row_dur_unknown">المدة غير معلومة</string>
+    <string name="practice_row_finished">اكتملت</string>
+    <string name="practice_row_ended_early">انتهت مبكراً</string>
+    <string name="practice_secs">%1$d ث</string>
+    <string name="practice_min_secs">%1$d د %2$02d ث</string>
     <string name="practice_recent_sub">انقر جلسة للتقرير الكامل</string>
 
     <!-- ===== شاشة التسميع ===== -->
