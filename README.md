@@ -1,14 +1,17 @@
 <h1 align="center">Iqra — recite, and be followed</h1>
 
 <p align="center">
-  <img src="tools/icon/iqra.png" width="120" alt="Iqra">
+  <img src="tools/icon/iqra.png" width="120" alt="The Iqra icon: a mushaf page whose lines resolve into a recitation wave, gold on near-black">
 </p>
 
 <p align="center">
-  <b>Free · Offline · No account · Nothing leaves your phone</b><br>
   A study aid for those memorising the Qur'an. It listens while you recite and
-  shows you, verse by verse and word by word, what it heard.
+  shows you, verse by verse and word by word, what it heard. It runs entirely
+  on your phone: free, offline, no account, and nothing you recite ever
+  leaves the device.
 </p>
+
+<p align="center"><a href="#بالعربية">العربية</a> · <a href="#how-it-hears-you">How it works</a> · <a href="#building">Build</a> · <a href="#for-contributors--hijra-ila-al-code">Contribute</a></p>
 
 ---
 
@@ -50,13 +53,46 @@ Two things make it possible to offer that honestly:
 
 ## What it does
 
-- **Follows your recitation** across all 604 pages of the standard Madinah mushaf,
-  verse by verse, as you read or recite from memory.
-- **Marks every word** **correct**, **skipped** or **wrong** — and leaves a word
-  **unmarked** when the evidence is genuinely partial, rather than guessing.
-- **Hides verses** for memorisation, and reveals only what you have reached.
-- **Tells you where you are**, so a lost place is a glance rather than a
-  re-reading.
+**Follows you through the mushaf.** All 604 pages of the standard Madinah
+mushaf, verse by verse, as you read or recite from memory. The lock moves with
+you, and the reader stays where the recitation is.
+
+**Judges word by word, with an honesty rule.** A word is marked correct or
+wrong only when the evidence is there; a word the engine could not hear is
+left **unheard** — a muted state that never counts against you, because a
+model that failed to listen is a fact about the model, not a mistake by the
+reciter. Where a wrong word's charge begins inside the word is recorded too,
+as a fraction of its own sounds: first letter, middle, or last.
+
+**Keeps the evidence, so a verdict can be argued with.** Every session is
+recorded — each word's verdict and the moment it was decided, the sounds the
+model actually heard, and the session's own audio, written to the phone beside
+the record. The session report shows the walk-through: where blame landed
+across your wrong words, and, on any of them, a button that plays the two and
+a half seconds before the verdict — the very audio the engine judged. A
+mistake map plots the whole session's wrong words on the recording's
+timeline. All of it stays on the device, and it is deleted with the session.
+
+**Hides verses for memorisation.** In hide mode nothing is painted over the
+words you have not reached: not your position, not the recite bar, not a
+highlight. Only your own verdicts open a mask. Test yourself honestly, and
+still see the coverage strip that says how far you have come.
+
+**Shows you where you are.** A lost place is a glance rather than a
+re-reading, and the move-to sheet (surah, ayah, or page — whichever you
+touch drives the other two) gets you anywhere in the mushaf with a preview
+before you go.
+
+**A window into the engine, live.** The recite screen carries a lens — one
+toggle — that makes the machinery visible while it runs: which acoustic model
+is loaded, whether the gate is open or closed, how much of the next, current
+and previous verse has been heard against their thresholds, and every verdict
+the moment it lands. When the lock sits still, the lens shows you why.
+
+**Speaks your language.** The entire interface is localised: Arabic and
+English today, built so a new language is a set of strings, not a code
+change. The recite screen renders its numbers and captions properly for
+right-to-left reading.
 
 ## What it will not do
 
@@ -92,7 +128,7 @@ Two things make it possible to offer that honestly:
    alignment  →  how much of each verse has been heard
           │
           ▼
-   lock advances as verses are covered  →  per-word CORRECT / WRONG / SKIPPED
+   lock advances as verses are covered  →  per-word CORRECT / WRONG / unheard
 ```
 
 The second box is the one that matters, and the one that took the longest to get
@@ -101,6 +137,18 @@ strings** can never match — the coverage of every candidate is identically
 `0.00`, and roughly ten rounds of threshold tuning had already been spent on that
 constant before it was found. See
 [docs/RECOGNITION_ROOT_CAUSE.md](docs/RECOGNITION_ROOT_CAUSE.md).
+
+Three rules keep the verdicts honest, and each one earned its place:
+
+- A word only partly covered, with nothing contradicted, is **unheard** — not
+  wrong. An earlier rule called it wrong, which made a skipped word paint its
+  neighbour red, because a global alignment absorbs a deletion as
+  substitutions in the words around it.
+- A word-final consonant cannot decide a verdict. A reciter who says the case
+  vowel and a reciter who pauses on the last letter are saying the same word.
+- Stopping at a marked pause, a legal length choice on a madd, and a few
+  other legal readings are never accusations. Every one of these rules only
+  ever *removes* blame — that is the shape of a safe rule here.
 
 ## What this project learned
 
@@ -193,22 +241,21 @@ audio: **113/114 complete**, up from 101 before the harness was corrected. The
 one holdout is surah 94, which stops at 7 of 8 ayat on audio that runs 3.3 s per
 verse against a corpus median of 10.9 — a verse the recording does not appear to
 contain. That is reported rather than tuned away, because no threshold creates
-evidence that is not in the audio. See
-[docs/DEFECTS_AND_METHOD.md](docs/DEFECTS_AND_METHOD.md).
+evidence that is not in the audio.
 
-A word that is only partly covered, with nothing contradicted, is **UNKNOWN** — not
-WRONG. A previous rule called it WRONG, which made a skipped word paint its
-neighbour red, because a global alignment absorbs a deletion as substitutions in
-the words around it.
+Every check must be shown able to fail before its result is believed — a check
+that has never gone red is decoration. New checks are fault-injected as a
+matter of course: the thing they guard is broken on purpose, the check must go
+red, then the break is reverted.
 
 ### Trying it with your own voice
 
-The corpus behind the numbers is recorded audio; since October the app has
-also been carried through real recitations on a phone — hesitation, repeats,
-backtracking, background noise — and those device sessions are the freshest
-regression corpus. The fastest way to add your own voice to that evidence:
-recite, then open the session report — every wrong word carries the moment's
-audio and what the model heard.
+The corpus behind the numbers is recorded audio; the app has also been carried
+through real recitations on a phone — hesitation, repeats, backtracking,
+background noise — and those device sessions are the freshest regression
+corpus. The fastest way to add your own voice to that evidence: recite, then
+open the session report — every wrong word carries the moment's audio and what
+the model heard.
 
 ```bash
 scripts/collect_clips.py          # pull recordings off the device and score them
@@ -217,16 +264,7 @@ scripts/collect_clips.py          # pull recordings off the device and score the
 See [`engine/audio/hesitate/README.md`](engine/audio/hesitate/README.md) for what
 to record.
 
----
-
-## Measured on a human, and still unmeasured
-
-Since October the app has been carried through real recitations - noisy
-rooms, hesitation, backtrack and repeat, sessions of up to half an hour,
-judged word by word on a phone. Those sessions are the regression corpus;
-the numbers in the docs name which instrument produced them.
-
-Still honestly unmeasured:
+## Still honestly unmeasured
 
 - deliberate mispronunciation under controlled conditions (the sessions
   carry real mistakes, but nobody has labeled them word by word yet)
@@ -264,9 +302,14 @@ Where to start, in order:
 Adding a rule to the engine has one safe shape: **a rule that only removes
 blame is safe by construction.** The waqf, optional-final and qalqalah-form
 guards are that family; `docs/TAJWEED_AND_MEMORISATION.md` maps what the
-engine cannot yet judge, with the site counts. Every check in
-`engine/replay/run_checks.py` must be shown able to fail before its result is
-believed — a check that has never gone red is decoration.
+engine cannot yet judge, with the site counts.
+
+## بالعربية
+
+التطبيق يعمل بالعربية بالكامل: الواجهة، شاشة التسميع، تقرير الجلسة، والعدسة
+المحرّكية. إضافة لغة جديدة لا تحتاج تغييراً في الشيفرة — فقط ملفات نصوص. سيّد
+العمل هنا قاعدة واحدة: الحُكم على كلمة بالخطأ أمانة، فلا يُعرض كلمة بالخطأ إلا
+بالدليل، وما لم يُسمَع لا يُحسب على القارئ.
 
 ---
 
