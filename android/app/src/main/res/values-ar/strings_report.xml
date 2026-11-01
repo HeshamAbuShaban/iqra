@@ -103,7 +103,7 @@
 
     <!-- Recitation log card -->
     <string name="report_log_title">سجل التلاوة</string>
-    <string name="report_errors_kinds">%1$d بديل صوتي · %2$d فيها وحدات ساقطة</string>
+    <string name="report_errors_kinds">%1$s بديل صوتي · %2$s فيها وحدات ساقطة</string>
     <string name="report_chip_swap">بديل صوتي</string>
     <string name="report_chip_both">بديل وسقوط</string>
     <string name="report_full_alignment">المحاذاة الكاملة →</string>

@@ -103,7 +103,7 @@
 
     <!-- Recitation log card -->
     <string name="report_log_title">Recitation log</string>
-    <string name="report_errors_kinds">%1$d sound swaps · %2$d with unheard units</string>
+    <string name="report_errors_kinds">%1$s sound swaps · %2$s with unheard units</string>
     <string name="report_chip_swap">sound swap</string>
     <string name="report_chip_both">swap + unheard</string>
     <string name="report_full_alignment">the full alignment →</string>
