@@ -2388,3 +2388,25 @@ the three disagreements are all-missed vs one-substituted at the verdict
 instant — the rebuilt-window composition class, documented since 19 October.
 The device's own rows are the ground truth of what the app computed; the
 field data for kind-based analysis now exists on the phone.
+
+## The language round and the design direction (1 November, on the phone)
+
+The phone walk's most visible finding was not a widget but a voice: an
+Arabic interface that changed language mid-line wherever the data layer held
+an English string — the home doors read "Al-Baqara · صفحة ٤", the session
+rows read "294 of 359 words · 5m ٠٦s · finished · ملاحظات…", three languages
+in one line. `SurahInfo.displayName(configuration)` picks the stored
+vocalised Arabic name for the running language; `shortDateLocalized` carries
+the month names AND the digits; `formatSecs` became a resource (٥ د ٠٦ ث);
+the session row's every fragment is a resource now. And the relocation he
+asked for: the session list opens the practice screen — it is what a review
+visit comes for, and it sat five screens of aggregate below the fold.
+Verified on the phone (build 299): "سُورَةُ البَقَرَةِ · صفحة ٤ · ٢٨٦ آيات"
+on the doors, "٢٩٤ من ٣٥٩ كلمة · ٥ د ٠٦ ث · اكتملت · ملاحظات على ٢٣٤ كلمات"
+on the rows, the sessions card first.
+
+The deeper visual direction (the house language — night horizon, roundels,
+beads — brought down to the daily surfaces) is a design decision that is
+his to make: a working prototype of the practice screen in that language
+stands ready for his review; it is built additively over data the records
+already carry (every verdict's `wt` is the star's own instant).
