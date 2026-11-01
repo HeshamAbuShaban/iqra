@@ -2374,3 +2374,17 @@ per-word attribution, where the path's cost model handles the audio/text
 coverage mismatch instead of eating it as deletions. That is a build, not a
 flip, and it stays his decision. The tool and the full matrix stand in
 engine/replay/orbit_pilot.py (run: orbit_pilot.py <records...>).
+
+## Device-verified: the kind split is live (1 November, build 298 on the phone)
+
+The remaining pass closed itself: session #298 (surah 1 + Al-Baqarah's
+opening, 359 words, recited on the phone on build 298 — the current HEAD)
+carries the kind split on every one of its 10 WRONG rows — wsub=1, wmiss=0,
+wunits 5–7, each consistent with its own `wu` position (the 40%-at-last-unit
+shape intact). Record #289 (build 289, 43 WRONG words over surah 4) predates
+the split and reads exactly as before — the optional-field path on real
+data. device_blame's read-back on #298 agrees with the device on 7 of 10;
+the three disagreements are all-missed vs one-substituted at the verdict
+instant — the rebuilt-window composition class, documented since 19 October.
+The device's own rows are the ground truth of what the app computed; the
+field data for kind-based analysis now exists on the phone.
