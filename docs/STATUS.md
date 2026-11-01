@@ -2519,3 +2519,18 @@ sessions (the manage sheet, the grouped card).
   that runs them - the reader bounce, the continuous two-surah walk,
   repeat-to-refresh, the gated long jump, the kind split - each with what
   to do, what to watch, and what the record must show.
+
+## The colour round and the field pass (2 November, night)
+
+The hairlines were neutral white-alpha - grey lines floating cold on tinted
+grounds. Each dark palette's hairline now carries its own hue (teal for the
+night garden, blue for ink and silver, warm for parchment; high contrast
+brightens), so the structure sits IN the surface. Verified on the phone.
+
+The field pass over the newest session (#314, 594 words, 21 wrong): the kind
+split clean on every row, zero violations, the read-back agreement as
+documented. The night's full stretch: the drill-down, the transport, the
+fonts, the home, the settings groups, the icon, the chart day-one bug, the
+grouped words, the manage sheet, the Latin digit policy to its last line,
+the drill states surviving the scroll, the moving instruments, the search
+hit landing on its own page - all committed and pushed.
