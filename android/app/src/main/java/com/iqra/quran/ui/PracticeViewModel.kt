@@ -718,10 +718,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         val obs = ayahObs(surah, ayah) ?: return null
         if (obs.isEmpty()) return null
         val res = com.iqra.quran.ml.PhonemeMapper.align(obs, exp)
+        // SNAPSHOTS, not views: `obs` is a window over the live emission log,
+        // which the poll loop mutates on its own thread. The console reads
+        // this alignment during composition and data-class equals walks the
+        // lists element by element - a list changing under that walk is the
+        // ConcurrentModificationException a live session threw mid-recitation
+        // (11-01 05:58). Frozen at the boundary; the poll loop keeps its log.
         return AyahAlignment(
-            expected = exp.units,
-            wordOf = exp.unitWord,
-            heard = obs,
+            expected = exp.units.toList(),
+            wordOf = exp.unitWord.copyOf(),
+            heard = obs.toList(),
             emitWord = res.emitWord,
             statuses = res.statuses,
             coverage = res.wordCoverage,

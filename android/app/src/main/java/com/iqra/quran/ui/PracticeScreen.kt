@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
@@ -62,6 +64,7 @@ import com.iqra.quran.ui.theme.IqraColors
 import com.iqra.quran.ui.theme.LocalIqraColors
 import com.iqra.quran.ui.theme.TrendLine
 import com.iqra.quran.ui.theme.TrendPoint
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -103,6 +106,8 @@ fun PracticeScreen(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
     val summary = rememberSummary(ctx, data, tick)
+    var deleteCandidate by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val pages = rememberMushafPages(ctx)
 
     Scaffold(
@@ -162,7 +167,7 @@ fun PracticeScreen(
                     // sat five screens of aggregate below the fold; the trends
                     // and the headline are the context, not the destination.
                     if (s.recent.isNotEmpty()) item("recent") {
-                        RecentSessionsCard(s, data, c, onOpenSession)
+                        RecentSessionsCard(s, data, c, onOpenSession, onDelete = { deleteCandidate = it })
                     }
                     item("hero") { HeadlineCard(s, c) }
                     item("trend") { AccuracyTrendCard(s, c) }
@@ -176,6 +181,28 @@ fun PracticeScreen(
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                     )
                     }
+                }
+                deleteCandidate?.let { name ->
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { deleteCandidate = null },
+                        title = { Text(stringResource(R.string.practice_delete_title)) },
+                        text = { Text(stringResource(R.string.practice_delete_body)) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                deleteCandidate = null
+                                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                    PracticeLog.deleteSession(ctx, name)
+                                    ReaderPrefs.refresh()
+                                }
+                            }) { Text(stringResource(R.string.practice_delete_yes), color = c.wordBad) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { deleteCandidate = null }) {
+                                Text(stringResource(R.string.practice_delete_no))
+                            }
+                        },
+                        containerColor = c.surface,
+                    )
                 }
             }
         }
@@ -296,7 +323,7 @@ private fun HeadlineCard(s: PracticeLog.Summary, c: IqraColors) {
                     // one. If the intent was "best vs current", the two numbers
                     // must differ, and until they do this says the one true
                     // thing.
-                    stringResource(R.string.practice_streak_best, s.longestStreak),
+                    stringResource(R.string.practice_streak_best, n(s.longestStreak)),
                 )
             }
         }
@@ -351,7 +378,7 @@ private fun AccuracyTrendCard(s: PracticeLog.Summary, c: IqraColors) {
         PanelTitle(
             stringResource(R.string.practice_panel_accuracy),
             if (withAcc.size < 2) stringResource(R.string.practice_needs_two)
-            else stringResource(R.string.practice_n_sessions, withAcc.size),
+            else stringResource(R.string.practice_n_sessions, n(withAcc.size)),
             c,
         )
         if (withAcc.size >= 2) {
@@ -445,7 +472,7 @@ private fun ActivityCard(s: PracticeLog.Summary, c: IqraColors) {
     Panel(c) {
         PanelTitle(
             stringResource(R.string.practice_activity_title),
-            stringResource(R.string.practice_active_days, s.activeDays),
+            stringResource(R.string.practice_active_days, n(s.activeDays)),
             c,
         )
         Spacer(Modifier.height(18.dp))
@@ -478,7 +505,7 @@ private fun SurahMasteryCard(
     Panel(c) {
         PanelTitle(
             stringResource(R.string.practice_by_surah),
-            if (s.surahs.size > 10) stringResource(R.string.practice_top_of, s.surahs.size) else null,
+            if (s.surahs.size > 10) stringResource(R.string.practice_top_of, n(s.surahs.size)) else null,
             c,
         )
         Spacer(Modifier.height(12.dp))
@@ -497,7 +524,8 @@ private fun SurahMasteryCard(
                 )
                 Column(Modifier.weight(1f)) {
                     Text(
-                        info?.nameEn ?: stringResource(R.string.home_surah_n, p.surah),
+                        info?.displayName(LocalConfiguration.current)
+                            ?: stringResource(R.string.home_surah_n, n(p.surah)),
                         fontSize = 13.sp, color = c.ink,
                     )
                     // "reached N of M" and "N sessions" are composed from
@@ -505,10 +533,10 @@ private fun SurahMasteryCard(
                     // between the three parts stay in code.
                     val reachedTxt =
                         if (p.reached > 0 && p.ayahCount > 0)
-                            stringResource(R.string.practice_reached, p.reached, p.ayahCount)
+                            stringResource(R.string.practice_reached, n(p.reached), n(p.ayahCount))
                         else null
                     val sessionsTxt =
-                        if (p.sessions > 1) stringResource(R.string.practice_n_sessions, p.sessions) else null
+                        if (p.sessions > 1) stringResource(R.string.practice_n_sessions, n(p.sessions)) else null
                     Text(
                         buildString {
                             p.accuracy?.let { append(pct1(it)) }
@@ -568,7 +596,7 @@ private fun HardestWordsCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text ?: stringResource(R.string.practice_ayah_n, w.ayah),
+                    text ?: stringResource(R.string.practice_ayah_n, n(w.ayah)),
                     fontSize = 17.sp,
                     fontFamily = quranFont,
                     color = if (text != null) c.ink else c.inkMuted,
@@ -579,7 +607,8 @@ private fun HardestWordsCard(
                 Text(
                     stringResource(
                         R.string.practice_word_ref,
-                        info?.nameEn ?: stringResource(R.string.home_surah_n, w.surah), w.ayah,
+                        info?.displayName(LocalConfiguration.current)
+                            ?: stringResource(R.string.home_surah_n, n(w.surah)), n(w.ayah),
                     ),
                     fontSize = 11.sp, color = c.inkFaint,
                 )
@@ -595,11 +624,13 @@ private fun HardestWordsCard(
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun RecentSessionsCard(
     s: PracticeLog.Summary,
     data: QuranData,
     c: IqraColors,
     onOpen: (String) -> Unit,
+    onDelete: (String) -> Unit,
 ) {
     Panel(c) {
         PanelTitle(
@@ -620,7 +651,12 @@ private fun RecentSessionsCard(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(c.ground)
-                    .clickable { onOpen(r.name) }
+                    .combinedClickable(
+                        onClick = { onOpen(r.name) },
+                        // The management gesture: a held session names itself
+                        // for deletion, with its audio, behind a confirmation.
+                        onLongClick = { onDelete(r.name) },
+                    )
                     .padding(horizontal = 12.dp, vertical = 11.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -643,7 +679,7 @@ private fun RecentSessionsCard(
                         Text(
                             pos?.let {
                                 "${data.surahInfo(it.first)?.displayName(LocalConfiguration.current)
-                                    ?: stringResource(R.string.home_surah_n, it.first)} · ${shortDateLocalized(r.dayKey, lang)}"
+                                    ?: stringResource(R.string.home_surah_n, n(it.first))} · ${shortDateLocalized(r.dayKey, lang)}"
                             } ?: stringResource(R.string.practice_row_session, shortDateLocalized(r.dayKey, lang)),
                             fontSize = 13.sp, color = c.ink,
                         )
@@ -670,14 +706,14 @@ private fun RecentSessionsCard(
                                 // finished · ملاحظات..." was three languages in
                                 // one line.
                                 val scope = r.perAyah.values.sumOf { it.getOrNull(4) ?: 0 }
-                                if (scope > 0) append(stringResource(R.string.practice_row_words_of, r.judged, scope))
-                                else append(stringResource(R.string.practice_row_words, r.judged))
+                                if (scope > 0) append(stringResource(R.string.practice_row_words_of, n(r.judged), n(scope)))
+                                else append(stringResource(R.string.practice_row_words, n(r.judged)))
                                 val dur = r.durationSec
                                 append(" · " + (dur?.let { formatSecs(it) }
                                     ?: stringResource(R.string.practice_row_dur_unknown)))
                                 append(if (r.ended) " · " + stringResource(R.string.practice_row_finished)
                                        else " · " + stringResource(R.string.practice_row_ended_early))
-                                if (notedWords > 0) append(" · " + stringResource(R.string.practice_row_notes, notedWords))
+                                if (notedWords > 0) append(" · " + stringResource(R.string.practice_row_notes, n(notedWords)))
                             },
                             fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
                         )
@@ -809,8 +845,8 @@ private fun Hairline(c: IqraColors) {
     Box(Modifier.fillMaxWidth().height(1.dp).background(c.hairline))
 }
 
-/** "87.4" not "87". A denominator of one word looks identical to one of 400. */
-fun pct1(v: Float): String = if (v >= 0.995f) "100" else "%.1f".format(v * 100)
+/** "87.4" not "87". A denominator of one word looks identical to one of 400. Latin digits, always. */
+fun pct1(v: Float): String = if (v >= 0.995f) "100" else n1(v * 100)
 
 fun shortDate(dayKey: Long): String {
     // A record with no start time has no day key, and dayKeyOf(0) is 0, which
@@ -833,5 +869,5 @@ fun todayKey(): Long {
 /** "45s" under a minute, "2m 05s" above. Used wherever a duration is shown. */
 @Composable
 fun formatSecs(s: Int): String =
-    if (s < 60) stringResource(R.string.practice_secs, s)
-    else stringResource(R.string.practice_min_secs, s / 60, s % 60)
+    if (s < 60) stringResource(R.string.practice_secs, n(s))
+    else stringResource(R.string.practice_min_secs, n(s / 60), "%02d".format(java.util.Locale.US, s % 60))

@@ -215,7 +215,7 @@ private fun ChooseContent(
                                     )
                                     Text(
                                         ltr(data.surahInfo(lastRead.first)?.nameEn
-                                            ?: stringResource(R.string.home_surah_n, lastRead.first)),
+                                            ?: stringResource(R.string.home_surah_n, n(lastRead.first))),
                                         fontSize = 11.sp, color = c.inkFaint,
                                     )
                                 }

@@ -22,7 +22,7 @@
     <string name="home_continue_detail">%1$s  ·  Page %2$d  ·  %3$d verses</string>
     <string name="home_test_title">Recite from memory</string>
     <string name="home_test_blurb">The verse stays hidden until you say it. We listen and grade each word.</string>
-    <string name="home_surah_n">Surah %1$d</string>
+    <string name="home_surah_n">Surah %1$s</string>
     <string name="home_surah_meta">%1$s · %2$d verses · pp %3$d–%4$d · Juz %5$d</string>
     <string name="home_juz_title">Juz %1$d</string>
     <string name="home_juz_pages">pp %1$d–%2$d</string>
@@ -73,7 +73,7 @@
     <string name="practice_all_time">all time</string>
     <string name="practice_streak_day">day in a row</string>
     <string name="practice_streak_days">days in a row</string>
-    <string name="practice_streak_best">best %1$d</string>
+    <string name="practice_streak_best">best %1$s</string>
     <string name="practice_accuracy_with_unknown">Counting the %1$d%% of words the engine never heard, this is %2$s.</string>
     <string name="practice_trend_up">Up %1$s on your previous session</string>
     <string name="practice_trend_down">Down %1$s on your previous session</string>
@@ -81,7 +81,7 @@
     <string name="practice_first_session">Your first session with a judged word. Recite once more and this becomes a trend.</string>
     <string name="practice_panel_accuracy">Accuracy over time</string>
     <string name="practice_needs_two">Needs at least two sessions</string>
-    <string name="practice_n_sessions">%1$d sessions</string>
+    <string name="practice_n_sessions">%1$s sessions</string>
     <string name="practice_accuracy_chart_hint">Height is accuracy. The faint columns are words judged, so a line drawn through one word is visibly thin.</string>
     <string name="practice_panel_pace">Pace</string>
     <string name="practice_needs_judged">Needs a session where words were judged</string>
@@ -91,26 +91,30 @@
     <string name="practice_best">best</string>
     <string name="practice_pace_hint">Pace is a smoothed estimate from the lock\'s own gate timing, not a stopwatch. Treat it as a direction, not a number.</string>
     <string name="practice_activity_title">Last 26 weeks</string>
-    <string name="practice_active_days">%1$d active days</string>
+    <string name="practice_active_days">%1$s active days</string>
     <string name="practice_activity_hint">Darker means more words judged that day. The outlined cell is today.</string>
     <string name="practice_by_surah">By surah</string>
-    <string name="practice_top_of">Top 10 of %1$d</string>
-    <string name="practice_reached">reached %1$d of %2$d</string>
+    <string name="practice_top_of">Top 10 of %1$s</string>
+    <string name="practice_reached">reached %1$s of %2$s</string>
     <string name="practice_mastery_hint">The bar is accuracy weighted by how much of the surah you have covered, so one perfect ayah is not a mastered surah.</string>
     <string name="practice_hard_title">Words to work on</string>
     <string name="practice_hard_sub">Counted from misses only</string>
-    <string name="practice_ayah_n">ayah %1$d</string>
-    <string name="practice_word_ref">%1$s %2$d</string>
+    <string name="practice_ayah_n">ayah %1$s</string>
+    <string name="practice_word_ref">%1$s %2$s</string>
     <string name="practice_recent_title">Recent sessions</string>
-    <string name="practice_row_notes">notes on %1$d words</string>
+    <string name="practice_row_notes">notes on %1$s words</string>
+    <string name="practice_delete_title">Delete this session?</string>
+    <string name="practice_delete_body">Its record and its audio are removed from this phone. This cannot be undone.</string>
+    <string name="practice_delete_yes">Delete</string>
+    <string name="practice_delete_no">Keep</string>
     <string name="practice_row_session">Session · %1$s</string>
-    <string name="practice_row_words_of">%1$d of %2$d words</string>
-    <string name="practice_row_words">%1$d words</string>
+    <string name="practice_row_words_of">%1$s of %2$s words</string>
+    <string name="practice_row_words">%1$s words</string>
     <string name="practice_row_dur_unknown">length unknown</string>
     <string name="practice_row_finished">finished</string>
     <string name="practice_row_ended_early">ended early</string>
-    <string name="practice_secs">%1$ds</string>
-    <string name="practice_min_secs">%1$dm %2$02ds</string>
+    <string name="practice_secs">%1$ss</string>
+    <string name="practice_min_secs">%1$sm %2$s</string>
     <string name="practice_recent_sub">Tap one for the full report</string>
 
     <!-- ===== LiveMode (the recitation test) ===== -->

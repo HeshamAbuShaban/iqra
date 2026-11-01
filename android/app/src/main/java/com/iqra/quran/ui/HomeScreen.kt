@@ -842,7 +842,7 @@ fun BookmarkList(
                             Text(
                                 stringResource(
                                     R.string.home_surah_ayah,
-                                    info?.nameEn ?: stringResource(R.string.home_surah_n, s), a,
+                                    info?.nameEn ?: stringResource(R.string.home_surah_n, n(s)), a,
                                 ),
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.SemiBold,

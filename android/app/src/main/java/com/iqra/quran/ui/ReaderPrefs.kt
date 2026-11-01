@@ -393,6 +393,12 @@ object ReaderPrefs {
     private val _tick = MutableStateFlow(0)
     val tick: StateFlow<Int> = _tick.asStateFlow()
 
+    /** Re-fold everything that reads the durable aggregate - a session was
+     *  deleted behind the screens' backs, so the next read must re-ingest. */
+    fun refresh() {
+        _tick.value = _tick.value + 1
+    }
+
     private fun write(ctx: Context, block: android.content.SharedPreferences.Editor.() -> Unit) {
         prefs(ctx).edit().apply(block).apply()
         _tick.value = _tick.value + 1

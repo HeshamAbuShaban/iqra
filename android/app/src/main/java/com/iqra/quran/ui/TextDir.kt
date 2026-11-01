@@ -134,9 +134,9 @@ fun shortDateLocalized(dayKey: Long, lang: String): String {
     if (dayKey <= 0L) return "—"
     val m = ((dayKey / 100) % 100).toInt()
     val d = (dayKey % 100).toInt()
-    // The day itself through the running locale's digits, or an Arabic row
-    // reads "30 أكتوبر" - half the number in each alphabet.
-    val day = java.lang.String.format(java.util.Locale.forLanguageTag(lang), "%d", d)
+    // The day through the same Latin policy as every other number - a date
+    // reading "١ نوفمبر" beside rows of Latin digits was the mixed row again.
+    val day = java.lang.String.format(java.util.Locale.US, "%d", d)
     val months = if (lang == AppLocales.ARABIC)
         arrayOf("يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
             "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر")
@@ -145,3 +145,18 @@ fun shortDateLocalized(dayKey: Long, lang: String): String {
             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
     return "$day ${months.getOrNull(m - 1) ?: "?"}"
 }
+
+
+/**
+ * Numbers are Latin everywhere. His standing preference (1 November): Arabic
+ * text with Western digits - the Arabic-Indic forms in the old face were hard
+ * to read, and a row that mixed both systems read as broken. Every numeric
+ * resource argument passes through here as a pre-formatted string, so no call
+ * site re-decides the digit system and no resource formatter localises it.
+ */
+fun n(v: Int): String = v.toString()
+
+fun n(v: Long): String = v.toString()
+
+/** One decimal, Latin. */
+fun n1(v: Float): String = java.lang.String.format(java.util.Locale.US, "%.1f", v)

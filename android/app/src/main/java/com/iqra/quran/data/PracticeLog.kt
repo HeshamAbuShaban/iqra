@@ -973,6 +973,32 @@ object PracticeLog {
     } catch (e: Exception) { null }
 
     /**
+     * Delete one session - its record, the audio that belongs to it, and its
+     * folded contribution. The aggregate cache is dropped so the next
+     * [summarise] re-folds what remains; a cache that kept the deleted
+     * session's counts would have the screen reporting a session that no
+     * longer exists, which is the same lie as a counter that survives a
+     * browse. Returns false when nothing was deleted, so the caller can say
+     * so rather than claim a success it did not have.
+     */
+    fun deleteSession(ctx: Context, name: String): Boolean {
+        val dir = File(ctx.filesDir, SESSIONS)
+        val f = File(dir, name)
+        val stem = name.removeSuffix(".json")
+        val audio = File(dir, "$stem.wav")
+        val tmp = File(dir, "$name.tmp")
+        val had = f.isFile
+        val ok = runCatching {
+            if (f.isFile) f.delete()
+            if (audio.isFile) audio.delete()
+            if (tmp.isFile) tmp.delete()
+            File(ctx.filesDir, AGG).delete()
+            File(ctx.filesDir, "$AGG.tmp").delete()
+        }.isSuccess
+        return ok && had
+    }
+
+    /**
      * The record file, unparsed. Null when it is gone.
      *
      * [record] folds the record down to what every report needs; the observer

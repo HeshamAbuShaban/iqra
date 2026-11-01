@@ -21,7 +21,7 @@
     <string name="home_continue_detail">%1$s  ·  صفحة %2$d  ·  %3$d آيات</string>
     <string name="home_test_title">تسميع من الذاكرة</string>
     <string name="home_test_blurb">تبقى الآية مخفية حتى تنطقها. نستمع ونقيّم كل كلمة.</string>
-    <string name="home_surah_n">سورة %1$d</string>
+    <string name="home_surah_n">سورة %1$s</string>
     <string name="home_surah_meta">%1$s · %2$d آيات · ص %3$d–%4$d · الجزء %5$d</string>
     <string name="home_juz_title">الجزء %1$d</string>
     <string name="home_juz_pages">ص %1$d–%2$d</string>
@@ -72,7 +72,7 @@
     <string name="practice_all_time">على مدى الوقت</string>
     <string name="practice_streak_day">يوماً متتالياً</string>
     <string name="practice_streak_days">أياماً متتالية</string>
-    <string name="practice_streak_best">أطولها %1$d</string>
+    <string name="practice_streak_best">أطولها %1$s</string>
     <string name="practice_accuracy_with_unknown">مع احتساب %1$d٪ من الكلمات التي لم يسمعها المحرك، تكون النتيجة %2$s.</string>
     <string name="practice_trend_up">ارتفاع %1$s عن جلستك السابقة</string>
     <string name="practice_trend_down">انخفاض %1$s عن جلستك السابقة</string>
@@ -80,7 +80,7 @@
     <string name="practice_first_session">أول جلسة لك فيها كلمة محسومة. سمّع مرة أخرى وسيبدأ الخط البياني.</string>
     <string name="practice_panel_accuracy">الدقة عبر الوقت</string>
     <string name="practice_needs_two">تحتاج جلستين على الأقل</string>
-    <string name="practice_n_sessions">%1$d جلسات</string>
+    <string name="practice_n_sessions">%1$s جلسات</string>
     <string name="practice_accuracy_chart_hint">الارتفاع هو الدقة. الأعمدة الباهتة كلمات محسومة، فالخط المار بكلمة واحدة يبدو رفيعاً بوضوح.</string>
     <string name="practice_panel_pace">السرعة</string>
     <string name="practice_needs_judged">تحتاج جلسة فيها كلمات محسومة</string>
@@ -90,26 +90,30 @@
     <string name="practice_best">الأفضل</string>
     <string name="practice_pace_hint">السرعة تقدير ممهور من توقيت بوابة التتبع نفسها، لا ساعة إيقاف. خذها اتجاهاً لا رقماً.</string>
     <string name="practice_activity_title">آخر ٢٦ أسبوعاً</string>
-    <string name="practice_active_days">%1$d يوماً نشطاً</string>
+    <string name="practice_active_days">%1$s يوماً نشطاً</string>
     <string name="practice_activity_hint">الأغمق يعني كلمات محسومة أكثر ذلك اليوم. الخلية المحدّدة هي اليوم.</string>
     <string name="practice_by_surah">حسب السورة</string>
-    <string name="practice_top_of">أفضل ١٠ من %1$d</string>
-    <string name="practice_reached">بلغ %1$d من %2$d</string>
+    <string name="practice_top_of">أفضل ١٠ من %1$s</string>
+    <string name="practice_reached">بلغ %1$s من %2$s</string>
     <string name="practice_mastery_hint">العمود دقة موزونة بمقدار ما غطيته من السورة، فآية واحدة صحيحة لا تصنع سورة متقنة.</string>
     <string name="practice_hard_title">كلمات تحتاج عملاً</string>
     <string name="practice_hard_sub">من الأخطاء فقط</string>
-    <string name="practice_ayah_n">آية %1$d</string>
-    <string name="practice_word_ref">%1$s %2$d</string>
+    <string name="practice_ayah_n">آية %1$s</string>
+    <string name="practice_word_ref">%1$s %2$s</string>
     <string name="practice_recent_title">الجلسات الأخيرة</string>
-    <string name="practice_row_notes">ملاحظات على %1$d كلمات</string>
+    <string name="practice_row_notes">ملاحظات على %1$s كلمات</string>
+    <string name="practice_delete_title">حذف هذه الجلسة؟</string>
+    <string name="practice_delete_body">يُحذف سجلها وصوتها من هذا الجهاز. لا يمكن التراجع.</string>
+    <string name="practice_delete_yes">احذف</string>
+    <string name="practice_delete_no">أبقِها</string>
     <string name="practice_row_session">جلسة · %1$s</string>
-    <string name="practice_row_words_of">%1$d من %2$d كلمة</string>
-    <string name="practice_row_words">%1$d كلمة</string>
+    <string name="practice_row_words_of">%1$s من %2$s كلمة</string>
+    <string name="practice_row_words">%1$s كلمة</string>
     <string name="practice_row_dur_unknown">المدة غير معلومة</string>
     <string name="practice_row_finished">اكتملت</string>
     <string name="practice_row_ended_early">انتهت مبكراً</string>
-    <string name="practice_secs">%1$d ث</string>
-    <string name="practice_min_secs">%1$d د %2$02d ث</string>
+    <string name="practice_secs">%1$s ث</string>
+    <string name="practice_min_secs">%1$s د %2$s ث</string>
     <string name="practice_recent_sub">انقر جلسة للتقرير الكامل</string>
 
     <!-- ===== شاشة التسميع ===== -->
