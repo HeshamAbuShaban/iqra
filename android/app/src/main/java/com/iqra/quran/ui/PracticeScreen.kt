@@ -107,6 +107,7 @@ fun PracticeScreen(
     val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
     val summary = rememberSummary(ctx, data, tick)
     var deleteCandidate by remember { mutableStateOf<String?>(null) }
+    var manageFor by remember { mutableStateOf<String?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val pages = rememberMushafPages(ctx)
 
@@ -167,20 +168,51 @@ fun PracticeScreen(
                     // sat five screens of aggregate below the fold; the trends
                     // and the headline are the context, not the destination.
                     if (s.recent.isNotEmpty()) item("recent") {
-                        RecentSessionsCard(s, data, c, onOpenSession, onDelete = { deleteCandidate = it })
+                        RecentSessionsCard(s, data, c, onOpenSession, onManage = { manageFor = it })
                     }
                     item("hero") { HeadlineCard(s, c) }
                     item("trend") { AccuracyTrendCard(s, c) }
                     item("pace") { PaceTrendCard(s, c) }
                     item("activity") { ActivityCard(s, c) }
                     if (s.surahs.isNotEmpty()) item("surahs") { SurahMasteryCard(s, data, c, onOpen) }
-                    if (s.hardest.isNotEmpty()) item("hard") { HardestWordsCard(s, data, c, hardWords) }
+                    if (s.hardest.isNotEmpty()) item("hard") { HardestWordsCard(s, data, c, hardWords, pages, onOpen) }
                     item("foot") { Text(
                         stringResource(R.string.practice_footnote),
                         fontSize = 11.sp, lineHeight = 16.sp, color = c.inkFaint,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                     )
                     }
+                }
+                manageFor?.let { name ->
+                    // The friendly title, from the same summary the row read -
+                    // a raw file name told the reciter nothing about which
+                    // recitation they were holding.
+                    val held = summary?.recent?.firstOrNull { it.name == name }
+                    val lang = uiLanguage(LocalConfiguration.current)
+                    val heldTitle = held?.let { r ->
+                        r.safePosition?.let { (sn, _) ->
+                            data.surahInfo(sn)?.displayName(LocalConfiguration.current)
+                                ?: stringResource(R.string.home_surah_n, n(sn))
+                        } ?: stringResource(R.string.practice_row_session, shortDateLocalized(r.dayKey, lang))
+                    } ?: name
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { manageFor = null },
+                        title = { Text(heldTitle, fontSize = 15.sp) },
+                        text = null,
+                        confirmButton = {
+                            TextButton(onClick = {
+                                manageFor = null
+                                onOpenSession(name)
+                            }) { Text(stringResource(R.string.practice_manage_report), color = c.accent) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                manageFor = null
+                                deleteCandidate = name
+                            }) { Text(stringResource(R.string.practice_manage_delete), color = c.wordBad) }
+                        },
+                        containerColor = c.surface,
+                    )
                 }
                 deleteCandidate?.let { name ->
                     androidx.compose.material3.AlertDialog(
@@ -435,13 +467,13 @@ private fun PaceTrendCard(s: PracticeLog.Summary, c: IqraColors) {
             Row {
                 val last = paced.last()
                 Metric(
-                    c.ink, "%.0f".format(last.wpm),
+                    c.ink, java.lang.String.format(java.util.Locale.US, "%.0f", last.wpm),
                     stringResource(R.string.practice_wpm), stringResource(R.string.practice_most_recent),
                 )
                 Spacer(Modifier.width(24.dp))
                 val best = paced.maxByOrNull { it.wpm }
                 Metric(
-                    c.gold, "%.0f".format(best?.wpm ?: 0.0),
+                    c.gold, java.lang.String.format(java.util.Locale.US, "%.0f", best?.wpm ?: 0.0),
                     stringResource(R.string.practice_fastest), stringResource(R.string.practice_best),
                 )
             }
@@ -584,13 +616,28 @@ private fun CoverageBar(v: Float, c: IqraColors) {
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun HardestWordsCard(
     s: PracticeLog.Summary,
     data: QuranData,
     c: IqraColors,
     hardWords: Map<String, String?>,
+    pages: List<com.iqra.quran.data.MushafPage>?,
+    onOpen: (Int, Int) -> Unit,
 ) {
     val words = s.hardest.take(12)
+    // Grouped by surah, folded: the surah row carries the burden (how many
+    // words, how many misses), and a tap unfolds its words in the Qur'an face
+    // - each one a door to its own ayah. A flat list of twelve unrelated
+    // words made the reciter do the grouping in their head.
+    val groups = remember(words, hardWords) {
+        words.groupBy { it.surah }.entries
+            .map { (surah, ws) ->
+                Triple(surah, ws, ws.sumOf { it.misses })
+            }
+            .sortedByDescending { it.third }
+    }
+    var openGroup by remember { mutableStateOf<Int?>(null) }
     Panel(c) {
         PanelTitle(
             stringResource(R.string.practice_hard_title),
@@ -598,36 +645,73 @@ private fun HardestWordsCard(
             c,
         )
         Spacer(Modifier.height(12.dp))
-        words.forEach { w ->
-            val text = hardWords[w.key]
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        groups.forEach { (surah, ws, misses) ->
+            val info = data.surahInfo(surah)
+            val isOpen = openGroup == surah
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(c.ground)
+                    .clickable { openGroup = if (isOpen) null else surah }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
-                Text(
-                    text ?: stringResource(R.string.practice_ayah_n, n(w.ayah)),
-                    fontSize = 17.sp,
-                    fontFamily = quranFont,
-                    color = if (text != null) c.ink else c.inkMuted,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Start,
-                )
-                val info = data.surahInfo(w.surah)
-                Text(
-                    stringResource(
-                        R.string.practice_word_ref,
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
                         info?.displayName(LocalConfiguration.current)
-                            ?: stringResource(R.string.home_surah_n, n(w.surah)), n(w.ayah),
-                    ),
-                    fontSize = 11.sp, color = c.inkFaint,
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    "×${w.misses}",
-                    fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-                    color = c.chartBad,
-                )
+                            ?: stringResource(R.string.home_surah_n, n(surah)),
+                        fontSize = 12.sp, color = if (isOpen) c.accent else c.ink,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        stringResource(R.string.practice_group_meta, n(ws.size), n(misses)),
+                        fontSize = 10.sp, color = c.inkFaint,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isOpen) "▴" else "▾", fontSize = 11.sp, color = c.inkFaint)
+                }
+                if (isOpen) {
+                    Spacer(Modifier.height(4.dp))
+                    ws.forEach { w ->
+                        val text = hardWords[w.key]
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(9.dp))
+                                .clickable {
+                                    val page = pages?.indexOfFirst { pg ->
+                                        pg.lines.any { ln ->
+                                            ln.words?.any { it.surah == surah && it.verse == w.ayah } == true
+                                        } == true
+                                    }?.plus(1) ?: 0
+                                    if (page > 0) onOpen(surah, page)
+                                }
+                                .padding(horizontal = 6.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text ?: stringResource(R.string.practice_ayah_n, n(w.ayah)),
+                                fontFamily = quranFont,
+                                fontSize = 16.sp,
+                                color = if (text != null) c.ink else c.inkMuted,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                stringResource(R.string.practice_word_ref,
+                                    info?.displayName(LocalConfiguration.current)
+                                        ?: stringResource(R.string.home_surah_n, n(w.surah)), n(w.ayah)),
+                                fontSize = 10.sp, color = c.inkFaint,
+                            )
+                            Spacer(Modifier.width(9.dp))
+                            Text(
+                                "×" + n(w.misses),
+                                fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                                color = c.chartBad,
+                            )
+                        }
+                    }
+                }
             }
+            Spacer(Modifier.height(6.dp))
         }
     }
 }
@@ -639,7 +723,7 @@ private fun RecentSessionsCard(
     data: QuranData,
     c: IqraColors,
     onOpen: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    onManage: (String) -> Unit,
 ) {
     Panel(c) {
         PanelTitle(
@@ -664,7 +748,7 @@ private fun RecentSessionsCard(
                         onClick = { onOpen(r.name) },
                         // The management gesture: a held session names itself
                         // for deletion, with its audio, behind a confirmation.
-                        onLongClick = { onDelete(r.name) },
+                        onLongClick = { onManage(r.name) },
                     )
                     .padding(horizontal = 12.dp, vertical = 11.dp),
             ) {

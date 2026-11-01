@@ -95,7 +95,7 @@ fun SettingsScreen(
     val tick by ReaderPrefs.tick.collectAsStateWithLifecycle()
 
     var confirmClear by remember { mutableStateOf(false) }
-    val log = remember { PracticeLog.load(ctx) }
+    val log = remember(tick) { PracticeLog.load(ctx) }
     // Same write-then-reread pattern as `tick`, for the audio prefs in their
     // own store: the getters below are keyed on this, and each control bumps
     // it, which is what makes a write visible without leaving the screen.
@@ -266,6 +266,7 @@ SwitchRow(
                     label = stringResource(R.string.settings_engine_note_label),
                     options = alarmOptions,
                     selected = stringResource(remember(tick) { ReaderPrefs.advisoryAlarm(ctx).labelRes }),
+                    selectedIndex = remember(tick) { ReaderPrefs.advisoryAlarm(ctx).ordinal },
                     onSelect = { label ->
                         val i = alarmOptions.indexOf(label)
                         if (i >= 0) ReaderPrefs.setAdvisoryAlarm(ctx, ReaderPrefs.AdvisoryAlarm.entries[i])
@@ -283,6 +284,7 @@ SwitchRow(
                     label = stringResource(R.string.settings_engine_notes_where),
                     options = displayOptions,
                     selected = stringResource(remember(tick) { ReaderPrefs.advisoryDisplay(ctx).labelRes }),
+                    selectedIndex = remember(tick) { ReaderPrefs.advisoryDisplay(ctx).ordinal },
                     onSelect = { label ->
                         val i = displayOptions.indexOf(label)
                         if (i >= 0) ReaderPrefs.setAdvisoryDisplay(ctx, ReaderPrefs.AdvisoryDisplay.entries[i])
@@ -299,6 +301,7 @@ SwitchRow(
                     label = stringResource(R.string.settings_evidence_label),
                     options = strictnessOptions,
                     selected = stringResource(remember(tick) { ReaderPrefs.strictness(ctx).labelRes }),
+                    selectedIndex = remember(tick) { ReaderPrefs.strictness(ctx).ordinal },
                     onSelect = { label ->
                         val i = strictnessOptions.indexOf(label)
                         if (i >= 0) ReaderPrefs.setStrictness(ctx, ReaderPrefs.Strictness.entries[i])
@@ -325,6 +328,7 @@ SwitchRow(
                     label = stringResource(R.string.settings_metric_shown_in),
                     options = metricOptions,
                     selected = stringResource(remember(tick) { ReaderPrefs.metric(ctx).labelRes }),
+                    selectedIndex = remember(tick) { ReaderPrefs.metric(ctx).ordinal },
                     onSelect = { label ->
                         val i = metricOptions.indexOf(label)
                         if (i >= 0) ReaderPrefs.setMetric(ctx, ReaderPrefs.Metric.entries[i])
@@ -385,6 +389,9 @@ SwitchRow(
                     options = speedOptions.map { speedPctLabel(it) },
                     selected = remember(audioTick) {
                         speedPctLabel(AudioPrefs.speedPercent(ctx))
+                    },
+                    selectedIndex = remember(audioTick) {
+                        speedOptions.indexOf(AudioPrefs.speedPercent(ctx))
                     },
                     onSelect = { label ->
                         speedOptions.firstOrNull { speedPctLabel(it) == label }?.let {
@@ -501,6 +508,7 @@ SwitchRow(
                 // to learn it was to lose a session. The count is now a choice,
                 // and the deletion rule is stated where the choice is made.
                 val dataTick = remember { mutableIntStateOf(0) }
+                // These keys are PracticeViewModel.sessionPrefs' contract; keep them in step.
                 val sessionsPrefs = remember { ctx.getSharedPreferences("iqra_sessions", 0) }
                 val keepChoices = listOf(5, 10, 25, 50, 100)
                 ChoiceRow(
@@ -509,6 +517,9 @@ SwitchRow(
                     selected = remember(dataTick.intValue) {
                         val k = sessionsPrefs.getInt("keep", 10)
                         keepChoices.firstOrNull { it == k }?.toString() ?: "10"
+                    },
+                    selectedIndex = remember(dataTick.intValue) {
+                        keepChoices.indexOf(sessionsPrefs.getInt("keep", 10))
                     },
                     onSelect = { label ->
                         sessionsPrefs.edit()
@@ -620,6 +631,8 @@ SwitchRow(
             confirmButton = {
                 TextButton(onClick = {
                     PracticeLog.clear(ctx)
+                    // clear() writes behind the store's back; the tick is what makes `log` re-read.
+                    ReaderPrefs.refresh()
                     confirmClear = false
                 }) { Text(stringResource(R.string.settings_clear), color = MaterialTheme.colorScheme.error) }
             },
@@ -886,6 +899,10 @@ private fun ModelCardGap(title: String, detail: String) {
  *
  * Used for the metric and strictness settings, where a slider would be wrong:
  * these are discrete named choices, and the label matters more than the position.
+ *
+ * The highlighted option is [selectedIndex] when it is given, because the labels
+ * are localized strings and equality on them is fragile; below zero it falls
+ * back to matching [selected].
  */
 @Composable
 private fun ChoiceRow(
@@ -893,6 +910,7 @@ private fun ChoiceRow(
     options: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
+    selectedIndex: Int = -1,
 ) {
     Column(Modifier.padding(vertical = 6.dp)) {
         if (label.isNotEmpty()) {
@@ -916,8 +934,8 @@ private fun ChoiceRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            options.forEach { opt ->
-                val on = opt == selected
+            options.forEachIndexed { i, opt ->
+                val on = if (selectedIndex >= 0) i == selectedIndex else opt == selected
                 Box(
                     Modifier
                         .clip(IqraShape.chip)
@@ -1022,15 +1040,6 @@ private fun fmtMb(b: Long): String =
     if (b >= 1_000_000) String.format("%.1f MB", b / 1_000_000.0)
     else String.format("%.0f KB", b / 1_000.0)
 
-/**
- * Four themes, each previewed with its own colours rather than described.
- *
- * A row of names cannot tell you whether "Ink and silver" is too cold for reading
- * at night, and the only honest way to choose between four palettes is to see them.
- * Each swatch is that theme's ground, surface, accent and gold, with a line of
- * Arabic set in the real typeface - so the choice is made on the thing that will
- * actually be on screen.
- */
 /**
  * The recitation screen's theme, with "follows the app" as a real option.
  *
@@ -1138,6 +1147,15 @@ private fun LiveThemeChooser(tick: Int) {
     }
 }
 
+/**
+ * Four themes, each previewed with its own colours rather than described.
+ *
+ * A row of names cannot tell you whether "Ink and silver" is too cold for reading
+ * at night, and the only honest way to choose between four palettes is to see them.
+ * Each swatch is that theme's ground, surface, accent and gold, with a line of
+ * Arabic set in the real typeface - so the choice is made on the thing that will
+ * actually be on screen.
+ */
 @Composable
 private fun ThemeChooser(tick: Int) {
     val ctx = LocalContext.current

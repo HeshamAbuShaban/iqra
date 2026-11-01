@@ -107,10 +107,13 @@
     <string name="practice_word_ref">%1$s %2$s</string>
     <string name="practice_recent_title">Recent sessions</string>
     <string name="practice_row_notes">notes on %1$s words</string>
+    <string name="practice_manage_report">Open the report</string>
+    <string name="practice_manage_delete">Delete…</string>
     <string name="practice_delete_title">Delete this session?</string>
     <string name="practice_delete_body">Its record and its audio are removed from this phone. This cannot be undone.</string>
     <string name="practice_delete_yes">Delete</string>
     <string name="practice_delete_no">Keep</string>
+    <string name="practice_group_meta">%1$d words · %2$d misses</string>
     <string name="practice_row_session">Session · %1$s</string>
     <string name="practice_row_words_of">%1$s of %2$s words</string>
     <string name="practice_row_words">%1$s words</string>

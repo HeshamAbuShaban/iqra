@@ -106,10 +106,13 @@
     <string name="practice_word_ref">%1$s %2$s</string>
     <string name="practice_recent_title">الجلسات الأخيرة</string>
     <string name="practice_row_notes">ملاحظات على %1$s كلمات</string>
+    <string name="practice_manage_report">فتح التقرير</string>
+    <string name="practice_manage_delete">حذف…</string>
     <string name="practice_delete_title">حذف هذه الجلسة؟</string>
     <string name="practice_delete_body">يُحذف سجلها وصوتها من هذا الجهاز. لا يمكن التراجع.</string>
     <string name="practice_delete_yes">احذف</string>
     <string name="practice_delete_no">أبقِها</string>
+    <string name="practice_group_meta">%1$d كلمات · %2$d تكراراً</string>
     <string name="practice_row_session">جلسة · %1$s</string>
     <string name="practice_row_words_of">%1$s من %2$s كلمة</string>
     <string name="practice_row_words">%1$s كلمة</string>
