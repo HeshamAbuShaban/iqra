@@ -1813,20 +1813,28 @@ fun ReaderScreen(
                         // belongs in Diagnostics. Rendering it here made the row
                         // long enough to wrap, which grew the bar's height and
                         // squashed the Recite button into a vertical block.
-                        PulseDot(
-                            // REC says the session's audio is being KEPT (on
-                            // this device only) - not just heard. The engine
-                            // label stays diagnostic; the dot row is the one
-                            // place a reciter can see the mic is recording.
-                            label = "Listening" +
-                                (if (sessionSound) " · REC" else "") +
-                                if (engineLabel.isNotEmpty()) ", $engineLabel" else "",
-                        )
+                        // A paused session is not listening: the dot holds its
+                        // colour and the words say what the session is doing,
+                        // because "Listening" through a pause is the same lie
+                        // the recording kept working through.
+                        if (paused) {
+                            PulseDot(color = Chrome.OnChromeMuted, label = "")
+                        } else {
+                            PulseDot(
+                                // REC says the session's audio is being KEPT (on
+                                // this device only) - not just heard. The engine
+                                // label stays diagnostic; the dot row is the one
+                                // place a reciter can see the mic is recording.
+                                label = "Listening" +
+                                    (if (sessionSound) " · REC" else "") +
+                                    if (engineLabel.isNotEmpty()) ", $engineLabel" else "",
+                            )
+                        }
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "Listening…",
+                            if (paused) "Paused - the recording has stopped" else "Listening…",
                             fontSize = 12.sp,
-                            color = Chrome.OnChromeMuted,
+                            color = if (paused) Chrome.OnChrome else Chrome.OnChromeMuted,
                             maxLines = 1,
                             softWrap = false,
                             overflow = TextOverflow.Ellipsis,
