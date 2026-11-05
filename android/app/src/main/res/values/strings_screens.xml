@@ -105,6 +105,10 @@
     <string name="practice_hard_sub">Counted from misses only</string>
     <string name="practice_ayah_n">ayah %1$s</string>
     <string name="practice_word_ref">%1$s %2$s</string>
+    <string name="plan_title">The revision plan</string>
+    <string name="plan_sub">from your recorded misses - the stalest first</string>
+    <string name="plan_ayah">ayah %1$s</string>
+    <string name="plan_misses">%1$s misses</string>
     <string name="practice_recent_title">Recent sessions</string>
     <string name="practice_row_notes">notes on %1$s words</string>
     <string name="practice_manage_report">Open the report</string>
@@ -206,4 +210,6 @@
     <string name="console_hear_around">Hear what it heard — around the verdict</string>
     <string name="console_hearing">Playing… tap to stop</string>
     <string name="console_record_note">Replaying this session\u2019s record: what reached the engine and its verdicts at their instants, the lock walk from the record\u2019s frames. Silence stretches show as mist.</string>
+    <string name="settings_follow_audio_title">Turn pages with the recitation audio</string>
+    <string name="settings_follow_audio_subtitle">While a reciter plays, the reader follows the page being recited. Turn off to stay where you are and listen ahead.</string>
 </resources>

@@ -163,6 +163,10 @@ object ReaderPrefs {
     // type when it exists; for now the Arabic is what the layout is for.
     fun rightToLeft(ctx: Context): Boolean = prefs(ctx).getBoolean("rtl", true)
 
+    /** While reference audio plays, the reader turns with the recitation. */
+    fun followAudio(ctx: Context): Boolean = prefs(ctx).getBoolean("follow_audio", true)
+    fun setFollowAudio(ctx: Context, v: Boolean) = write(ctx) { putBoolean("follow_audio", v) }
+
     fun setRightToLeft(ctx: Context, v: Boolean) = write(ctx) { putBoolean("rtl", v) }
 
     // ---- recognition ------------------------------------------------------

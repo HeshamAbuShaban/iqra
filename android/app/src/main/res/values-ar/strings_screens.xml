@@ -104,6 +104,10 @@
     <string name="practice_hard_sub">من الأخطاء فقط</string>
     <string name="practice_ayah_n">آية %1$s</string>
     <string name="practice_word_ref">%1$s %2$s</string>
+    <string name="plan_title">خطة المراجعة</string>
+    <string name="plan_sub">من أخطائك المرصودة — الأقدمُ دون تسميع أولاً</string>
+    <string name="plan_ayah">آية %1$s</string>
+    <string name="plan_misses">%1$s تكراراً</string>
     <string name="practice_recent_title">الجلسات الأخيرة</string>
     <string name="practice_row_notes">ملاحظات على %1$s كلمات</string>
     <string name="practice_manage_report">فتح التقرير</string>
@@ -205,4 +209,6 @@
     <string name="console_hear_around">اسمع ما سمعه — حول لحظة الحكم</string>
     <string name="console_hearing">يُسمَع… انقر للإيقاف</string>
     <string name="console_record_note">يعرض سجلّ هذه الجلسة: كثافة ما وصل للمحرك، وأحكامها في لحظاتها، ومسار التتبع من إطارات السجل. فترات الصمت بلا حكم تظهر ضباباً.</string>
+    <string name="settings_follow_audio_title">تقليب الصفحات مع صوت التلاوة</string>
+    <string name="settings_follow_audio_subtitle">أثناء تشغيل القارئ، تتبع صفحة القراءة الصفحة التي تُتلى. أوقفه لتبقى في صفحتك وتستمع للأمام.</string>
 </resources>

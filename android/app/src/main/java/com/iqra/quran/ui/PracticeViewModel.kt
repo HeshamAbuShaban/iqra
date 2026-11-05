@@ -4247,6 +4247,11 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
     private var playWords: List<MushafWord> = emptyList()
     private val _playIndex = MutableStateFlow<Map<String, Int>>(emptyMap())
     val playIndex: StateFlow<Map<String, Int>> = _playIndex
+
+    /** The page the reciter is currently on, so the reader can follow. */
+    private val _playPage = MutableStateFlow(0)
+    val playPage: StateFlow<Int> = _playPage
+    private var playWordPages: Map<String, Int> = emptyMap()
     private val _playHead = MutableStateFlow(-1)
     val playHead: StateFlow<Int> = _playHead
     private var playPoll: Job? = null
@@ -4283,6 +4288,16 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                         val map = mutableMapOf<String, Int>()
                         playWords.forEachIndexed { i, w -> map[keyOf(w)] = i }
                         _playIndex.value = map
+                        // The page each word lives on, so the reader can turn
+                        // with the recitation instead of being left behind -
+                        // the coherence the listening flow never had.
+                        val kp = mutableMapOf<String, Int>()
+                        pages.forEach { pg ->
+                            pg.lines.forEach { l ->
+                                (l.words ?: emptyList()).forEach { w -> kp[keyOf(w)] = pg.page }
+                            }
+                        }
+                        playWordPages = kp
                         startPlayPoll(mp, playWords.size)
                     }
                     pendingSeekMs?.let { ms ->
@@ -4493,8 +4508,12 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
                     _playDurMs.value = d
                     _playPosMs.value = p
                     if (total > 0) {
-                        _playHead.value =
-                            ((p.toFloat() / d) * total).toInt().coerceIn(0, total - 1)
+                        val head = ((p.toFloat() / d) * total).toInt().coerceIn(0, total - 1)
+                        _playHead.value = head
+                        playWords.getOrNull(head)?.let { w ->
+                            val pg = playWordPages[keyOf(w)] ?: 0
+                            if (pg > 0 && pg != _playPage.value) _playPage.value = pg
+                        }
                     }
                 }
                 delay(80)
@@ -4512,6 +4531,8 @@ fun toggleSelectAyah(surah: Int, ayah: Int) {
         _playLoading.value = false
         _playingSurah.value = -1
         _playIndex.value = emptyMap()
+        _playPage.value = 0
+        playWordPages = emptyMap()
         _playHead.value = -1
         _playPaused.value = false
         _playPosMs.value = 0

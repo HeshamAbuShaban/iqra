@@ -171,6 +171,7 @@ fun PracticeScreen(
                     if (s.recent.isNotEmpty()) item("recent") {
                         RecentSessionsCard(s, data, c, onOpenSession, onManage = { manageFor = it })
                     }
+                    item("plan") { RevisionPlanCard(s, data, pages, c, onOpen) }
                     item("hero") { HeadlineCard(s, c) }
                     item("trend") { AccuracyTrendCard(s, c) }
                     item("pace") { PaceTrendCard(s, c) }
@@ -622,8 +623,97 @@ private fun CoverageBar(v: Float, c: IqraColors) {
     }
 }
 
+/**
+ * The revision plan: the app's first forward-looking surface. Every card so
+ * far looked backward - what happened; this one turns the accumulated miss
+ * counts into WHAT TO RECITE NEXT, ranked by misses and by how long the ayah
+ * has gone without a clean pass. The data is the durable aggregate's own;
+ * nothing here is invented, and nothing here accuses - an ayah that improved
+ * simply leaves the list.
+ */
 @Composable
+private fun RevisionPlanCard(
+    s: PracticeLog.Summary,
+    data: QuranData,
+    pages: List<com.iqra.quran.data.MushafPage>?,
+    c: IqraColors,
+    onOpen: (Int, Int) -> Unit,
+) {
+    // One row per AYAH: the words of an ayah share its fate, and the reciter
+    // revises ayat, not word indices. Ranked by misses, then by how long ago
+    // the ayah was last practised - the stale wound rises.
+    val plan = remember(s.hardest) {
+        s.hardest.groupBy { "${it.surah}:${it.ayah}" }
+            .map { (key, ws) ->
+                val first = ws.first()
+                val lastSeen = ws.maxOf { it.lastAt }
+                Triple(first.surah, first.ayah, Pair(ws.sumOf { it.misses }, lastSeen))
+            }
+            .sortedWith(
+                compareByDescending<Triple<Int, Int, Pair<Int, Long>>> { it.third.first }
+                    .thenBy { it.third.second },
+            )
+            .take(5)
+    }
+    if (plan.isEmpty()) return
+    val lang = uiLanguage(LocalConfiguration.current)
+    Panel(c) {
+        PanelTitle(
+            stringResource(R.string.plan_title),
+            stringResource(R.string.plan_sub),
+            c,
+        )
+        Spacer(Modifier.height(10.dp))
+        plan.forEach { (surah, ayah, burden) ->
+            val verse = data.getVerse(surah, ayah)
+            val page = pages?.indexOfFirst { pg ->
+                pg.lines.any { ln ->
+                    ln.words?.any { it.surah == surah && it.verse == ayah } == true
+                } == true
+            }?.plus(1) ?: 0
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(c.ground)
+                    .clickable(enabled = page > 0) { onOpen(surah, page) }
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        verse?.textClean
+                            ?: stringResource(R.string.report_surah_fallback, n(surah)),
+                        fontFamily = quranFont, fontSize = 16.sp, color = c.ink,
+                        maxLines = 2,
+                    )
+                    Text(
+                        (data.surahInfo(surah)?.displayName(LocalConfiguration.current)
+                            ?: stringResource(R.string.home_surah_n, n(surah)))
+                            + " · " + stringResource(R.string.plan_ayah, n(ayah))
+                            + " · " + stringResource(R.string.plan_misses, n(burden.first))
+                            + " · " + shortDateLocalized(missDayKey(burden.second), lang),
+                        fontSize = 10.sp, lineHeight = 14.sp, color = c.inkFaint,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Text("←", fontSize = 14.sp, color = c.accent)
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+/** The wall-clock of a miss, folded to the day key the dates render from. */
+private fun missDayKey(epochMs: Long): Long {
+    if (epochMs <= 0L) return 0L
+    val cal = java.util.Calendar.getInstance().apply { timeInMillis = epochMs }
+    return (cal.get(java.util.Calendar.YEAR) * 100L + cal.get(java.util.Calendar.MONTH) + 1L) * 100L +
+        cal.get(java.util.Calendar.DAY_OF_MONTH)
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
 private fun HardestWordsCard(
     s: PracticeLog.Summary,
     data: QuranData,

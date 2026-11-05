@@ -42,7 +42,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -118,6 +120,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.iqra.quran.data.AudioPrefs
+import com.iqra.quran.data.AudioStore
 import com.iqra.quran.data.AyahBookmarks
 import com.iqra.quran.data.AyahTimings
 import com.iqra.quran.data.QuranData
@@ -1387,6 +1390,7 @@ fun ReaderScreen(
     val repeatLeft by vm.repeatLeft.collectAsStateWithLifecycle()
     val playIndex by vm.playIndex.collectAsStateWithLifecycle()
     val playHead by vm.playHead.collectAsStateWithLifecycle()
+    val playPage by vm.playPage.collectAsStateWithLifecycle()
     val engineHint by vm.engineHint.collectAsStateWithLifecycle()
     val wpm by vm.wpmFlow.collectAsStateWithLifecycle()
     // Words of the active ayah, taken from the ViewModel's per-surah map rather
@@ -1514,12 +1518,17 @@ fun ReaderScreen(
     // navigation and must be able to take the reader anywhere, backwards
     // included - that is the opposite case, and flooring it would strand a
     // reader who picked a word from the far end of the mushaf.
-    val followPage = remember(currentPage, judgedPage, recitedPage, recording, shownPage) {
+    val followAudioOn = ReaderPrefs.followAudio(LocalContext.current)
+    val followPage = remember(currentPage, judgedPage, recitedPage, recording, shownPage, playPage, playingSurah, followAudioOn) {
         maxOf(
             if (recording) shownPage else 0,
             currentPage ?: 0,
             if (recording) judgedPage ?: 0 else 0,
             if (recording) recitedPage ?: 0 else 0,
+            // While a reciter plays, the reader turns with the recitation -
+            // the listening flow used to leave the page behind. Off is a
+            // setting, for the listener who prefers to stay put.
+            if (playingSurah >= 0 && followAudioOn) playPage else 0,
         ).takeIf { it in 1..mushaf.size }
     }
     LaunchedEffect(followPage, pagerState.isScrollInProgress) {
@@ -2318,6 +2327,7 @@ private fun ReferencePlaySheet(
     val ctx = LocalContext.current
     val playingSurah by vm.playingSurah.collectAsStateWithLifecycle()
     var reciterId by remember { mutableStateOf(AudioPrefs.reciter(ctx)) }
+    val reciterAtOpen = remember { AudioPrefs.reciter(ctx) }
     var ayah by remember { mutableIntStateOf(startAtAyah.coerceIn(1, ayahCount)) }
     var speed by remember { mutableIntStateOf(AudioPrefs.speedPercent(ctx)) }
     val seekable = remember(reciterId) { AyahTimings.isSupported(reciterId) }
@@ -2336,28 +2346,48 @@ private fun ReferencePlaySheet(
 
             Text("Reciter", fontSize = 12.sp, color = c.inkMuted)
             Spacer(Modifier.height(6.dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // Rows, not chips: the picker decides among ten people, and a
+            // person is named, marked when chosen, and told their terms -
+            // whether their audio is already kept for this surah and whether
+            // the ayah seek works for them. A chip hid all of that.
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 264.dp).verticalScroll(rememberScrollState()),
             ) {
                 Reciters.ALL.forEach { r ->
                     val on = r.id == reciterId
-                    Box(
+                    Row(
                         Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                if (on) c.accent
-                                else c.surface
-                            )
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (on) c.accentSoft else Color.Transparent)
                             .clickable { reciterId = r.id }
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                            .padding(horizontal = 10.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            r.name,
-                            fontSize = 12.sp,
-                            color = if (on) c.ground
-                            else c.inkMuted,
+                        Icon(
+                            if (on) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                            if (on) "Selected" else "Not selected",
+                            tint = if (on) c.accent else c.inkFaint,
+                            modifier = Modifier.size(20.dp),
                         )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                r.name,
+                                fontSize = 14.sp,
+                                color = if (on) c.ink else c.inkMuted,
+                                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                            Text(
+                                buildString {
+                                    if (AudioStore.file(ctx, r.id, surah).isFile)
+                                        append("saved for offline replay")
+                                    else append("streams, then saves a copy")
+                                    if (AyahTimings.isSupported(r.id)) append(" · per-ayah timings")
+                                },
+                                fontSize = 10.sp, color = c.inkFaint,
+                            )
+                        }
                     }
                 }
             }
@@ -2413,12 +2443,21 @@ private fun ReferencePlaySheet(
             Spacer(Modifier.height(18.dp))
 
             val isPlayingThis = playingSurah == surah
+            val switchingReciter = isPlayingThis && reciterId != reciterAtOpen
             Button(
                 onClick = {
                     AudioPrefs.setReciter(ctx, reciterId)
                     AudioPrefs.setSpeedPercent(ctx, speed)
                     AudioPrefs.setLastPlayedSurah(ctx, surah)
                     when {
+                        // A reciter chosen while one is playing restarts the
+                        // surah in the new voice: the files and timings are
+                        // per-reciter, so pretending to continue would be a
+                        // position that does not exist.
+                        switchingReciter -> {
+                            vm.togglePlaySurah(surah)
+                            vm.togglePlaySurah(surah)
+                        }
                         isPlayingThis -> vm.togglePlaySurah(surah)
                         ayah == 1 -> vm.togglePlaySurah(surah)
                         else -> vm.playFromAyah(surah, ayah)
@@ -2428,9 +2467,13 @@ private fun ReferencePlaySheet(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    if (isPlayingThis) "Stop the recitation"
-                    else if (ayah == 1) "Play surah $surah from the beginning"
-                    else "Play surah $surah from ayah $ayah",
+                    when {
+                        switchingReciter ->
+                            "Switch to ${Reciters.byId(reciterId).name} and replay the surah"
+                        isPlayingThis -> "Stop the recitation"
+                        ayah == 1 -> "Play surah $surah from the beginning"
+                        else -> "Play surah $surah from ayah $ayah"
+                    },
                 )
             }
         }

@@ -144,6 +144,13 @@ fun SettingsScreen(
                     onChange = { ReaderPrefs.setRightToLeft(ctx, it) },
                 )
                 SettingDivider()
+                SwitchRow(
+                    title = stringResource(R.string.settings_follow_audio_title),
+                    subtitle = stringResource(R.string.settings_follow_audio_subtitle),
+                    checked = remember(tick) { ReaderPrefs.followAudio(ctx) },
+                    onChange = { ReaderPrefs.setFollowAudio(ctx, it) },
+                )
+                SettingDivider()
 
                 ThemeChooser(tick)
                 SettingDivider()
