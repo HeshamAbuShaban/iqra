@@ -168,10 +168,10 @@ fun PracticeScreen(
                     // log - the list is what a review visit comes for, and it
                     // sat five screens of aggregate below the fold; the trends
                     // and the headline are the context, not the destination.
+                    item("plan") { RevisionPlanCard(s, data, pages, c, onOpen) }
                     if (s.recent.isNotEmpty()) item("recent") {
                         RecentSessionsCard(s, data, c, onOpenSession, onManage = { manageFor = it })
                     }
-                    item("plan") { RevisionPlanCard(s, data, pages, c, onOpen) }
                     item("hero") { HeadlineCard(s, c) }
                     item("trend") { AccuracyTrendCard(s, c) }
                     item("pace") { PaceTrendCard(s, c) }
