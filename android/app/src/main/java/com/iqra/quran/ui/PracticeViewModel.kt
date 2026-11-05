@@ -824,6 +824,37 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Force a write. Called on a timer, and on session end. */
+    /**
+     * Letters of the mushaf text over the session's CORRECT words, counted
+     * silently. Only the verified reading counts: unheard and contradicted
+     * words are not credited. Letters = base-letter codepoints of
+     * MushafWord.text (U+0621-064A plus alef-wasla U+0671); every haraka,
+     * waqf mark and superscript sign is stripped. 0 while no mushaf pages
+     * are loaded - a silent zero, not a guessed one.
+     */
+    private fun sessionLetters(): Long {
+        val pages = _mushaf.value ?: return 0L
+        val bySurah = HashMap<Int, Map<Int, MushafWord>>()
+        var total = 0L
+        for ((key, st) in sessionArchive) {
+            if (st != WordStatus.CORRECT) continue
+            val p = key.split(":")
+            val surah = p.getOrNull(0)?.toIntOrNull() ?: continue
+            val ayah = p.getOrNull(1)?.toIntOrNull() ?: continue
+            val wiv = p.getOrNull(2)?.toIntOrNull() ?: continue
+            val words = bySurah.getOrPut(surah) {
+                Mushaf.wordsForSurah(pages, surah)
+                    .associate { ((it.verse shl 10) or it.wordInVerse) to it }
+            }
+            val mw = words[(ayah shl 10) or wiv] ?: continue
+            for (ch in mw.text) {
+                val cp = ch.code
+                if (cp in 0x0621..0x064A || cp == 0x0671) total++
+            }
+        }
+        return total
+    }
+
     fun flushSessionRecord(ended: Boolean, reason: String? = null) {
         if (!sessionCaptureEnabled() && !ended) return
         // A tick that fires after the session was torn down would rewrite the
@@ -877,6 +908,12 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
             // looked like a measurement and was an artefact of the denominator.
             .append(",\"evaluatedWords\":").append(sessionArchive.size)
             .append(",\"judgedWords\":").append(sessionTerminalCount)
+            // The session's letter count over CORRECT words only, counted
+            // silently into the record - a factual figure a reader may consult
+            // (letter counting has its basis in Sunan al-Tirmidhi 2910), never
+            // a reward score displayed at anyone. Letters are base-letter
+            // codepoints of MushafWord.text; marks stripped.
+            .append(",\"letters\":").append(sessionLetters())
             // The cadence the loop actually delivered, so the record can say
             // whether the timing constants were operating on the truth. The
             // declared interval is FEED_POLL_SEC = 250 ms; measured over the

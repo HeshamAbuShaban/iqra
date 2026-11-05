@@ -2534,3 +2534,21 @@ fonts, the home, the settings groups, the icon, the chart day-one bug, the
 grouped words, the manage sheet, the Latin digit policy to its last line,
 the drill states surviving the scroll, the moving instruments, the search
 hit landing on its own page - all committed and pushed.
+
+**The letters count, silent (build #301).** The owner asked for an encouraging
+counter on the letter-hadith basis (Sunan al-Tirmidhi 2910), then correctly
+rejected the first design: a golden hasanat scoreboard quantifies what the
+ورع forbids quantifying. What shipped instead counts **بصمت**:
+`sessionLetters()` at record-flush sums base-letter codepoints (U+0621-064A +
+alef-wasla) of the mushaf text over CORRECT words only - unheard and
+contradicted words earn nothing, and the count is stored in the record
+(`letters`), shown once in the report as a plain figure among the other
+figures ("Letters recited this session: N", same muted typography as the
+unheard note), and accumulated into the practice stats as "Letters recited"
+all-time (Agg.foldedLetters, the same re-fold undo pattern as foldedHard).
+No hasanat arithmetic is displayed, no hadith banner, nothing on the recite
+screen - the count is data, not decoration. Old records carry no field and
+show nothing. Tarteel comparison: their "Deeds Estimated" hasanat estimate is
+server-side and displayed as a stat; ours is computed on device from verified
+words and displayed as a stat - the similarity ends at the disclaimer, which
+both carry.
