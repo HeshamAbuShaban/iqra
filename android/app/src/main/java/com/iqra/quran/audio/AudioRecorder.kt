@@ -105,10 +105,27 @@ class AudioRecorder(private val sampleRate: Int = 16000) {
         }.also { it.start() }
     }
 
+    /**
+     * The capture-level pause. While set, the capture thread keeps DRAINING
+     * the driver (an AudioRecord left unread backs up) but writes nothing
+     * anywhere: no ring, no session WAV. This is what makes the user's pause
+     * real under the surface - pause used to only stop judging while the
+     * microphone kept feeding the session record, so the kept audio contained
+     * moments the reciter believed were excluded. Resumption is instant from
+     * the same session; nothing was kept in between.
+     */
+    @Volatile
+    private var capturePaused = false
+
+    fun setCapturePaused(paused: Boolean) {
+        capturePaused = paused
+    }
+
     /** Append [n] converted samples, overwriting the oldest on overflow. The
      *  tee write runs OUTSIDE the ring lock: it is file I/O and must never
      *  stall a recogniser poll, and only the capture thread ever gets here. */
     private fun append(src: ShortArray, n: Int) {
+        if (capturePaused) return
         tee?.write(src, n)
         synchronized(lock) {
             for (i in 0 until n) {

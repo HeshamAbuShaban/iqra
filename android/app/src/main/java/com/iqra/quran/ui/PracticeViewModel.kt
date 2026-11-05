@@ -811,9 +811,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
         if (listeningPaused == paused) return
         listeningPaused = paused
         _paused.value = paused
+        // The pause reaches under the surface: the capture itself is
+        // suspended, so no audio is kept - ring or session WAV - for the
+        // moments the reciter excluded. Judging was already held here; a
+        // pause that kept recording while the screen stood still was a lie
+        // about what the session would contain. Resumption reopens both from
+        // the same session.
+        recorder.setCapturePaused(paused)
         // The gate reason is left to the loop, which owns that flow and rewrites it
         // within 250 ms either way; two writers would race for no benefit.
-        diag(if (paused) "listening paused (session live)" else "listening resumed")
+        diag(if (paused) "listening paused (capture suspended)" else "listening resumed (capture live)")
     }
 
     /** Force a write. Called on a timer, and on session end. */

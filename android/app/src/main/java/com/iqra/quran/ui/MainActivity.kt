@@ -1375,6 +1375,7 @@ fun ReaderScreen(
     val cacheNote by vm.cacheNote.collectAsStateWithLifecycle()
     val engineLabel by vm.engineLabel.collectAsStateWithLifecycle()
     val sessionSound by vm.sessionSound.collectAsStateWithLifecycle()
+    val paused by vm.paused.collectAsStateWithLifecycle()
     val preparing by vm.preparing.collectAsStateWithLifecycle()
     val activeVerse by vm.activeVerse.collectAsStateWithLifecycle()
     val activeWindow by vm.activeWindow.collectAsStateWithLifecycle()
@@ -1825,6 +1826,19 @@ fun ReaderScreen(
                         )
                     }
                     Spacer(Modifier.width(4.dp))
+                    // The same pause LiveMode uses - one engine pause, and it
+                    // is real: capture suspended, nothing kept, resume
+                    // continues the same session. The reader never had one;
+                    // a reciter's only escape used to be ending the session.
+                    if (recording) {
+                        IconButton(onClick = { vm.setPaused(!paused) }) {
+                            Icon(
+                                if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                if (paused) "Resume the session" else "Pause the session - recording stops",
+                                tint = Chrome.OnChrome,
+                            )
+                        }
+                    }
                     Button(
                         onClick = {
                             if (recording) vm.stopRecite()
