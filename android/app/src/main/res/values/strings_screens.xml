@@ -212,4 +212,9 @@
     <string name="console_record_note">Replaying this session\u2019s record: what reached the engine and its verdicts at their instants, the lock walk from the record\u2019s frames. Silence stretches show as mist.</string>
     <string name="settings_follow_audio_title">Turn pages with the recitation audio</string>
     <string name="settings_follow_audio_subtitle">While a reciter plays, the reader follows the page being recited. Turn off to stay where you are and listen ahead.</string>
+    <string name="report_letters_note">Letters recited this session: %1$s.</string>
+    <string name="report_ayat_done_note">Ayat completed this session: %1$s.</string>
+    <string name="practice_letters">Letters recited</string>
+    <string name="practice_ayat_done">Ayat completed</string>
+    <string name="practice_time_total">Recitation time</string>
 </resources>

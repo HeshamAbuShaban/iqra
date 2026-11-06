@@ -1129,6 +1129,16 @@ class PracticeViewModel(app: Application) : AndroidViewModel(app) {
                 .append(",\"words\":").append(expected).append('}')
         }
         sb.append("]")
+        // Ayat fully decided - every word the mushaf gives the ayah carries a
+        // verdict (CORRECT or WRONG; SKIPPED and UNKNOWN are absence). A
+        // factual completion count, written silently like the letter count.
+        val ayatDone = byAyah.count { (k, a) ->
+            val sn = k.substringBefore(':').toIntOrNull() ?: 0
+            val an = k.substringAfter(':').toIntOrNull() ?: 0
+            val expected = surahAyahWordCount[sn]?.get(an) ?: 0
+            expected > 0 && a[0] + a[1] >= expected
+        }
+        sb.append(",\"ayatDone\":").append(ayatDone)
         // The diag tail carries the lock moves, handoffs and any diag() the
         // policy emitted - in order, with the reason each move happened.
         sb.append(",\"diagTail\":[")

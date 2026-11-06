@@ -347,6 +347,32 @@ private fun HeadlineCard(s: PracticeLog.Summary, c: IqraColors) {
                     stringResource(R.string.practice_all_time),
                 )
                 Spacer(Modifier.height(12.dp))
+                s.letters?.let {
+                    Metric(
+                        c.ink, n(it),
+                        stringResource(R.string.practice_letters),
+                        stringResource(R.string.practice_all_time),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                s.ayatDone?.let {
+                    Metric(
+                        c.ink, n(it),
+                        stringResource(R.string.practice_ayat_done),
+                        stringResource(R.string.practice_all_time),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                if (s.totalTimeSec > 0) {
+                    val h = s.totalTimeSec / 3600
+                    val m = (s.totalTimeSec % 3600) / 60
+                    Metric(
+                        c.ink, if (h > 0) n(h) + "h " + n(m) + "m" else n(m) + "m",
+                        stringResource(R.string.practice_time_total),
+                        stringResource(R.string.practice_all_time),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
                 Metric(
                     c.ink, "${s.currentStreak}",
                     if (s.currentStreak == 1) stringResource(R.string.practice_streak_day)

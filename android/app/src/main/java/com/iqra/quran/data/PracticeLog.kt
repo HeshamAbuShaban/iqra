@@ -218,6 +218,8 @@ object PracticeLog {
          * anywhere. Null on records written before the field existed.
          */
         val letters: Long? = null,
+        /** Ayat fully decided - every mushaf word of the ayah carries a verdict. */
+        val ayatDone: Int? = null,
     ) {
 
     data class AdvisoryNote(val key: String, val kind: String, val count: Int)
@@ -418,6 +420,10 @@ object PracticeLog {
         val judgedWords: Int,
         /** Letters of CORRECT words, summed over records that carry the count. */
         val letters: Long?,
+        /** Ayat fully decided, summed over records that carry the count. */
+        val ayatDone: Long?,
+        /** Total recitation seconds across all ingested sessions. */
+        val totalTimeSec: Long,
         /** Distinct ayat reached. Was previously a sum of distinct-surah counts. */
         val ayahs: Int,
         val accuracy: Float?,
@@ -470,6 +476,10 @@ object PracticeLog {
         /** name -> that record's letter contribution, undone on re-fold the same way. */
         val foldedLetters = HashMap<String, Long>()
         var letters = 0L
+
+        /** name -> that record's completed-ayat contribution, undone on re-fold. */
+        val foldedAyatDone = HashMap<String, Long>()
+        var ayatDone = 0L
 
         /**
          * name -> that record's per-surah contribution.
@@ -641,6 +651,10 @@ object PracticeLog {
                         agg.letters = (agg.letters - prevL).coerceAtLeast(0L)
                     }
                     agg.foldedLetters.remove(f.name)
+                    agg.foldedAyatDone[f.name]?.let { prevA ->
+                        agg.ayatDone = (agg.ayatDone - prevA).coerceAtLeast(0L)
+                    }
+                    agg.foldedAyatDone.remove(f.name)
                     agg.foldedHard.remove(f.name)
                     agg.foldedSurahs.remove(f.name)?.forEach { (s, a) ->
                         val acc = agg.surahs[s]
@@ -679,6 +693,8 @@ object PracticeLog {
             agg.foldedHard[f.name] = mine
             agg.letters += r.letters ?: 0L
             agg.foldedLetters[f.name] = r.letters ?: 0L
+            agg.ayatDone += (r.ayatDone?.toLong() ?: 0L)
+            agg.foldedAyatDone[f.name] = (r.ayatDone ?: 0).toLong()
             agg.foldedSurahs[f.name] = HashMap<Int, LongArray>().also { m ->
                 r.perSurah.forEach { (s, a) ->
                     m[s] = longArrayOf(
@@ -823,7 +839,9 @@ object PracticeLog {
                 val arr = o.optJSONArray("emMs") ?: org.json.JSONArray()
                 List(arr.length()) { i -> arr.optLong(i) }
             },
-            letters = if (o.has("letters")) o.optLong("letters") else null,
+            letters = (o.optJSONObject("counters")?.optLong("letters")
+                ?: if (o.has("letters")) o.optLong("letters") else null),
+            ayatDone = if (o.has("ayatDone")) o.optInt("ayatDone") else null,
             wordRows = rows,
             frameRows = run {
                 val arr = o.optJSONArray("frames") ?: org.json.JSONArray()
@@ -1160,6 +1178,8 @@ object PracticeLog {
             sessions = a.sessions + liveOnly.size,
             judgedWords = totalJudged,
             letters = a.letters.takeIf { a.letters > 0L },
+            ayatDone = a.ayatDone.takeIf { a.ayatDone > 0L },
+            totalTimeSec = a.series.values.sumOf { it.getOrElse(5) { 0L } },
             // Distinct ayat, from the per-ayah map. The old value was
             // `Agg.ayahs`, which accumulated `perSurah.size` - a count of
             // surahs per session - and was then displayed under the word "ayat".

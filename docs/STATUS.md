@@ -2569,3 +2569,20 @@ aggregate while this read landed - two halves of one story. The passes say
 how often the reciter RETURNED; the ayatDone says how much they finished.
 The revision plan ranks what needs the next return. The three together are
 the seed of the muraja'ah layer the study named as the biggest core gap.
+
+**The ayat count, and the time it took (build #337).** The owner asked for the
+completed-ayat count and invited more of the same silent family. What the
+flush already knew made it small: the ayahStatus block carries per-ayah
+verdict counts and the writer's own denominator (`surahAyahWordCount`), so
+`ayatDone` = ayat where every mushaf word carries a verdict (CORRECT or
+WRONG; SKIPPED and UNKNOWN are absence). Written silently beside `letters`,
+parsed into the record, folded into the aggregate with the same re-fold undo
+as letters, and displayed as two more plain figures: the report's letter line
+gains an ayat line, and the practice stats gain "Ayat completed" and
+"Recitation time" all-time (summed from the persisted series' durations).
+Digits follow the house policy (`n()` formatted args into `%s` resources).
+Parser note: a later writer restructure moved `letters` inside the counters
+object, so the parser reads counters first and falls back to the top level.
+On-device: the record fields verified on a fresh silence session (#337
+record: `letters: 0`, `ayatDone: 0` both present); the report lines render on
+the next report the owner opens.
