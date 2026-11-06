@@ -2552,3 +2552,20 @@ show nothing. Tarteel comparison: their "Deeds Estimated" hasanat estimate is
 server-side and displayed as a stat; ours is computed on device from verified
 words and displayed as a stat - the similarity ends at the disclaimer, which
 both carry.
+
+## The consolidation read, and a converging layer (6 November)
+
+The study's R2, read-time slice: the report's ayah-by-ayah card now shows,
+for every ayah the record's frame ring can speak for, HOW MANY TIMES the
+lock visited it (a maximal run of frames on one lock = one pass) and whether
+the last visit was clean - every word decided inside that pass's window
+CORRECT. Computed from frameRows + wordRows at read time; records before
+build 300 keep their counts alone; nothing accuses, nothing enters the
+score.
+
+And the parallel session's own layer converged onto the same ground from
+the other side: ayatDone (ayat fully decided) and totalTimeSec entered the
+aggregate while this read landed - two halves of one story. The passes say
+how often the reciter RETURNED; the ayatDone says how much they finished.
+The revision plan ranks what needs the next return. The three together are
+the seed of the muraja'ah layer the study named as the biggest core gap.
