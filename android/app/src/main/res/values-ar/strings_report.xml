@@ -47,6 +47,8 @@
     <string name="report_unheard_note">لم يسمع المحرك %1$s من هذه الكلمات قط. وباحتسابها تصبح الدقة %2$s٪.</string>
 
     <!-- Ayah card -->
+    <string name="report_pass_clean">%1$d مروراً · الأخيرُ منها نظيف</string>
+    <string name="report_pass_dirty">%1$d مروراً · لا مروراً نظيفاً بعد</string>
     <string name="report_ayah_by_ayah">آية فآية</string>
     <string name="report_legend_clean">سليمة</string>
     <string name="report_legend_wrong">كلمة خاطئة</string>

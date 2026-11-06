@@ -543,7 +543,82 @@ private fun VerdictCard(r: PracticeLog.Record, c: IqraColors) {
                 fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
             )
         }
+        // The session's silent counts, as plain figures among the other
+        // figures - letters of the verified reading, and ayat fully decided.
+        // Their basis lives in the record's documentation, not on this screen.
+        if (r.letters != null || r.ayatDone != null) {
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.hairline))
+            Spacer(Modifier.height(12.dp))
+            if (r.letters != null) {
+                Text(
+                    stringResource(R.string.report_letters_note, n(r.letters)),
+                    fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
+                )
+            }
+            if (r.ayatDone != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.report_ayat_done_note, n(r.ayatDone.toLong())),
+                    fontSize = 12.sp, lineHeight = 17.sp, color = c.inkMuted,
+                )
+            }
+        }
     }
+}
+
+/**
+ * The consolidation read: per "surah:ayah", how many times the lock VISITED
+ * (a maximal run of frames on the same lock = one pass) and whether the LAST
+ * pass was clean (every word judged inside that pass's window was CORRECT).
+ * Computed at read time from the record's own frame ring and word rows -
+ * the record has carried both since build 300; older records simply have no
+ * pass data and the card keeps its counts alone. Nothing here accuses.
+ */
+private data class AyahPasses(val visits: Int, val lastClean: Boolean)
+
+private fun ayahPasses(r: PracticeLog.Record): Map<String, AyahPasses> {
+    if (r.frameRows.isEmpty()) return emptyMap()
+    // walk the ring into spans of a constant lock
+    val spans = ArrayList<Pair<Long, Long>>() // tStart..tEnd per span
+    var curStart = -1L
+    var curLock = -1
+    r.frameRows.forEach { f ->
+        if (f.lock != curLock) {
+            if (curLock > 0 && curStart >= 0) spans.add(curStart to f.tMs)
+            curLock = f.lock
+            curStart = f.tMs
+        }
+    }
+    if (curLock > 0 && curStart >= 0) spans.add(curStart to (r.frameRows.last().tMs))
+    // attribute each span to the ayah whose words were judged inside it
+    val out = HashMap<String, AyahPasses>()
+    val perAyah = HashMap<String, MutableList<Pair<Int, Boolean>>>() // key -> (wt, cleanWord)
+    r.wordRows.forEach { w ->
+        val wt = w.wt ?: return@forEach
+        val key = w.key.substringBefore(':') + ":" + w.key.substringAfter(':').substringBefore(':')
+        perAyah.getOrPut(key) { ArrayList() }.add(wt to (w.st == "CORRECT"))
+    }
+    spans.forEach { (t0, t1) ->
+        // the span's ayah: the most common key among words decided inside it
+        val inside = HashMap<String, Int>()
+        var insideClean = true
+        var insideAny = false
+        r.wordRows.forEach { w ->
+            val wt = w.wt ?: return@forEach
+            if (wt >= t0 - 500 && wt <= t1 + 500) {
+                val key = w.key.substringBefore(':') + ":" + w.key.substringAfter(':').substringBefore(':')
+                inside[key] = (inside[key] ?: 0) + 1
+                insideAny = true
+                if (w.st != "CORRECT") insideClean = false
+            }
+        }
+        val ayahKey = inside.maxByOrNull { it.value }?.key ?: return@forEach
+        val prev = out[ayahKey]
+        out[ayahKey] = AyahPasses((prev?.visits ?: 0) + 1, insideClean)
+    }
+    // visits recorded; the caller reads lastClean from the LAST span attributed
+    return out
 }
 
 @Composable
@@ -584,12 +659,25 @@ private fun AyahCard(r: PracticeLog.Record, c: IqraColors) {
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.hairline))
         Spacer(Modifier.height(10.dp))
+        // The consolidation read, when the record carries the frame ring:
+        // how many times the lock visited each ayah, and whether the last
+        // visit was clean - the memoriser's own signal, read from the record,
+        // never a verdict and never counted in the score.
+        val passes = remember(r) { ayahPasses(r) }
         entries.forEach { (key, v) ->
             val ayah = key.substringAfter(':').toIntOrNull() ?: 0
             Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                 Text(stringResource(R.string.report_ayah_n, n(ayah)), fontSize = 11.sp, color = c.inkMuted,
                     modifier = Modifier.width(64.dp))
                 Counts(c, v)
+            }
+            passes[key]?.let { p ->
+                Text(
+                    if (p.lastClean) stringResource(R.string.report_pass_clean, n(p.visits))
+                    else stringResource(R.string.report_pass_dirty, n(p.visits)),
+                    fontSize = 9.sp, color = c.inkFaint,
+                    modifier = Modifier.padding(start = 64.dp, top = 1.dp),
+                )
             }
         }
     }

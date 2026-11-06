@@ -47,6 +47,8 @@
     <string name="report_unheard_note">The engine never heard %1$s of these words. Counting those, accuracy is %2$s%%.</string>
 
     <!-- Ayah card -->
+    <string name="report_pass_clean">%1$d passes · the last was clean</string>
+    <string name="report_pass_dirty">%1$d passes · none clean yet</string>
     <string name="report_ayah_by_ayah">Ayah by ayah</string>
     <string name="report_legend_clean">clean</string>
     <string name="report_legend_wrong">a word wrong</string>
